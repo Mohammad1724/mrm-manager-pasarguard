@@ -237,7 +237,7 @@ fi
             return 1
         fi
     elif [ -n "$MESSAGE" ]; then
-        curl -4 -s ${PROXY:+--proxy "$PROXY"} -X POST "https://api.telegram.org/bot$TK/sendMessage" \
+        curl -4 -s $CURL_PROXY -X POST "https://api.telegram.org/bot$TK/sendMessage" \
             -d chat_id="$CH" \
             -d text="$MESSAGE" > /dev/null
         return $?
@@ -257,8 +257,21 @@ test_telegram() {
     local TK=$(grep "TG_TOKEN" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
     local CH=$(grep "TG_CHAT" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
     local PROXY=$(grep "TG_PROXY" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
+    local CURL_PROXY=""
 
-    local RESULT=$(curl -4 -s ${PROXY:+--proxy "$PROXY"} -X POST "https://api.telegram.org/bot$TK/sendMessage" \
+if [[ "$PROXY" == socks5://* ]]; then
+    PROXY_STR="${PROXY#socks5://}"
+
+    if [[ "$PROXY_STR" == *"@"* ]]; then
+        AUTH="${PROXY_STR%@*}"
+        HOSTPORT="${PROXY_STR##*@}"
+        CURL_PROXY="--socks5-hostname $HOSTPORT -U $AUTH"
+    else
+        CURL_PROXY="--socks5-hostname $PROXY_STR"
+    fi
+fi
+
+    local RESULT=$(curl -4 -s $CURL_PROXY -X POST "https://api.telegram.org/bot$TK/sendMessage" \
         -d chat_id="$CH" \
         -d text="🧪 MRM Backup Test - $(date '+%Y-%m-%d %H:%M')" 2>&1)
 
