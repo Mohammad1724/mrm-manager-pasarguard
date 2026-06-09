@@ -306,7 +306,7 @@
         <div class="announcement-icon">🔔</div>
         <div class="announcement-content">
             <div class="announcement-title">اطلاعیه</div>
-            <div class="announcement-text" id="announceText"></div>
+            <div class="announcement-text" id="announceText">__NEWS__</div>
         </div>
     </div>
 
@@ -488,6 +488,11 @@
     var ob=document.getElementById('onlineBadge');
     function renderOnline(info){if(info.isEmpty)ob.innerHTML='<span class="online-dot empty"></span>';else if(info.isOnline)ob.innerHTML='<span class="online-dot green"></span><span class="online-text green">'+info.text+'</span>';else ob.innerHTML='<span class="online-dot gray"></span><span class="online-text gray">'+info.text+'</span>'}
     renderOnline(onlineInfo);
+
+    var defaultAnnouncementText=(document.getElementById('announceText').textContent||'').trim();
+    if(defaultAnnouncementText&&defaultAnnouncementText!=='__NEWS__'){
+        document.getElementById('announcement').classList.add('show');
+    }
 
     // CIRCULAR PROGRESS
     var RADIUS=65;
@@ -715,5 +720,5 @@
     var resizeTimer;window.addEventListener('resize',function(){clearTimeout(resizeTimer);resizeTimer=setTimeout(function(){fetchChart(currentRange)},250)});
 })();
 </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a08eb4914aacd161',t:'MTc4MDk5MzEwMw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
