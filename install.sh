@@ -5,7 +5,10 @@
 # ==========================================
 
 INSTALL_DIR="/opt/mrm-manager"
-REPO_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-ssl-pasarguard/main/manager"
+REPO_BASE_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-ssl-pasarguard/main"
+MANAGER_REPO_URL="$REPO_BASE_URL/manager"
+TEMPLATE_REPO_URL="$REPO_BASE_URL/templates/subscription/index.html"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd -P || pwd -P)"
 
 # Colors
 RED='\033[0;31m'
@@ -59,29 +62,115 @@ OPT_FILES=(
     "index.html"
 )
 
+get_local_source_path() {
+    local FILE="$1"
+    local CANDIDATES=()
+    local CANDIDATE
+
+    case "$FILE" in
+        index.html)
+            CANDIDATES=(
+                "$SCRIPT_DIR/index.html"
+                "$SCRIPT_DIR/templates/subscription/index.html"
+                "./index.html"
+                "./templates/subscription/index.html"
+            )
+            ;;
+        *)
+            CANDIDATES=(
+                "$SCRIPT_DIR/$FILE"
+                "$SCRIPT_DIR/manager/$FILE"
+                "./$FILE"
+                "./manager/$FILE"
+            )
+            ;;
+    esac
+
+    for CANDIDATE in "${CANDIDATES[@]}"; do
+        if [ -f "$CANDIDATE" ]; then
+            printf '%s\n' "$CANDIDATE"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+get_remote_url() {
+    local FILE="$1"
+
+    case "$FILE" in
+        index.html)
+            printf '%s\n' "$TEMPLATE_REPO_URL"
+            ;;
+        *)
+            printf '%s\n' "$MANAGER_REPO_URL/$FILE"
+            ;;
+    esac
+}
+
+set_executable_if_needed() {
+    local TARGET_PATH="$1"
+
+    if [[ "$TARGET_PATH" == *.sh ]]; then
+        chmod +x "$TARGET_PATH"
+    fi
+}
+
+validate_download_prerequisites() {
+    local FILE
+
+    for FILE in "${FILES[@]}" "${INBOUND_FILES[@]}"; do
+        if ! get_local_source_path "$FILE" >/dev/null 2>&1; then
+            if ! command -v curl >/dev/null 2>&1; then
+                echo -e "${RED}curl is required for online installation but is not installed.${NC}"
+                echo -e "${YELLOW}Install curl or run this installer from a full local repository checkout.${NC}"
+                exit 1
+            fi
+            return 0
+        fi
+    done
+}
+
 install_file() {
-    local FILE=$1
-    local IS_OPTIONAL=$2
+    local FILE="$1"
+    local IS_OPTIONAL="$2"
     local TARGET_PATH="$INSTALL_DIR/$FILE"
-    
+    local DIR
+    local SOURCE_PATH
+    local REMOTE_URL
+
     # Create subdirectory if needed
-    local DIR=$(dirname "$TARGET_PATH")
+    DIR="$(dirname "$TARGET_PATH")"
     mkdir -p "$DIR"
 
     # Try Local Install
-    if [ -f "./$FILE" ]; then
-        cp "./$FILE" "$TARGET_PATH"
-        chmod +x "$TARGET_PATH"
+    SOURCE_PATH="$(get_local_source_path "$FILE" 2>/dev/null || true)"
+    if [ -n "$SOURCE_PATH" ] && [ -f "$SOURCE_PATH" ]; then
+        cp "$SOURCE_PATH" "$TARGET_PATH"
+        set_executable_if_needed "$TARGET_PATH"
         echo -e "  ${GREEN}✔${NC} Installed (Local): $FILE"
         return 0
     fi
 
     # Try Online Install
-    if curl -s -L -f -o "$TARGET_PATH" "$REPO_URL/$FILE" 2>/dev/null; then
-        chmod +x "$TARGET_PATH"
+    if ! command -v curl >/dev/null 2>&1; then
+        if [ "$IS_OPTIONAL" == "true" ]; then
+            echo -e "  ${YELLOW}⚠${NC} Skipped optional: $FILE (curl not installed)"
+            return 0
+        else
+            echo -e "  ${RED}✘${NC} Failed: $FILE (curl not installed and no local source found)"
+            return 1
+        fi
+    fi
+
+    REMOTE_URL="$(get_remote_url "$FILE")"
+    if curl -s -L -f -o "$TARGET_PATH" "$REMOTE_URL" 2>/dev/null; then
+        set_executable_if_needed "$TARGET_PATH"
         echo -e "  ${GREEN}✔${NC} Downloaded: $FILE"
         return 0
     else
+        rm -f "$TARGET_PATH"
         if [ "$IS_OPTIONAL" == "true" ]; then
             echo -e "  ${YELLOW}⚠${NC} Skipped optional: $FILE"
             return 0
@@ -91,6 +180,8 @@ install_file() {
         fi
     fi
 }
+
+validate_download_prerequisites
 
 # Install Core Files
 echo -e "${BLUE}[2/4] Installing core files...${NC}"
