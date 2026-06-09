@@ -34,7 +34,6 @@ load_required_module "/opt/mrm-manager/theme.sh"
 load_required_module "/opt/mrm-manager/migrator.sh"
 load_required_module "/opt/mrm-manager/mirza.sh"
 
-
 # Detect panel on startup
 detect_active_panel > /dev/null
 
@@ -414,12 +413,11 @@ tools_menu() {
 
         echo "1) 🌐 Domain Separator (Panel & Sub)"
         echo "2) 🎭 Fake Site Manager"
-        echo "3) 📥 Inbound Wizard"
-        echo "4) 🎨 Theme Manager"
-        echo "5) 🔄 Migration (Pasarguard → Rebecca)"
+        echo "3) 🎨 Theme Manager"
+        echo "4) 🔄 Migration (Pasarguard → Rebecca)"
         echo ""
-        echo "6) ⚡ Optimize Network (BBR)"
-        echo "7) 🔧 Auto Fix"
+        echo "5) ⚡ Optimize Network (BBR)"
+        echo "6) 🔧 Auto Fix"
         echo ""
         echo "0) ↩️  Back"
         echo ""
@@ -428,11 +426,10 @@ tools_menu() {
         case $OPT in
             1) domain_menu ;;
             2) site_menu ;;
-            3) inbound_menu ;;
-            4) theme_menu ;;
-            5) migrator_menu ;;
-            6) optimize_network ;;
-            7) auto_fix ;;
+            3) theme_menu ;;
+            4) migrator_menu ;;
+            5) optimize_network ;;
+            6) auto_fix ;;
             0) return ;;
             *) invalid_menu_option ;;
         esac
