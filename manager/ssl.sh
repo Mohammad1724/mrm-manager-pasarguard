@@ -41,7 +41,7 @@ readonly SSL_LOG_DIR="${SSL_LOG_DIR:-/var/log/ssl-manager}"
 readonly SSL_LOG_FILE="${SSL_LOG_DIR}/ssl-manager.log"
 readonly CERTBOT_DEBUG_LOG="${SSL_LOG_DIR}/certbot-debug.log"
 readonly SERVERS_FILE="${SERVERS_FILE:-/opt/mrm-manager/ssl-servers.conf}"
-readonly BACKUP_DIR="${BACKUP_DIR:-/opt/mrm-manager/ssl-backups}"
+readonly SSL_BACKUP_DIR="${SSL_BACKUP_DIR:-/opt/mrm-manager/ssl-backups}"
 readonly CONFIG_DIR="${CONFIG_DIR:-/opt/mrm-manager}"
 
 # Thresholds
@@ -64,6 +64,7 @@ readonly HTTPS_PORT=443
 declare -g PANEL_DIR=""
 declare -g PANEL_DEF_CERTS=""
 declare -g PANEL_ENV=""
+declare -g NODE_DIR=""
 declare -g NODE_DEF_CERTS=""
 declare -g NODE_ENV=""
 
@@ -90,34 +91,45 @@ _load_external_modules
 # UI FALLBACK FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════════
 
-ui_header() {
-    if ! declare -f ui_header_external &>/dev/null; then
+if ! declare -f ui_header >/dev/null 2>&1; then
+    ui_header() {
         clear
         echo -e "${CYAN}╔══════════════════════════════════════════════════════════╗${NC}"
         echo -e "${CYAN}║${NC}  ${BOLD}$1${NC}"
         echo -e "${CYAN}╚══════════════════════════════════════════════════════════╝${NC}"
         echo ""
-    else
-        ui_header_external "$1"
-    fi
-}
+    }
+fi
 
-ui_error() { echo -e "${RED}[✘] $1${NC}" >&2; }
-ui_success() { echo -e "${GREEN}[✔] $1${NC}"; }
-ui_warning() { echo -e "${YELLOW}[⚠] $1${NC}"; }
-ui_info() { echo -e "${BLUE}[ℹ] $1${NC}"; }
+if ! declare -f ui_error >/dev/null 2>&1; then
+    ui_error() { echo -e "${RED}[✘] $1${NC}" >&2; }
+fi
 
-pause() {
-    echo ""
-    read -r -p "Press Enter to continue..."
-}
+if ! declare -f ui_success >/dev/null 2>&1; then
+    ui_success() { echo -e "${GREEN}[✔] $1${NC}"; }
+fi
+
+if ! declare -f ui_warning >/dev/null 2>&1; then
+    ui_warning() { echo -e "${YELLOW}[⚠] $1${NC}"; }
+fi
+
+if ! declare -f ui_info >/dev/null 2>&1; then
+    ui_info() { echo -e "${BLUE}[ℹ] $1${NC}"; }
+fi
+
+if ! declare -f pause >/dev/null 2>&1; then
+    pause() {
+        echo ""
+        read -r -p "Press Enter to continue..."
+    }
+fi
 
 # ═══════════════════════════════════════════════════════════════════════════
 # LOGGING SYSTEM
 # ═══════════════════════════════════════════════════════════════════════════
 
 init_logging() {
-    mkdir -p "$SSL_LOG_DIR" "$BACKUP_DIR" 2>/dev/null || {
+    mkdir -p "$SSL_LOG_DIR" "$SSL_BACKUP_DIR" 2>/dev/null || {
         ui_error "Cannot create log directories"
         return 1
     }
@@ -284,31 +296,45 @@ check_root() {
 # ═══════════════════════════════════════════════════════════════════════════
 
 detect_active_panel() {
+    local panel_name=""
+
+    if declare -f load_panel_config >/dev/null 2>&1; then
+        if load_panel_config >/dev/null 2>&1; then
+            panel_name=$(cat "$CONFIG_FILE" 2>/dev/null || true)
+            if [[ -n "$panel_name" && -n "$PANEL_DIR" ]]; then
+                echo "$panel_name"
+                return 0
+            fi
+        fi
+    fi
+
     local -A panels=(
-        ["marzban"]="/opt/marzban:/var/lib/marzban/certs:/opt/marzban/.env:/var/lib/marzban-node/certs:/opt/marzban-node/.env"
-        ["x-ui"]="/opt/x-ui:/var/lib/x-ui/certs:/opt/x-ui/x-ui.db:/var/lib/x-ui/certs:/opt/x-ui/.env"
-        ["hiddify"]="/opt/hiddify:/opt/hiddify/certs:/opt/hiddify/.env:/opt/hiddify/certs:/opt/hiddify/.env"
-        ["pasarguard"]="/opt/pasarguard:/var/lib/pasarguard/certs:/opt/pasarguard/.env:/var/lib/pasarguard-node/certs:/opt/pasarguard-node/.env"
-        ["rebecca"]="/opt/rebecca:/var/lib/rebecca/certs:/opt/rebecca/.env:/var/lib/rebecca-node/certs:/opt/rebecca-node/.env"
+        ["marzban"]="/opt/marzban:/var/lib/marzban/certs:/opt/marzban/.env:/opt/marzban-node:/var/lib/marzban-node/certs:/opt/marzban-node/.env"
+        ["x-ui"]="/opt/x-ui:/var/lib/x-ui/certs:/opt/x-ui/x-ui.db:/opt/x-ui:/var/lib/x-ui/certs:/opt/x-ui/.env"
+        ["hiddify"]="/opt/hiddify:/opt/hiddify/certs:/opt/hiddify/.env:/opt/hiddify:/opt/hiddify/certs:/opt/hiddify/.env"
+        ["pasarguard"]="/opt/pasarguard:/var/lib/pasarguard/certs:/opt/pasarguard/.env:/opt/pg-node:/var/lib/pg-node/certs:/opt/pg-node/.env"
+        ["rebecca"]="/opt/rebecca:/var/lib/rebecca/certs:/opt/rebecca/.env:/opt/rebecca-node:/var/lib/rebecca-node/certs:/opt/rebecca-node/.env"
     )
-    
+
     for panel in "${!panels[@]}"; do
-        IFS=':' read -r dir certs env node_certs node_env <<< "${panels[$panel]}"
+        IFS=':' read -r dir certs env node_dir node_certs node_env <<< "${panels[$panel]}"
         if [[ -d "$dir" ]]; then
             PANEL_DIR="$dir"
             PANEL_DEF_CERTS="$certs"
             PANEL_ENV="$env"
+            NODE_DIR="$node_dir"
             NODE_DEF_CERTS="$node_certs"
             NODE_ENV="$node_env"
             echo "$panel"
             return 0
         fi
     done
-    
+
     # Default fallback
     PANEL_DIR="/opt/panel"
     PANEL_DEF_CERTS="/var/lib/panel/certs"
     PANEL_ENV="/opt/panel/.env"
+    NODE_DIR="/opt/node"
     NODE_DEF_CERTS="/var/lib/node/certs"
     NODE_ENV="/opt/node/.env"
     echo "unknown"
@@ -383,20 +409,60 @@ restore_services() {
     done
 }
 
+# Get compose file for a service directory
+get_compose_file_for_dir() {
+    local target_dir="$1"
+    local compose_file=""
+    local candidate
+
+    if [[ -z "$target_dir" || ! -d "$target_dir" ]]; then
+        return 1
+    fi
+
+    if declare -f find_compose_file >/dev/null 2>&1; then
+        compose_file=$(find_compose_file "$target_dir" 2>/dev/null) || true
+    fi
+
+    if [[ -z "$compose_file" ]]; then
+        for candidate in \
+            "$target_dir/docker-compose.yml" \
+            "$target_dir/docker-compose.yaml" \
+            "$target_dir/compose.yml" \
+            "$target_dir/compose.yaml"
+        do
+            if [[ -f "$candidate" ]]; then
+                compose_file="$candidate"
+                break
+            fi
+        done
+    fi
+
+    [[ -n "$compose_file" ]] || return 1
+    printf '%s\n' "$compose_file"
+}
+
 # Restart panel/node services
 restart_panel_services() {
     local service_type="$1"  # panel or node
     local target_dir=""
-    
+    local compose_file=""
+
     case "$service_type" in
         panel) target_dir="$PANEL_DIR" ;;
-        node) target_dir="$(dirname "$NODE_ENV" 2>/dev/null)" ;;
+        node)
+            if [[ -n "$NODE_DIR" ]]; then
+                target_dir="$NODE_DIR"
+            else
+                target_dir="$(dirname "$NODE_ENV" 2>/dev/null)"
+            fi
+            ;;
         *) return 1 ;;
     esac
-    
-    [[ ! -d "$target_dir" ]] && return 1
-    
-    if [[ -f "$target_dir/docker-compose.yml" ]] || [[ -f "$target_dir/compose.yaml" ]]; then
+
+    [[ -d "$target_dir" ]] || return 1
+
+    compose_file=$(get_compose_file_for_dir "$target_dir" 2>/dev/null) || true
+    if [[ -n "$compose_file" ]]; then
         (cd "$target_dir" && docker compose restart 2>/dev/null) || \
         (cd "$target_dir" && docker-compose restart 2>/dev/null)
     else
@@ -1822,7 +1888,7 @@ backup_certificates() {
     detect_active_panel > /dev/null
     
     local backup_name="ssl-backup-$(date +%Y%m%d-%H%M%S)"
-    local backup_path="$BACKUP_DIR/$backup_name"
+    local backup_path="$SSL_BACKUP_DIR/$backup_name"
     
     mkdir -p "$backup_path" || { ui_error "Cannot create backup directory!"; pause; return; }
     
@@ -1843,10 +1909,10 @@ backup_certificates() {
     
     # Create tarball
     echo "  Creating archive..."
-    (cd "$BACKUP_DIR" && tar -czf "$backup_name.tar.gz" "$backup_name" 2>/dev/null)
+    (cd "$SSL_BACKUP_DIR" && tar -czf "$backup_name.tar.gz" "$backup_name" 2>/dev/null)
     rm -rf "$backup_path"
     
-    local final_path="$BACKUP_DIR/$backup_name.tar.gz"
+    local final_path="$SSL_BACKUP_DIR/$backup_name.tar.gz"
     local size
     size=$(du -h "$final_path" 2>/dev/null | cut -f1)
     
@@ -1865,18 +1931,21 @@ backup_certificates() {
 setup_auto_renewal() {
     ui_header "⏰ SETUP AUTO-RENEWAL"
     detect_active_panel > /dev/null
-    
+
     local cron_file="/etc/cron.d/ssl-auto-renew"
     local hook_script="/opt/mrm-manager/ssl-renew-hook.sh"
-    
+    local hook_node_dir="${NODE_DIR:-$(dirname "$NODE_ENV" 2>/dev/null)}"
+
     echo -e "${YELLOW}This will setup automatic certificate renewal.${NC}\n"
     echo "Schedule: Daily at 3:00 AM"
     echo "Action: Renew + update paths + restart services"
     echo ""
-    
+
     read -r -p "Proceed? (Y/n): " proceed
     [[ "$proceed" =~ ^[Nn]$ ]] && return
-    
+
+    mkdir -p "$(dirname "$hook_script")"
+
     # Create hook script
     cat > "$hook_script" << HOOK_EOF
 #!/bin/bash
@@ -1884,11 +1953,35 @@ setup_auto_renewal() {
 
 PANEL_CERTS="$PANEL_DEF_CERTS"
 NODE_CERTS="$NODE_DEF_CERTS"
+PANEL_DIR="$PANEL_DIR"
+NODE_DIR="$hook_node_dir"
+
+restart_compose_service() {
+    local target_dir="\$1"
+    local candidate
+
+    [[ -n "\$target_dir" && -d "\$target_dir" ]] || return 1
+
+    for candidate in \
+        "\$target_dir/docker-compose.yml" \
+        "\$target_dir/docker-compose.yaml" \
+        "\$target_dir/compose.yml" \
+        "\$target_dir/compose.yaml"
+    do
+        if [[ -f "\$candidate" ]]; then
+            (cd "\$target_dir" && docker compose restart >/dev/null 2>&1) || \
+            (cd "\$target_dir" && docker-compose restart >/dev/null 2>&1)
+            return 0
+        fi
+    done
+
+    return 1
+}
 
 for dir in /etc/letsencrypt/live/*/; do
     domain=\$(basename "\$dir")
     [[ "\$domain" == "README" ]] && continue
-    
+
     # Update panel certs
     if [[ -d "\$PANEL_CERTS/\$domain" ]]; then
         cp -L "\$dir/fullchain.pem" "\$PANEL_CERTS/\$domain/"
@@ -1896,7 +1989,7 @@ for dir in /etc/letsencrypt/live/*/; do
         chmod 644 "\$PANEL_CERTS/\$domain/fullchain.pem"
         chmod 600 "\$PANEL_CERTS/\$domain/privkey.pem"
     fi
-    
+
     # Update node certs
     if [[ -d "\$NODE_CERTS/\$domain" && "\$NODE_CERTS" != "\$PANEL_CERTS" ]]; then
         cp -L "\$dir/fullchain.pem" "\$NODE_CERTS/\$domain/"
@@ -1906,12 +1999,13 @@ for dir in /etc/letsencrypt/live/*/; do
     fi
 done
 
-# Restart services
-systemctl reload nginx 2>/dev/null || true
+restart_compose_service "$PANEL_DIR" || true
+restart_compose_service "$NODE_DIR" || true
+systemctl reload nginx >/dev/null 2>&1 || true
 HOOK_EOF
-    
+
     chmod 700 "$hook_script"
-    
+
     # Create cron job
     cat > "$cron_file" << EOF
 # SSL Auto-Renewal - MRM Manager
@@ -1919,14 +2013,14 @@ SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 0 3 * * * root certbot renew --quiet --deploy-hook "$hook_script"
 EOF
-    
+
     chmod 644 "$cron_file"
-    
+
     ui_success "Auto-renewal configured!"
     echo -e "  ${YELLOW}Cron:${NC} $cron_file"
     echo -e "  ${YELLOW}Hook:${NC} $hook_script"
     echo -e "\n${CYAN}Test with:${NC} certbot renew --dry-run"
-    
+
     log_success "Auto-renewal configured"
     pause
 }
