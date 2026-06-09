@@ -1,14 +1,85 @@
 #!/bin/bash
 
 if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
+if ! declare -f ui_header >/dev/null 2>&1 && [ -r /opt/mrm-manager/ui.sh ]; then source /opt/mrm-manager/ui.sh; fi
 
 # ✅ اطمینان از تشخیص پنل و تنظیم DATA_DIR
 detect_active_panel > /dev/null
+
+theme_get_local_template() {
+    local CANDIDATE
+
+    for CANDIDATE in \
+        "./index.html" \
+        "./templates/subscription/index.html" \
+        "/opt/mrm-manager/index.html" \
+        "/opt/mrm-manager/templates/subscription/index.html"
+    do
+        if [ -f "$CANDIDATE" ]; then
+            printf '%s\n' "$CANDIDATE"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+theme_apply_env() {
+    [ -f "$PANEL_ENV" ] || touch "$PANEL_ENV" 2>/dev/null || return 1
+    sed -i '/CUSTOM_TEMPLATES_DIRECTORY/d' "$PANEL_ENV" || return 1
+    sed -i '/SUBSCRIPTION_PAGE_TEMPLATE/d' "$PANEL_ENV" || return 1
+    echo "CUSTOM_TEMPLATES_DIRECTORY=\"$DATA_DIR/templates/\"" >> "$PANEL_ENV" || return 1
+    echo 'SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"' >> "$PANEL_ENV" || return 1
+    return 0
+}
+
+theme_clear_env() {
+    if [ -f "$PANEL_ENV" ]; then
+        sed -i '/CUSTOM_TEMPLATES_DIRECTORY/d' "$PANEL_ENV" || return 1
+        sed -i '/SUBSCRIPTION_PAGE_TEMPLATE/d' "$PANEL_ENV" || return 1
+    fi
+    return 0
+}
+
+theme_restart_panel() {
+    detect_active_panel > /dev/null
+
+    if declare -f restart_service >/dev/null 2>&1; then
+        restart_service "panel" >/dev/null 2>&1
+        return $?
+    fi
+
+    if [ -d "$PANEL_DIR" ] && command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+        (cd "$PANEL_DIR" && docker compose down && docker compose up -d)
+        return $?
+    fi
+
+    return 1
+}
+
+theme_invalid_option() {
+    if declare -f ui_error >/dev/null 2>&1; then
+        ui_error "Invalid option"
+    else
+        echo -e "${RED}Invalid option${NC}"
+    fi
+    sleep 1
+}
 
 # ==========================================
 # 1. INSTALL / UPDATE
 # ==========================================
 install_theme_wizard() {
+    local TEMPLATE_FILE
+    local TEMPLATE_DIR
+    local TMP_DIR
+    local OLD_FILE
+    local TEMP_DL
+    local PY_SCRIPT
+    local LOCAL_TEMPLATE
+    local FILE_SIZE
+    local PY_EXIT_CODE
+
     clear
     echo -e "${CYAN}=============================================${NC}"
     echo -e "${YELLOW}      THEME INSTALLATION WIZARD              ${NC}"
@@ -28,54 +99,62 @@ install_theme_wizard() {
         pause; return
     fi
 
+    TMP_DIR=$(mktemp -d /tmp/mrm-theme.XXXXXX 2>/dev/null)
+    if [ -z "$TMP_DIR" ] || [ ! -d "$TMP_DIR" ]; then
+        echo -e "${RED}Failed to create temporary workspace.${NC}"
+        pause; return
+    fi
+
     TEMPLATE_FILE="$DATA_DIR/templates/subscription/index.html"
     TEMPLATE_DIR=$(dirname "$TEMPLATE_FILE")
+    OLD_FILE="$TMP_DIR/index_old.html"
+    TEMP_DL="$TMP_DIR/index_dl.html"
+    PY_SCRIPT="$TMP_DIR/mrm_theme_logic.py"
+
     mkdir -p "$TEMPLATE_DIR"
 
     echo -e "${BLUE}Template Path: $TEMPLATE_FILE${NC}"
 
     # 1. Backup old file
     if [ -s "$TEMPLATE_FILE" ]; then
-        cp "$TEMPLATE_FILE" "/tmp/index_old.html"
+        cp "$TEMPLATE_FILE" "$OLD_FILE"
         echo -e "${GREEN}✔ Backup created.${NC}"
     else
-        echo "" > "/tmp/index_old.html"
+        : > "$OLD_FILE"
     fi
 
     # 2. Source Selection (Hybrid)
-    local TEMP_DL="/tmp/index_dl.html"
     rm -f "$TEMP_DL"
+    LOCAL_TEMPLATE="$(theme_get_local_template 2>/dev/null || true)"
 
-    if [ -f "./index.html" ]; then
-        echo -e "${GREEN}✔ Found local index.html. Using it.${NC}"
-        cp "./index.html" "$TEMP_DL"
-    elif [ -f "/opt/mrm-manager/index.html" ]; then
-        echo -e "${GREEN}✔ Found local index.html in /opt/mrm-manager. Using it.${NC}"
-        cp "/opt/mrm-manager/index.html" "$TEMP_DL"
+    if [ -n "$LOCAL_TEMPLATE" ]; then
+        echo -e "${GREEN}✔ Found local theme source. Using it.${NC}"
+        cp "$LOCAL_TEMPLATE" "$TEMP_DL"
     else
         echo -e "${BLUE}Downloading from GitHub...${NC}"
         echo -e "${BLUE}URL: $THEME_HTML_URL${NC}"
         
-        # ✅ بررسی موفقیت دانلود
-        if curl -sL -o "$TEMP_DL" "$THEME_HTML_URL"; then
-            # بررسی اینکه فایل 404 نباشد
+        if curl -sL -f -o "$TEMP_DL" "$THEME_HTML_URL" 2>/dev/null; then
             if grep -q "404: Not Found" "$TEMP_DL" 2>/dev/null; then
                 echo -e "${RED}✘ Download failed: 404 Not Found${NC}"
                 echo -e "${YELLOW}Please check THEME_HTML_URL in utils.sh${NC}"
+                rm -rf "$TMP_DIR"
                 pause; return
             fi
             echo -e "${GREEN}✔ Downloaded successfully.${NC}"
         else
             echo -e "${RED}✘ Download failed!${NC}"
+            rm -rf "$TMP_DIR"
             pause; return
         fi
     fi
 
     # ✅ بررسی سایز فایل
-    local FILE_SIZE=$(stat -c%s "$TEMP_DL" 2>/dev/null || echo "0")
+    FILE_SIZE=$(stat -c%s "$TEMP_DL" 2>/dev/null || echo "0")
     if [ "$FILE_SIZE" -lt 1000 ]; then
         echo -e "${RED}✘ Downloaded file is too small ($FILE_SIZE bytes). Something went wrong.${NC}"
         cat "$TEMP_DL"
+        rm -rf "$TMP_DIR"
         pause; return
     fi
     echo -e "${GREEN}✔ File size OK: $FILE_SIZE bytes${NC}"
@@ -83,11 +162,12 @@ install_theme_wizard() {
     # 3. Processing
     echo -e "${BLUE}Processing configuration...${NC}"
 
-    export OLD_FILE="/tmp/index_old.html"
-    export NEW_FILE="/tmp/index_dl.html"
+    export OLD_FILE
+    export NEW_FILE="$TEMP_DL"
     export FINAL_FILE="$TEMPLATE_FILE"
 
-    cat > /tmp/mrm_theme_logic.py << 'PYEOF'
+    cat > "$PY_SCRIPT" << 'PYEOF'
+import html
 import os
 import re
 import sys
@@ -108,76 +188,126 @@ defaults = {
     'news': 'خوش آمدید',
 }
 
-# --- IMPROVED REGEX LOGIC ---
+
+def clean_handle(value, fallback):
+    value = (value or '').strip().lstrip('@')
+    value = re.sub(r'[\s"\'"'<>]+', '', value)
+    return value or fallback
+
+
+def clean_text(value, fallback):
+    value = (value or '').strip()
+    return value or fallback
+
+
 try:
     with open(old_path, 'r', encoding='utf-8', errors='ignore') as f:
         old_content = f.read()
-    
-    m_brand = re.search(r'<title>(.*?)</title>', old_content)
-    if m_brand and "__BRAND__" not in m_brand.group(1): 
-        defaults['brand'] = m_brand.group(1)
-    
-    m_bot = re.search(r'href="https://t\.me/([^"]+)"[^>]*class="[^"]*renew-btn', old_content)
-    if not m_bot:
-        m_bot = re.search(r'href="https://t\.me/([^"]+)"[^>]*class="[^"]*bot-link', old_content)
-    if m_bot: defaults['bot'] = m_bot.group(1)
-    
-    m_sup = re.search(r'href="https://t\.me/([^"]+)"[^>]*class="[^"]*btn-dark', old_content)
-    if m_sup: defaults['sup'] = m_sup.group(1)
-    
-    m_news = re.search(r'id="nT">\s*([^<]+)\s*<', old_content)
-    if m_news: defaults['news'] = m_news.group(1).strip()
 
-except Exception as e:
+    m_brand = re.search(r'<title>(.*?)</title>', old_content, re.S | re.I)
+    if not m_brand:
+        m_brand = re.search(r'class=["\'][^"\']*brand[^"\']*["\'][^>]*>(.*?)<', old_content, re.S | re.I)
+    if m_brand:
+        brand_value = html.unescape(m_brand.group(1).strip())
+        if brand_value and '__BRAND__' not in brand_value:
+            defaults['brand'] = brand_value
+
+    bot_patterns = [
+        r'href=["\']https://t\.me/([^"\']+)["\'][^>]*id=["\']renewBtn["\']',
+        r'id=["\']renewBtn["\'][^>]*href=["\']https://t\.me/([^"\']+)["\']',
+        r'href=["\']https://t\.me/([^"\']+)["\'][^>]*class=["\'][^"\']*renew-btn',
+        r'href=["\']https://t\.me/([^"\']+)["\'][^>]*class=["\'][^"\']*bot-link',
+    ]
+    for pattern in bot_patterns:
+        m_bot = re.search(pattern, old_content, re.I)
+        if m_bot:
+            bot_value = m_bot.group(1).strip()
+            if bot_value and '__BOT__' not in bot_value:
+                defaults['bot'] = bot_value
+                break
+
+    support_patterns = [
+        r'href=["\']https://t\.me/([^"\']+)["\'][^>]*class=["\'][^"\']*support-btn',
+        r'class=["\'][^"\']*support-btn[^"\']*["\'][^>]*href=["\']https://t\.me/([^"\']+)["\']',
+        r'href=["\']https://t\.me/([^"\']+)["\'][^>]*class=["\'][^"\']*btn-dark',
+    ]
+    for pattern in support_patterns:
+        m_sup = re.search(pattern, old_content, re.I)
+        if m_sup:
+            sup_value = m_sup.group(1).strip()
+            if sup_value and '__SUP__' not in sup_value:
+                defaults['sup'] = sup_value
+                break
+
+    news_patterns = [
+        r'id=["\']announceText["\']>\s*([^<]+?)\s*<',
+        r'id=["\']nT["\']>\s*([^<]+?)\s*<',
+    ]
+    for pattern in news_patterns:
+        m_news = re.search(pattern, old_content, re.S | re.I)
+        if m_news:
+            news_value = html.unescape(m_news.group(1).strip())
+            if news_value and '__NEWS__' not in news_value:
+                defaults['news'] = news_value
+                break
+
+except Exception:
     pass
 
 print(f'\n{CYAN}=== Theme Settings ==={NC}')
 print(f'Press {YELLOW}ENTER{NC} to keep the current value [in brackets].\n')
 
+
 def get_input(label, key):
     try:
         val = input(f'{label} [{defaults[key]}]: ').strip()
-        if not val: return defaults[key]
+        if not val:
+            return defaults[key]
         return val
-    except EOFError: return defaults[key]
+    except EOFError:
+        return defaults[key]
 
-new_brand = get_input('Brand Name', 'brand')
-new_bot = get_input('Bot Username (No @)', 'bot')
-new_sup = get_input('Support ID (No @)', 'sup')
-new_news = get_input('News Text', 'news')
+
+new_brand = html.escape(clean_text(get_input('Brand Name', 'brand'), defaults['brand']), quote=False)
+new_bot = clean_handle(get_input('Bot Username (No @)', 'bot'), defaults['bot'])
+new_sup = clean_handle(get_input('Support ID (No @)', 'sup'), defaults['sup'])
+new_news = html.escape(clean_text(get_input('News Text', 'news'), defaults['news']), quote=False)
 
 try:
-    with open(new_path, 'r', encoding='utf-8', errors='ignore') as f: content = f.read()
+    with open(new_path, 'r', encoding='utf-8', errors='ignore') as f:
+        content = f.read()
+
     content = content.replace('__BRAND__', new_brand)
     content = content.replace('__BOT__', new_bot)
     content = content.replace('__SUP__', new_sup)
     content = content.replace('__NEWS__', new_news)
-    with open(final_path, 'w', encoding='utf-8') as f: f.write(content)
+
+    with open(final_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+
     print(f'\n{GREEN}✔ Settings saved successfully.{NC}')
 except Exception as e:
     print(f'\nError processing file: {e}')
     sys.exit(1)
 PYEOF
 
-    python3 /tmp/mrm_theme_logic.py
+    python3 "$PY_SCRIPT"
     PY_EXIT_CODE=$?
-    rm -f /tmp/mrm_theme_logic.py
+    rm -f "$PY_SCRIPT"
 
     if [ $PY_EXIT_CODE -eq 0 ]; then
-        # ✅ بررسی فایل نهایی
         if [ ! -s "$TEMPLATE_FILE" ]; then
             echo -e "${RED}✘ Final file is empty!${NC}"
+            rm -rf "$TMP_DIR"
             pause; return
         fi
 
-        if [ ! -f "$PANEL_ENV" ]; then touch "$PANEL_ENV"; fi
-        sed -i '/CUSTOM_TEMPLATES_DIRECTORY/d' "$PANEL_ENV"
-        sed -i '/SUBSCRIPTION_PAGE_TEMPLATE/d' "$PANEL_ENV"
+        if ! theme_apply_env; then
+            echo -e "${RED}✘ Failed to update panel environment for theme.${NC}"
+            rm -rf "$TMP_DIR"
+            pause; return
+        fi
 
-        echo "CUSTOM_TEMPLATES_DIRECTORY=\"$DATA_DIR/templates/\"" >> "$PANEL_ENV"
-        echo 'SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"' >> "$PANEL_ENV"
-
-        # ✅ نمایش تنظیمات نهایی
         echo ""
         echo -e "${CYAN}=== Final Configuration ===${NC}"
         echo -e "Template: $TEMPLATE_FILE"
@@ -185,14 +315,16 @@ PYEOF
         grep -E "CUSTOM_TEMPLATES|SUBSCRIPTION_PAGE" "$PANEL_ENV"
         echo ""
 
-        # ✅ استفاده از down/up به جای restart
-        echo -e "${BLUE}Restarting panel (down/up)...${NC}"
-        cd "$PANEL_DIR" && docker compose down && docker compose up -d
-        
-        echo -e "${GREEN}✔ Theme Updated & Panel Restarted.${NC}"
-        rm -f "/tmp/index_old.html" "/tmp/index_dl.html"
+        echo -e "${BLUE}Restarting panel...${NC}"
+        if theme_restart_panel; then
+            echo -e "${GREEN}✔ Theme Updated & Panel Restarted.${NC}"
+        else
+            echo -e "${YELLOW}⚠ Theme updated, but panel restart failed. Please restart manually.${NC}"
+        fi
+        rm -rf "$TMP_DIR"
     else
         echo -e "${RED}✘ Python Script Failed.${NC}"
+        rm -rf "$TMP_DIR"
     fi
     pause
 }
@@ -208,14 +340,16 @@ activate_theme() {
         pause; return
     fi
     
-    if [ ! -f "$PANEL_ENV" ]; then touch "$PANEL_ENV"; fi
-    sed -i '/CUSTOM_TEMPLATES_DIRECTORY/d' "$PANEL_ENV"
-    sed -i '/SUBSCRIPTION_PAGE_TEMPLATE/d' "$PANEL_ENV"
-    echo "CUSTOM_TEMPLATES_DIRECTORY=\"$DATA_DIR/templates/\"" >> "$PANEL_ENV"
-    echo 'SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"' >> "$PANEL_ENV"
-    
-    cd "$PANEL_DIR" && docker compose down && docker compose up -d
-    echo -e "${GREEN}✔ Theme Activated.${NC}"
+    if ! theme_apply_env; then
+        echo -e "${RED}Failed to update panel environment.${NC}"
+        pause; return
+    fi
+
+    if theme_restart_panel; then
+        echo -e "${GREEN}✔ Theme Activated.${NC}"
+    else
+        echo -e "${YELLOW}⚠ Theme activated, but panel restart failed. Please restart manually.${NC}"
+    fi
     pause
 }
 
@@ -224,10 +358,17 @@ deactivate_theme() {
     detect_active_panel > /dev/null
     
     if [ -f "$PANEL_ENV" ]; then
-        sed -i '/CUSTOM_TEMPLATES_DIRECTORY/d' "$PANEL_ENV"
-        sed -i '/SUBSCRIPTION_PAGE_TEMPLATE/d' "$PANEL_ENV"
-        cd "$PANEL_DIR" && docker compose down && docker compose up -d
-        echo -e "${GREEN}✔ Theme Deactivated.${NC}"
+        if ! theme_clear_env; then
+            echo -e "${RED}Failed to clean theme settings from panel environment.${NC}"
+            pause; return
+        fi
+        if theme_restart_panel; then
+            echo -e "${GREEN}✔ Theme Deactivated.${NC}"
+        else
+            echo -e "${YELLOW}⚠ Theme deactivated, but panel restart failed. Please restart manually.${NC}"
+        fi
+    else
+        echo -e "${YELLOW}Panel environment file not found.${NC}"
     fi
     pause
 }
@@ -237,14 +378,21 @@ uninstall_theme() {
     detect_active_panel > /dev/null
     
     read -p "Delete theme files? (y/n): " CONFIRM
-    if [[ "$CONFIRM" == "y" ]]; then
+    if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
         rm -rf "$DATA_DIR/templates/subscription"
         if [ -f "$PANEL_ENV" ]; then
-            sed -i '/CUSTOM_TEMPLATES_DIRECTORY/d' "$PANEL_ENV"
-            sed -i '/SUBSCRIPTION_PAGE_TEMPLATE/d' "$PANEL_ENV"
-            cd "$PANEL_DIR" && docker compose down && docker compose up -d
+            if ! theme_clear_env; then
+                echo -e "${RED}Failed to clean theme settings from panel environment.${NC}"
+                pause; return
+            fi
+            if theme_restart_panel; then
+                echo -e "${GREEN}✔ Theme removed & deactivated.${NC}"
+            else
+                echo -e "${YELLOW}⚠ Theme removed, but panel restart failed. Please restart manually.${NC}"
+            fi
+        else
+            echo -e "${GREEN}✔ Theme files removed.${NC}"
         fi
-        echo -e "${GREEN}✔ Theme removed & deactivated.${NC}"
     fi
     pause
 }
@@ -283,7 +431,7 @@ theme_menu() {
             3) deactivate_theme ;;
             4) uninstall_theme ;;
             0) return ;;
-            *) ;;
+            *) theme_invalid_option ;;
         esac
     done
 }
