@@ -1,6 +1,7 @@
 #!/bin/bash
 
 if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
+if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manager/safe_ops.sh ]; then source /opt/mrm-manager/safe_ops.sh; fi
 
 NGINX_CONF="/etc/nginx/conf.d/panel_separate.conf"
 PANEL_CONFLICT_CONF="/etc/nginx/conf.d/panel.conf"
@@ -172,6 +173,12 @@ setup_domain_separation() {
 
     echo -e "${GREEN}✔ SSL Certificates ready.${NC}"
 
+    if declare -f mrm_create_restore_point >/dev/null 2>&1; then
+        local RESTORE_POINT_ID
+        RESTORE_POINT_ID="$(mrm_create_restore_point "domain-separation" "nginx" "$NGINX_CONF" "$PANEL_CONFLICT_CONF")"
+        [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point created: $RESTORE_POINT_ID${NC}"
+    fi
+
     if [ -f "$NGINX_CONF" ]; then
         NGINX_BACKUP=$(mktemp /tmp/mrm-domain-separator.XXXXXX 2>/dev/null)
         if [ -z "$NGINX_BACKUP" ] || ! cp "$NGINX_CONF" "$NGINX_BACKUP" 2>/dev/null; then
@@ -278,6 +285,12 @@ EOF
 
 edit_nginx_config_manually() {
     local EDIT_BACKUP
+
+    if declare -f mrm_create_restore_point >/dev/null 2>&1; then
+        local RESTORE_POINT_ID
+        RESTORE_POINT_ID="$(mrm_create_restore_point "domain-manual-edit" "nginx" "$NGINX_CONF" "$PANEL_CONFLICT_CONF")"
+        [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point created: $RESTORE_POINT_ID${NC}"
+    fi
 
     EDIT_BACKUP=$(mktemp /tmp/mrm-domain-edit.XXXXXX 2>/dev/null)
     if [ -f "$NGINX_CONF" ] && [ -n "$EDIT_BACKUP" ]; then
