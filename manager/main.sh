@@ -457,7 +457,7 @@ main_menu() {
 
     while true; do
         clear
-        ui_header "MRM MANAGER v3.2" 50
+        ui_header "MRM MANAGER v4.0" 50
         ui_status_bar
         if declare -f mrm_render_home_dashboard >/dev/null 2>&1; then
             mrm_render_home_dashboard
