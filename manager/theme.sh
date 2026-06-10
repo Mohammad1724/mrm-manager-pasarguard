@@ -2,6 +2,7 @@
 
 if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
 if ! declare -f ui_header >/dev/null 2>&1 && [ -r /opt/mrm-manager/ui.sh ]; then source /opt/mrm-manager/ui.sh; fi
+if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manager/safe_ops.sh ]; then source /opt/mrm-manager/safe_ops.sh; fi
 
 # ✅ اطمینان از تشخیص پنل و تنظیم DATA_DIR
 detect_active_panel > /dev/null
@@ -110,6 +111,12 @@ install_theme_wizard() {
     OLD_FILE="$TMP_DIR/index_old.html"
     TEMP_DL="$TMP_DIR/index_dl.html"
     PY_SCRIPT="$TMP_DIR/mrm_theme_logic.py"
+
+    if declare -f mrm_create_restore_point >/dev/null 2>&1; then
+        local RESTORE_POINT_ID
+        RESTORE_POINT_ID="$(mrm_create_restore_point "theme-update" "panel" "$PANEL_ENV" "$DATA_DIR/templates/subscription")"
+        [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point created: $RESTORE_POINT_ID${NC}"
+    fi
 
     mkdir -p "$TEMPLATE_DIR"
 
@@ -339,6 +346,12 @@ activate_theme() {
         echo -e "${YELLOW}Expected path: $T_FILE${NC}"
         pause; return
     fi
+
+    if declare -f mrm_create_restore_point >/dev/null 2>&1; then
+        local RESTORE_POINT_ID
+        RESTORE_POINT_ID="$(mrm_create_restore_point "theme-activate" "panel" "$PANEL_ENV" "$DATA_DIR/templates/subscription")"
+        [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point created: $RESTORE_POINT_ID${NC}"
+    fi
     
     if ! theme_apply_env; then
         echo -e "${RED}Failed to update panel environment.${NC}"
@@ -358,6 +371,12 @@ deactivate_theme() {
     detect_active_panel > /dev/null
     
     if [ -f "$PANEL_ENV" ]; then
+        if declare -f mrm_create_restore_point >/dev/null 2>&1; then
+            local RESTORE_POINT_ID
+            RESTORE_POINT_ID="$(mrm_create_restore_point "theme-deactivate" "panel" "$PANEL_ENV" "$DATA_DIR/templates/subscription")"
+            [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point created: $RESTORE_POINT_ID${NC}"
+        fi
+
         if ! theme_clear_env; then
             echo -e "${RED}Failed to clean theme settings from panel environment.${NC}"
             pause; return
@@ -379,6 +398,12 @@ uninstall_theme() {
     
     read -p "Delete theme files? (y/n): " CONFIRM
     if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+        if declare -f mrm_create_restore_point >/dev/null 2>&1; then
+            local RESTORE_POINT_ID
+            RESTORE_POINT_ID="$(mrm_create_restore_point "theme-uninstall" "panel" "$PANEL_ENV" "$DATA_DIR/templates/subscription")"
+            [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point created: $RESTORE_POINT_ID${NC}"
+        fi
+
         rm -rf "$DATA_DIR/templates/subscription"
         if [ -f "$PANEL_ENV" ]; then
             if ! theme_clear_env; then
