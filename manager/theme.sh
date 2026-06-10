@@ -198,7 +198,7 @@ defaults = {
 
 def clean_handle(value, fallback):
     value = (value or '').strip().lstrip('@')
-    value = re.sub(r'[\s"\'"'<>]+', '', value)
+    value = re.sub(r"[\s\"'<>]+", "", value)
     return value or fallback
 
 
