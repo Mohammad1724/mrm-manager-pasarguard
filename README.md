@@ -27,7 +27,7 @@
 ## 📥 نصب
 
 ```bash
-sudo bash -c "$(curl -sL https://raw.githubusercontent.com/Mohammad1724/mrm-ssl-pasarguard/main/manager/install.sh)"
+sudo bash -c "$(curl -sL https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main/manager/install.sh)"
 ```
 
 بعد از نصب:
