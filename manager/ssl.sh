@@ -61,12 +61,12 @@ readonly HTTPS_PORT=443
 # GLOBAL STATE (Managed carefully)
 # ═══════════════════════════════════════════════════════════════════════════
 
-declare -g PANEL_DIR=""
-declare -g PANEL_DEF_CERTS=""
-declare -g PANEL_ENV=""
-declare -g NODE_DIR=""
-declare -g NODE_DEF_CERTS=""
-declare -g NODE_ENV=""
+declare -g PANEL_DIR="${PANEL_DIR:-}"
+declare -g PANEL_DEF_CERTS="${PANEL_DEF_CERTS:-}"
+declare -g PANEL_ENV="${PANEL_ENV:-}"
+declare -g NODE_DIR="${NODE_DIR:-}"
+declare -g NODE_DEF_CERTS="${NODE_DEF_CERTS:-}"
+declare -g NODE_ENV="${NODE_ENV:-}"
 
 # Service states - use local in functions when possible
 declare -g _SERVICES_STOPPED=()
@@ -77,9 +77,21 @@ declare -g _SERVICES_STOPPED=()
 
 _load_external_modules() {
     local modules=("utils.sh" "ui.sh")
+    local module path should_load
     for module in "${modules[@]}"; do
-        local path="${CONFIG_DIR}/${module}"
-        if [[ -f "$path" && -r "$path" ]]; then
+        path="${CONFIG_DIR}/${module}"
+        should_load=false
+
+        case "$module" in
+            utils.sh)
+                declare -f load_panel_config >/dev/null 2>&1 || should_load=true
+                ;;
+            ui.sh)
+                declare -f ui_header >/dev/null 2>&1 || should_load=true
+                ;;
+        esac
+
+        if [[ "$should_load" == "true" && -f "$path" && -r "$path" ]]; then
             # shellcheck source=/dev/null
             source "$path"
         fi
