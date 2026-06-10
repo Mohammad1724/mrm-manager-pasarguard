@@ -1,6 +1,7 @@
 #!/bin/bash
 
 if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
+if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manager/safe_ops.sh ]; then source /opt/mrm-manager/safe_ops.sh; fi
 
 WWW_DIR="/var/www/html"
 
@@ -254,6 +255,12 @@ HTMLEOF
         return
     fi
 
+    if declare -f mrm_create_restore_point >/dev/null 2>&1; then
+        local RESTORE_POINT_ID
+        RESTORE_POINT_ID="$(mrm_create_restore_point "site-update" "nginx" "$WWW_DIR" "/etc/nginx/sites-available/default")"
+        [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point created: $RESTORE_POINT_ID${NC}"
+    fi
+
     DEFAULT_CONF_BACKUP=$(mktemp /tmp/mrm-nginx-default.XXXXXX 2>/dev/null || true)
     if [ -n "$DEFAULT_CONF_BACKUP" ] && [ -f "$DEFAULT_CONF" ]; then
         cp "$DEFAULT_CONF" "$DEFAULT_CONF_BACKUP"
@@ -332,6 +339,12 @@ edit_site() {
     local INDEX_BACKUP
 
     if [ -f "$WWW_DIR/index.html" ]; then
+        if declare -f mrm_create_restore_point >/dev/null 2>&1; then
+            local RESTORE_POINT_ID
+            RESTORE_POINT_ID="$(mrm_create_restore_point "site-edit" "nginx" "$WWW_DIR/index.html")"
+            [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point created: $RESTORE_POINT_ID${NC}"
+        fi
+
         TMP_DIR=$(mktemp -d /tmp/mrm-site-edit.XXXXXX 2>/dev/null)
         INDEX_BACKUP="$TMP_DIR/index.html.bak"
         [ -n "$TMP_DIR" ] && cp "$WWW_DIR/index.html" "$INDEX_BACKUP" 2>/dev/null || true
