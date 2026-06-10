@@ -34,6 +34,7 @@ load_required_module "/opt/mrm-manager/theme.sh"
 load_required_module "/opt/mrm-manager/settings.sh"
 load_required_module "/opt/mrm-manager/diagnostics.sh"
 load_required_module "/opt/mrm-manager/offline.sh"
+load_required_module "/opt/mrm-manager/safe_ops.sh"
 load_required_module "/opt/mrm-manager/migrator.sh"
 load_required_module "/opt/mrm-manager/mirza.sh"
 
@@ -420,10 +421,11 @@ tools_menu() {
         echo "4) ⚙️  Settings Center"
         echo "5) 🩺 Diagnostics & Self-Heal"
         echo "6) 🇮🇷 Iran / Offline Mode"
-        echo "7) 🔄 Migration (Pasarguard → Rebecca)"
+        echo "7) ♻️  Restore Points & Rollback"
+        echo "8) 🔄 Migration (Pasarguard → Rebecca)"
         echo ""
-        echo "8) ⚡ Optimize Network (BBR)"
-        echo "9) 🔧 Auto Fix"
+        echo "9) ⚡ Optimize Network (BBR)"
+        echo "10) 🔧 Auto Fix"
         echo ""
         echo "0) ↩️  Back"
         echo ""
@@ -436,9 +438,10 @@ tools_menu() {
             4) settings_menu ;;
             5) diagnostics_menu ;;
             6) offline_menu ;;
-            7) migrator_menu ;;
-            8) optimize_network ;;
-            9) auto_fix ;;
+            7) safe_ops_menu ;;
+            8) migrator_menu ;;
+            9) optimize_network ;;
+            10) auto_fix ;;
             0) return ;;
             *) invalid_menu_option ;;
         esac
