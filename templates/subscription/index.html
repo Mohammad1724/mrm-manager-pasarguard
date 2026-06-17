@@ -154,8 +154,9 @@
         .btn-tooltip{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%) scale(0.9);background:var(--bg-raised);color:var(--text-secondary);font-size:11px;font-weight:500;padding:6px 12px;border-radius:8px;box-shadow:var(--shadow-soft);white-space:nowrap;opacity:0;pointer-events:none;transition:all 0.2s ease;z-index:10}
         .btn-tooltip::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:var(--bg-raised)}
         .btn:hover .btn-tooltip{opacity:1;transform:translateX(-50%) scale(1)}
-        .btn-close-modal{background:var(--bg-inset)!important;box-shadow:var(--shadow-inset)!important;color:var(--text-dim)!important;font-size:12px!important}
-        .btn-close-modal:hover{color:var(--text-secondary)!important}
+        .btn-close-modal{background:var(--bg-card)!important;box-shadow:var(--shadow-btn)!important;color:var(--text-secondary)!important;border:1px solid var(--border)!important;font-size:12px!important}
+        .btn-close-modal:hover{color:var(--accent)!important}
+        .btn-close-modal:active{box-shadow:var(--shadow-btn-active)!important}
 
         /* Btn text span for copy feedback */
         .btn-label{pointer-events:none}
@@ -610,15 +611,18 @@
         if(navigator.clipboard){navigator.clipboard.writeText(text).then(onDone).catch(function(){fbCopy(text,onDone)})}else{fbCopy(text,onDone)}
     };
 
-    window.openModal=function(id){if(id==='osModal'){document.getElementById('osSelectView').style.display='block';document.getElementById('androidAppsView').style.display='none';document.getElementById('iosAppsView').style.display='none'}document.getElementById(id).classList.add('show')};
-    window.closeModal=function(id){document.getElementById(id).classList.remove('show')};
-    document.querySelectorAll('.modal').forEach(function(m){m.addEventListener('click',function(e){if(e.target===m)m.classList.remove('show')})});
-    window.showOsApps=function(os){document.getElementById('osSelectView').style.display='none';document.getElementById(os==='android'?'androidAppsView':'iosAppsView').style.display='block'};
+    function resetOsModalViews(){document.getElementById('osSelectView').style.display='block';document.getElementById('androidAppsView').style.display='none';document.getElementById('iosAppsView').style.display='none'}
+    window.openModal=function(id){if(id==='osModal')resetOsModalViews();document.getElementById(id).classList.add('show')};
+    window.closeModal=function(id){var modal=document.getElementById(id);if(!modal)return;modal.classList.remove('show');if(id==='osModal')resetOsModalViews()};
+    document.querySelectorAll('.modal').forEach(function(m){m.addEventListener('click',function(e){if(e.target===m)closeModal(m.id)})});
+    document.querySelectorAll('.modal .modal-list a.modal-item[target="_blank"]').forEach(function(link){link.addEventListener('click',function(){var modal=link.closest('.modal');if(modal)closeModal(modal.id)})});
+    window.showOsApps=function(os){document.getElementById('osSelectView').style.display='none';document.getElementById('androidAppsView').style.display=os==='android'?'block':'none';document.getElementById('iosAppsView').style.display=os==='ios'?'block':'none'};
     window.openSmartConnect=function(){if(userOS==='android'){openModal('osModal');showOsApps('android')}else if(userOS==='ios'){openModal('osModal');showOsApps('ios')}else{openModal('osModal')}};
 
     window.openDeepLink=function(app){
         var url=subUrl,enc=encodeURIComponent(url),name=encodeURIComponent(document.title),b64=btoa(url),link='';
         switch(app){case 'v2rayng':link='v2rayng://install-sub?url='+enc+'&name='+name;break;case 'hiddify':link='hiddify://import/'+url;break;case 'v2raytun':link='v2raytun://import/'+b64;break;case 'happ':link='happ://add/'+b64;break;case 'v2box':link='v2box://install-sub?url='+enc+'&name='+name;break;case 'streisand':link='streisand://import/'+url;break;case 'shadowrocket':link='sub://'+b64+'#'+name;break;case 'stash':link='stash://install-config?url='+enc+'&name='+name;break;case 'foxray':link='foxray://import/'+url;break;default:link=url}
+        closeModal('osModal');
         window.location.href=link;
     };
 
@@ -720,5 +724,5 @@
     var resizeTimer;window.addEventListener('resize',function(){clearTimeout(resizeTimer);resizeTimer=setTimeout(function(){fetchChart(currentRange)},250)});
 })();
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a08eb4914aacd161',t:'MTc4MDk5MzEwMw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
