@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM MANAGER v1.0.3 - NO HANG - Minimal dashboard
+# MRM Manager
 
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then echo "MRM Manager $(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.0.3)"; exit 0; fi
 [[ "$1" == "doctor" ]] && exec bash /opt/mrm-manager/diagnostics.sh doctor
