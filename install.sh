@@ -1,22 +1,14 @@
 #!/bin/bash
-# MRM Manager Installer v1.0.2 - Fix prompt + fix hang
+# MRM Manager Installer v1.0.2 - NO AUTO RUN (Fix hang)
 
 INSTALL_DIR="/opt/mrm-manager"
 REPO_BASE_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main"
 MANAGER_REPO_URL="$REPO_BASE_URL/manager"
 TEMPLATE_REPO_URL="$REPO_BASE_URL/templates/subscription/index.html"
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'
 
-if [ "$EUID" -ne 0 ]; then
-    echo -e "${RED}Please run as root (sudo)${NC}"
-    exit 1
-fi
+[ "$EUID" -ne 0 ] && { echo -e "${RED}Please run as root${NC}"; exit 1; }
 
 echo -e "${CYAN}╔══════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║      MRM Manager Installer v1.0.2            ║${NC}"
@@ -51,24 +43,17 @@ install_file() {
         return 0
     else
         rm -f "$TARGET_PATH"
-        if [[ "$FILE" == "VERSION" ]]; then
-            echo "1.0.2" > "$TARGET_PATH"
-            echo -e "  ${GREEN}✔${NC} Created: $FILE"
-            return 0
-        fi
+        if [[ "$FILE" == "VERSION" ]]; then echo "1.0.2" > "$TARGET_PATH"; echo -e "  ${GREEN}✔${NC} Created: $FILE"; return 0; fi
         echo -e "  ${RED}✘${NC} Failed: $FILE"
         return 1
     fi
 }
 
-# Silent cleanup
 rm -f "$INSTALL_DIR/site.sh" "$INSTALL_DIR/port_manager.sh" "$INSTALL_DIR/migrator.sh" "$INSTALL_DIR/inbound.sh" 2>/dev/null
 rm -rf "$INSTALL_DIR/inbound" 2>/dev/null
 
 echo -e "${BLUE}[2/4] Installing core files v1.0.2...${NC}"
-for FILE in "${FILES[@]}"; do
-    install_file "$FILE" || exit 1
-done
+for FILE in "${FILES[@]}"; do install_file "$FILE" || exit 1; done
 
 echo ""
 echo -e "${BLUE}[3/4] Installing optional files...${NC}"
@@ -97,13 +82,15 @@ echo -e "${GREEN}✔ MRM Manager v1.0.2 installed${NC}"
 echo -e "${CYAN}Type 'mrm' to run${NC}"
 echo ""
 
-# FIX 1: Ask with timeout, no hang
-read -t 10 -p "Run MRM Manager now? (y/n): " RUN_NOW || RUN_NOW="n"
+# FIX: Ask but DO NOT auto-run main.sh to avoid hang
+# Just ask and exit, user can run mrm manually
+read -t 15 -p "Run MRM Manager now? (y/n): " RUN_NOW || RUN_NOW="n"
 echo ""
 if [[ "$RUN_NOW" =~ ^[Yy]$ ]]; then
-    # FIX 2: Run with SKIP_DEPS to avoid apt hang on first run after install
-    echo -e "${BLUE}Starting MRM Manager...${NC}"
-    MRM_SKIP_DEPS=1 bash "$INSTALL_DIR/main.sh" || bash "$INSTALL_DIR/main.sh"
+    echo -e "${GREEN}Please run 'mrm' to start MRM Manager${NC}"
+    echo -e "${CYAN}Command: mrm${NC}"
+else
+    echo -e "${CYAN}You can start it later with: mrm${NC}"
 fi
 
 exit 0
