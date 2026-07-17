@@ -55,7 +55,7 @@ chmod +x /usr/local/bin/mrm
 
 echo ""
 echo -e "${GREEN}✔ MRM Manager v1.0.4 installed${NC}"
-echo -e "${CYAN}Type 'mrm' to run - Fixed no hang${NC}"
+echo -e "${CYAN}Type 'mrm' to run${NC}"
 echo ""
 
 read -t 10 -p "Run MRM Manager now? (y/n): " RUN_NOW || RUN_NOW="n"
