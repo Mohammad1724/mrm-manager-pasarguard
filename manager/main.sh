@@ -175,9 +175,6 @@ main_menu() {
         echo "║      MRM Manager v$VER                      ║"
         echo "╚══════════════════════════════════════════════╝"
         echo ""
-        echo "Panel: ${PANEL_DIR:-/opt/pasarguard} | Config: $(cat /opt/mrm-manager/panel.conf 2>/dev/null || echo pasarguard)"
-        echo "Version: $VER | Type: mrm --version for info"
-        echo ""
         # NO heavy docker checks here to avoid hang
         mrm_main_dashboard
         echo "1) 🔐 SSL Certificates"
