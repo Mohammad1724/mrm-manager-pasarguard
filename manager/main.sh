@@ -15,7 +15,6 @@ load_required_module "/opt/mrm-manager/ssl.sh"
 load_required_module "/opt/mrm-manager/backup.sh"
 load_required_module "/opt/mrm-manager/domain_separator.sh"
 load_required_module "/opt/mrm-manager/theme.sh"
-load_required_module "/opt/mrm-manager/settings.sh"
 load_required_module "/opt/mrm-manager/diagnostics.sh"
 load_required_module "/opt/mrm-manager/offline.sh"
 load_required_module "/opt/mrm-manager/safe_ops.sh"
@@ -142,20 +141,18 @@ tools_menu() {
         echo ""
         echo "1) 🌐 Domain Separator"
         echo "2) 🎨 Theme Manager"
-        echo "3) ⚙️  Settings"
-        echo "4) 🩺 System Diagnostics"
-        echo "5) 🇮🇷 Iran Mode"
-        echo "6) 📊 Monitor"
+        echo "3) 🩺 System Diagnostics"
+        echo "4) 🇮🇷 Iran Mode"
+        echo "5) 📊 Monitor"
         echo ""
         echo "0) ↩️  Back"
         read -p "Select: " OPT
         case $OPT in
             1) bash /opt/mrm-manager/domain_separator.sh || echo "Domain Separator could not be started" ;;
             2) bash /opt/mrm-manager/theme.sh || echo "Theme Manager could not be started" ;;
-            3) bash /opt/mrm-manager/settings.sh || echo "Settings could not be started" ;;
-            4) bash /opt/mrm-manager/diagnostics.sh ;;
-            5) bash /opt/mrm-manager/offline.sh ;;
-            6) bash /opt/mrm-manager/monitor.sh menu ;;
+            3) bash /opt/mrm-manager/diagnostics.sh ;;
+            4) bash /opt/mrm-manager/offline.sh ;;
+            5) bash /opt/mrm-manager/monitor.sh menu ;;
             0) return ;;
         esac
     done
