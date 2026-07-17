@@ -24,7 +24,7 @@ set -o pipefail
 # ═══════════════════════════════════════════════════════════════════════════
 
 # Version
-readonly VERSION="4.0.0"
+readonly VERSION="1.0.0"
 
 # Colors
 readonly RED='\033[0;31m'
@@ -59,7 +59,7 @@ readonly HTTP_PORT=80
 readonly HTTPS_PORT=443
 
 # ═══════════════════════════════════════════════════════════════════════════
-# GLOBAL STATE (Managed carefully)
+# GLOBAL STATE
 # ═══════════════════════════════════════════════════════════════════════════
 
 declare -g PANEL_DIR="${PANEL_DIR:-}"
@@ -73,7 +73,7 @@ declare -g NODE_ENV="${NODE_ENV:-}"
 declare -g _SERVICES_STOPPED=()
 
 # ═══════════════════════════════════════════════════════════════════════════
-# LOAD EXTERNAL MODULES (Safe)
+# LOAD EXTERNAL MODULES
 # ═══════════════════════════════════════════════════════════════════════════
 
 _load_external_modules() {
