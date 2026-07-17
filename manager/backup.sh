@@ -240,7 +240,7 @@ SERVER_IP="$(get_server_ip)"
 
 [ -z "$SERVER_IP" ] && SERVER_IP="Unknown"
 
-BACKUP_LABEL="MRM(date '+%Y%m%d-%H%M%S')"
+BACKUP_LABEL="MRM -$(date '+%Y%m%d-%H%M%S')"
 
 CAPTION="✅ MRM Backup
 
