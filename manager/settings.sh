@@ -1,4 +1,5 @@
 #!/bin/bash
+# MRM Manager v1.0.0
 
 if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
 
