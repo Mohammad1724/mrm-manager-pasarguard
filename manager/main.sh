@@ -95,10 +95,7 @@ mrm_main_dashboard() {
         nginx_status="$(mrm_main_status "Running" "Stopped" false)"
     fi
 
-    panel_version="$(mrm_component_version 'pasarguard|panel')"
-    node_version="$(mrm_component_version 'pg-node|pasarguard-node')"
-    backup_status="$(declare -f mrm_latest_backup_text >/dev/null 2>&1 && mrm_latest_backup_text || echo "No backup found")"
-    ssl_status="$(declare -f mrm_ssl_status_text >/dev/null 2>&1 && mrm_ssl_status_text || echo "Not checked")"
+      ssl_status="$(declare -f mrm_ssl_status_text >/dev/null 2>&1 && mrm_ssl_status_text || echo "Not checked")"
 
     if [ -f "${TG_CONFIG:-/root/.mrm_telegram}" ]; then
         telegram_status="${GREEN}● Configured${NC}"
@@ -107,11 +104,10 @@ mrm_main_dashboard() {
     fi
 
     echo -e "${CYAN}────────────────── System Status ──────────────────${NC}"
-    echo -e "${BLUE}Panel:${NC}    ${CYAN}${panel_name}${NC}  ${panel_status}  ${BLUE}Version:${NC} ${panel_version}"
-    echo -e "${BLUE}Node:${NC}     ${node_status}  ${BLUE}Version:${NC} ${node_version}"
+    echo -e "${BLUE}Panel:${NC}    ${CYAN}${panel_name}${NC}  ${panel_status}"
+    echo -e "${BLUE}Node:${NC}     ${node_status}"
     echo -e "${BLUE}Nginx:${NC}    ${nginx_status}"
     echo -e "${BLUE}SSL:${NC}      ${ssl_status}"
-    echo -e "${BLUE}Backup:${NC}   ${backup_status}"
     echo -e "${BLUE}Telegram:${NC} ${telegram_status}"
     echo -e "${CYAN}───────────────────────────────────────────────────${NC}"
     echo ""
@@ -120,7 +116,8 @@ mrm_main_dashboard() {
 panel_menu() {
     while true; do
         clear
-        echo "=== 🎛️  PANEL CONTROL v1.0.1 - $PANEL_DIR ==="
+        echo "=== 🎛️  PANEL CONTROL v1.0.1 ==="
+        echo ""
         echo "1) 🔄 Restart Panel"
         echo "2) ⏹️  Stop Panel"
         echo "3) ▶️  Start Panel"
@@ -142,6 +139,7 @@ tools_menu() {
     while true; do
         clear
         echo "=== 🛠️  TOOLS v1.0.1 ==="
+        echo ""
         echo "1) 🌐 Domain Separator"
         echo "2) 🎨 Theme Manager"
         echo "3) ⚙️  Settings"
