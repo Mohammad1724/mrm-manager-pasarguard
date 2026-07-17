@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager
+# MRM Manager v1.0.1
 
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then echo "MRM Manager $(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.0.3)"; exit 0; fi
 [[ "$1" == "doctor" ]] && exec bash /opt/mrm-manager/diagnostics.sh doctor
@@ -39,7 +39,7 @@ auto_fix() { echo "Auto Fix done"; sleep 1; }
 panel_menu() {
     while true; do
         clear
-        echo "=== PANEL CONTROL v1.0.3 - $PANEL_DIR ==="
+        echo "=== PANEL CONTROL v1.0.1 - $PANEL_DIR ==="
         echo "1) Restart Panel"; echo "2) Stop Panel"; echo "3) Start Panel"; echo "4) Logs"; echo "0) Back"; read -p "Select: " OPT
         case $OPT in
             1) (cd "$PANEL_DIR" && docker compose down && docker compose up -d); read -p "Press Enter..." ;;
@@ -54,7 +54,7 @@ panel_menu() {
 tools_menu() {
     while true; do
         clear
-        echo "=== TOOLS v1.0.3 ==="
+        echo "=== TOOLS v1.0.1 ==="
         echo "1) Domain Separator"; echo "2) Theme Manager"; echo "3) Settings"; echo "4) Diagnostics"; echo "5) Iran Mode"; echo "6) Monitor"; echo "7) Doctor"; echo "0) Back"; read -p "Select: " OPT
         case $OPT in
             1) bash /opt/mrm-manager/domain_separator.sh 2>/dev/null || echo "domain_separator not found"; read -p "Enter..." ;;
@@ -99,7 +99,7 @@ main_menu() {
         read -p "Select: " OPT
         case $OPT in
             1) bash /opt/mrm-manager/ssl.sh || { echo "SSL Manager could not be started"; sleep 1; } ;;
-            2) bash /opt/mrm-manager/backup.sh 2>/dev/null || { echo "backup.sh not found"; sleep 1; } ;;
+            2) bash /opt/mrm-manager/backup.sh || { echo "Backup Manager could not be started"; sleep 1; } ;;
             3) panel_menu ;;
             4) tools_menu ;;
             5) bash -c "$(curl -sL https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main/install.sh)" ;;
