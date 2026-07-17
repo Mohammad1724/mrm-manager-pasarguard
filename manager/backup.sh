@@ -240,18 +240,14 @@ SERVER_IP="$(get_server_ip)"
 
 [ -z "$SERVER_IP" ] && SERVER_IP="Unknown"
 
-BACKUP_LABEL="MRM-$(date '+%Y%m%d-%H%M%S')"
+BACKUP_LABEL="MRM-(date '+%Y%m%d-%H%M%S')"
 
 CAPTION="✅ MRM Backup
 
 🖥 ${SERVER_IP}
-
 📅 $(date '+%Y-%m-%d %H:%M')
-
 📦 ${BACKUP_LABEL}
-
 💾 ${FILE_SIZE}
-
 🔧 ${MRM_BACKUP_VERSION}"
         RESULT=$(curl -4 -s -m 600 "${CURL_PROXY_ARGS[@]}" -F chat_id="$CH" -F caption="$CAPTION" -F document=@"$FILE" "https://api.telegram.org/bot$TK/sendDocument")
         log_backup "DEBUG" "Telegram response: $RESULT"
