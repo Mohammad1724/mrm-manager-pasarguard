@@ -284,7 +284,7 @@ EOF
 
 setup_cron() {
     clear
-    ui_header "MONITOR - TELEGRAM ALERTS v1.0.0
+    ui_header "MONITOR - TELEGRAM ALERTS v1.0.0"
     echo "Monitors: Panel Down, CPU>90%, Disk>85%, RAM>90%"
     echo ""
     echo "Current cron status:"
@@ -351,7 +351,7 @@ test_alerts() {
 🧠 RAM: ${RAM}%
 ⏰ $(date '+%Y-%m-%d %H:%M:%S')
 ✅ Alert system is working!
-Version: $(cat /opt/mrm-manager/VERSION 2>/dev/null || echo v1.0.0
+Version: $(cat /opt/mrm-manager/VERSION 2>/dev/null || echo v1.0.0)
 "
     if send_telegram_alert "$MSG"; then
         ui_success "Test alert sent to Telegram!"
@@ -384,7 +384,7 @@ monitor_menu() {
     setup_monitor_config 2>/dev/null || true
     while true; do
         clear
-        ui_header "MONITOR & ALERTS v1.0.0
+        ui_header "MONITOR & ALERTS v1.0.0"
         local PANEL_STATUS=$(get_panel_status)
         local DISK_USAGE=$(get_disk_usage)
         local DISK_FREE=$(get_disk_free)
