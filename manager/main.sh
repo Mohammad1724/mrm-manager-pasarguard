@@ -36,6 +36,87 @@ uninstall_mrm_manager() { echo "Uninstall? Type UNINSTALL"; read -p ": " c; [[ "
 optimize_network() { echo "BBR Enabled (simulated)"; sleep 1; }
 auto_fix() { echo "Auto Fix done"; sleep 1; }
 
+mrm_main_status() {
+    local ok_text="$1"
+    local bad_text="$2"
+    local is_ok="$3"
+
+    if [ "$is_ok" = "true" ]; then
+        printf '%b' "${GREEN}● ${ok_text}${NC}"
+    else
+        printf '%b' "${RED}● ${bad_text}${NC}"
+    fi
+}
+
+mrm_component_version() {
+    local pattern="$1"
+    local image
+
+    image="$(docker ps --format '{{.Names}}|{{.Image}}' 2>/dev/null | grep -iE "$pattern" | head -n1 | cut -d'|' -f2)"
+    if [ -z "$image" ]; then
+        echo "Not available"
+    elif [[ "$image" == *":"* ]]; then
+        echo "${image##*:}"
+    else
+        echo "$image"
+    fi
+}
+
+mrm_main_dashboard() {
+    local panel_name panel_status node_status nginx_status
+    local panel_version node_version backup_status telegram_status ssl_status
+
+    detect_active_panel >/dev/null 2>&1 || true
+    panel_name="$(cat "$CONFIG_FILE" 2>/dev/null || echo "Unknown")"
+
+    if [ -d "${PANEL_DIR:-}" ]; then
+        if declare -f mrm_panel_running >/dev/null 2>&1 && mrm_panel_running; then
+            panel_status="$(mrm_main_status "Running" "Stopped" true)"
+        else
+            panel_status="$(mrm_main_status "Running" "Stopped" false)"
+        fi
+    else
+        panel_status="$(mrm_main_status "Installed" "Not installed" false)"
+    fi
+
+    if [ -d "${NODE_DIR:-}" ]; then
+        if declare -f mrm_node_running >/dev/null 2>&1 && mrm_node_running; then
+            node_status="$(mrm_main_status "Running" "Stopped" true)"
+        else
+            node_status="$(mrm_main_status "Running" "Stopped" false)"
+        fi
+    else
+        node_status="$(mrm_main_status "Installed" "Not installed" false)"
+    fi
+
+    if declare -f mrm_nginx_running >/dev/null 2>&1 && mrm_nginx_running; then
+        nginx_status="$(mrm_main_status "Running" "Stopped" true)"
+    else
+        nginx_status="$(mrm_main_status "Running" "Stopped" false)"
+    fi
+
+    panel_version="$(mrm_component_version 'pasarguard|panel')"
+    node_version="$(mrm_component_version 'pg-node|pasarguard-node')"
+    backup_status="$(declare -f mrm_latest_backup_text >/dev/null 2>&1 && mrm_latest_backup_text || echo "No backup found")"
+    ssl_status="$(declare -f mrm_ssl_status_text >/dev/null 2>&1 && mrm_ssl_status_text || echo "Not checked")"
+
+    if [ -f "${TG_CONFIG:-/root/.mrm_telegram}" ]; then
+        telegram_status="${GREEN}● Configured${NC}"
+    else
+        telegram_status="${YELLOW}● Not configured${NC}"
+    fi
+
+    echo -e "${CYAN}────────────────── System Status ──────────────────${NC}"
+    echo -e "${BLUE}Panel:${NC}    ${CYAN}${panel_name}${NC}  ${panel_status}  ${BLUE}Version:${NC} ${panel_version}"
+    echo -e "${BLUE}Node:${NC}     ${node_status}  ${BLUE}Version:${NC} ${node_version}"
+    echo -e "${BLUE}Nginx:${NC}    ${nginx_status}"
+    echo -e "${BLUE}SSL:${NC}      ${ssl_status}"
+    echo -e "${BLUE}Backup:${NC}   ${backup_status}"
+    echo -e "${BLUE}Telegram:${NC} ${telegram_status}"
+    echo -e "${CYAN}───────────────────────────────────────────────────${NC}"
+    echo ""
+}
+
 panel_menu() {
     while true; do
         clear
@@ -64,21 +145,19 @@ tools_menu() {
         echo "1) 🌐 Domain Separator"
         echo "2) 🎨 Theme Manager"
         echo "3) ⚙️  Settings"
-        echo "4) 🩺 Diagnostics"
+        echo "4) 🩺 System Diagnostics"
         echo "5) 🇮🇷 Iran Mode"
         echo "6) 📊 Monitor"
-        echo "7) 🩺 Doctor"
         echo ""
         echo "0) ↩️  Back"
         read -p "Select: " OPT
         case $OPT in
-            1) bash /opt/mrm-manager/domain_separator.sh 2>/dev/null || echo "domain_separator not found"; read -p "Enter..." ;;
-            2) bash /opt/mrm-manager/theme.sh 2>/dev/null || echo "theme not found"; read -p "Enter..." ;;
-            3) bash /opt/mrm-manager/settings.sh 2>/dev/null || echo "settings not found"; read -p "Enter..." ;;
-            4) bash /opt/mrm-manager/diagnostics.sh 2>/dev/null; read -p "Enter..." ;;
-            5) bash /opt/mrm-manager/offline.sh 2>/dev/null; read -p "Enter..." ;;
-            6) bash /opt/mrm-manager/monitor.sh menu 2>/dev/null; read -p "Enter..." ;;
-            7) bash /opt/mrm-manager/diagnostics.sh doctor; read -p "Enter..." ;;
+            1) bash /opt/mrm-manager/domain_separator.sh || echo "Domain Separator could not be started" ;;
+            2) bash /opt/mrm-manager/theme.sh || echo "Theme Manager could not be started" ;;
+            3) bash /opt/mrm-manager/settings.sh || echo "Settings could not be started" ;;
+            4) bash /opt/mrm-manager/diagnostics.sh ;;
+            5) bash /opt/mrm-manager/offline.sh ;;
+            6) bash /opt/mrm-manager/monitor.sh menu ;;
             0) return ;;
         esac
     done
@@ -102,6 +181,7 @@ main_menu() {
         echo "Version: $VER | Type: mrm --version for info"
         echo ""
         # NO heavy docker checks here to avoid hang
+        mrm_main_dashboard
         echo "1) 🔐 SSL Certificates"
         echo "2) 💾 Backup & Restore"
         echo "3) 🎛️  Panel Control"
