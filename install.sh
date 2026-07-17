@@ -174,10 +174,12 @@ chmod +x /usr/local/bin/mrm
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║        ${GREEN}✔ Installation Complete v1.0.0!${CYAN}      ║${NC}"
+echo -e "${CYAN}║        ${GREEN}✔ Installation Complete v1.0.0 ${CYAN}      ║${NC}"
 echo -e "${CYAN}╠══════════════════════════════════════════════╣${NC}"
 echo -e "${CYAN}║${NC}  Version: ${GREEN}1.0.0${NC} (SemVer)                     ${CYAN}║${NC}"
-echo -e "${CYAN}║${NC}  ╚══════════════════════════════════════════════╝${NC}"
+echo -e "${CYAN}║${NC}  
+
+╚══════════════════════════════════════════════╝${NC}"
 echo ""
 
 read -p "Run MRM Manager now? (y/n): " RUN_NOW
