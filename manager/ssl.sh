@@ -106,10 +106,22 @@ _load_external_modules
 
 if ! declare -f ui_header >/dev/null 2>&1; then
     ui_header() {
+        local title="$1"
+        local width=58
+        local line
+        local padding
+
+        printf -v line '%*s' "$width" ''
+        line=${line// /═}
+        padding=$(( (width - ${#title}) / 2 ))
+        [ "$padding" -lt 1 ] && padding=1
+
         clear
-        echo -e "${CYAN}╔══════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${CYAN}║  ${BOLD}$1${NC}"                                                    ║${NC}"
-        echo -e "${CYAN}╚══════════════════════════════════════════════════════════╝${NC}"
+        echo -e "${CYAN}╔${line}╗${NC}"
+        printf '%b║%*s%b%s%b%*s%b║%b\n' \
+            "$CYAN" "$padding" '' "$BOLD" "$title" "$NC" \
+            "$((width - padding - ${#title}))" '' "$CYAN" "$NC"
+        echo -e "${CYAN}╚${line}╝${NC}"
         echo ""
     }
 fi
