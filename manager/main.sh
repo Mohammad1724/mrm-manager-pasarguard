@@ -79,7 +79,7 @@ main_menu() {
     while true; do
         clear
         local VER=$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.0.3")
-        echo "╔══════════════════════════════════════╗"
+        echo "╔══════════════════════════════════════════════╗"
         echo "║      MRM Manager v$VER        ║"
         echo "╚══════════════════════════════════════════════╝"
         echo ""
