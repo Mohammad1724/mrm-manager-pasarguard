@@ -230,13 +230,29 @@ send_to_telegram() {
     mapfile -t CURL_PROXY_ARGS < <(build_telegram_proxy_args "$PROXY")
     if [ -z "$TK" ] || [ -z "$CH" ]; then log_backup "ERROR" "Invalid Telegram config"; return 1; fi
     if [ -n "$FILE" ] && [ -f "$FILE" ]; then
-        local FILE_SIZE=$(du -h "$FILE" | cut -f1)
-        local CAPTION="✅ MRM Backup
-🖥 $(serverip)
+        local FILE_SIZE
+        local SERVER_IP
+        local BACKUP_LABEL
+        local CAPTION
+
+FILE_SIZE="$(du -h "$FILE" | cut -f1)"
+SERVER_IP="$(get_server_ip)"
+
+[ -z "$SERVER_IP" ] && SERVER_IP="Unknown"
+
+BACKUP_LABEL="MRM-$(date '+%Y%m%d-%H%M%S')"
+
+CAPTION="✅ MRM Backup
+
+🖥 ${SERVER_IP}
+
 📅 $(date '+%Y-%m-%d %H:%M')
-📦 $(basename "$FILE")
-💾 $FILE_SIZE
-🔧 $MRM_BACKUP_VERSION"
+
+📦 ${BACKUP_LABEL}
+
+💾 ${FILE_SIZE}
+
+🔧 ${MRM_BACKUP_VERSION}"
         RESULT=$(curl -4 -s -m 600 "${CURL_PROXY_ARGS[@]}" -F chat_id="$CH" -F caption="$CAPTION" -F document=@"$FILE" "https://api.telegram.org/bot$TK/sendDocument")
         log_backup "DEBUG" "Telegram response: $RESULT"
         if echo "$RESULT" | grep -q '"ok":true'; then log_backup "SUCCESS" "File sent to Telegram: $(basename "$FILE") $FILE_SIZE"; return 0; else log_backup "ERROR" "Failed to send to Telegram: $RESULT"; return 1; fi
