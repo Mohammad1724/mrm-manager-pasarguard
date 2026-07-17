@@ -146,10 +146,6 @@ for FILE in "${OPT_FILES[@]}"; do
 done
 
 echo ""
-echo -e "${YELLOW}Cleaning up old removed modules...${NC}"
-rm -f "$INSTALL_DIR/site.sh" 2>/dev/null && echo -e "  ${GREEN}✔${NC} Removed old site.sh"
-rm -f "$INSTALL_DIR/port_manager.sh" 2>/dev/null && echo -e "  ${GREEN}✔${NC} Removed old port_manager.sh"
-rm -f "$INSTALL_DIR/migrator.sh" 2>/dev/null && echo -e "  ${GREEN}✔${NC} Removed old migrator.sh"
 rm -f "$INSTALL_DIR/inbound.sh" 2>/dev/null
 rm -rf "$INSTALL_DIR/inbound" 2>/dev/null
 
@@ -181,8 +177,7 @@ echo -e "${CYAN}╔════════════════════�
 echo -e "${CYAN}║        ${GREEN}✔ Installation Complete v1.0.0!${CYAN}      ║${NC}"
 echo -e "${CYAN}╠══════════════════════════════════════════════╣${NC}"
 echo -e "${CYAN}║${NC}  Version: ${GREEN}1.0.0${NC} (SemVer)                     ${CYAN}║${NC}"
-echo -e "${CYAN}║${NC}  Next: 1.0.1 patch, 1.1.0 minor, 2.0.0 major ${CYAN}║${NC}"
-echo -e "${CYAN}╚══════════════════════════════════════════════╝${NC}"
+echo -e "${CYAN}║${NC}  ╚══════════════════════════════════════════════╝${NC}"
 echo ""
 
 read -p "Run MRM Manager now? (y/n): " RUN_NOW
