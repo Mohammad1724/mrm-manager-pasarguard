@@ -1,7 +1,13 @@
 #!/bin/bash
 # MRM Manager v1.0.0
 
-if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
+if ! declare -f detect_active_panel >/dev/null 2>&1; then
+    source /opt/mrm-manager/utils.sh
+fi
+
+if ! declare -f ui_header >/dev/null 2>&1; then
+    source /opt/mrm-manager/ui.sh
+fi
 
 settings_telegram_status() {
     if [ -n "${TG_CONFIG:-}" ] && [ -f "$TG_CONFIG" ]; then
