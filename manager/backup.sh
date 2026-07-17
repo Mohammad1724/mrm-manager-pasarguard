@@ -611,7 +611,7 @@ do_backup() {
     
     cat > "$B_PATH/backup_info.txt" << EOF
 ========================================
-MRM BACKUP V1.0.1 $VERSION
+MRM BACKUP V1.0.1
 ========================================
 Backup Date: $(date '+%Y-%m-%d %H:%M:%S')
 Hostname: $(hostname)
@@ -752,7 +752,7 @@ EOF
     if [ "$MODE" != "auto" ]; then
         echo ""
         echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${GREEN}║          ✔ BACKUP V1 COMPLETED                          ║${NC}"
+        echo -e "${GREEN}║          ✔ BACKUP V1.0.1 COMPLETED                      ║${NC}"
         echo -e "${GREEN}╠══════════════════════════════════════════════════════════╣${NC}"
         echo -e "${GREEN}║${NC} File: ${CYAN}$BACKUP_DIR/$B_NAME.tar.gz${NC}"
         echo -e "${GREEN}║${NC} Size: ${CYAN}$FINAL_SIZE${NC} ${YELLOW}(was 31MB)${NC}"
@@ -769,7 +769,7 @@ EOF
 }
 
 # ==========================================
-# RESTORE V1 - BUG FREE, Handles LITE & FULL
+# RESTORE V1.0.1
 # ==========================================
 do_restore() {
     clear
@@ -1109,7 +1109,7 @@ do_restore() {
 
     echo ""
     echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║              ✔ RESTORE V1 COMPLETED!                     ║${NC}"
+    echo -e "${GREEN}║              ✔ RESTORE V1.0.1 COMPLETED!                 ║${NC}"
     echo -e "${GREEN}╠══════════════════════════════════════════════════════════╣${NC}"
     echo -e "${GREEN}║${NC} Server IP: ${CYAN}$NEW_SERVER_IP${NC}"
     echo -e "${GREEN}║${NC} Backup: ${CYAN}$(basename "$SELECTED")${NC}"
@@ -1277,7 +1277,7 @@ debug_backup_size() {
 }
 
 # ==========================================
-# MAIN MENU V1
+# MAIN MENU V1.0.1
 # ==========================================
 backup_menu() {
     init_backup_logging
