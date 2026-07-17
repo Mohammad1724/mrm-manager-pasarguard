@@ -1,4 +1,5 @@
 #!/bin/bash
+# MRM Manager v1.0.0
 
 # ==========================================
 # MRM BACKUP & RESTORE - VERSION 1 (STABLE)
