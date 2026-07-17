@@ -80,7 +80,7 @@ main_menu() {
         clear
         local VER=$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.0.3")
         echo "╔══════════════════════════════════════════════╗"
-        echo "║      MRM Manager v$VER                       ║"
+        echo "║      MRM Manager v$VER                      ║"
         echo "╚══════════════════════════════════════════════╝"
         echo ""
         echo "Panel: ${PANEL_DIR:-/opt/pasarguard} | Config: $(cat /opt/mrm-manager/panel.conf 2>/dev/null || echo pasarguard)"
