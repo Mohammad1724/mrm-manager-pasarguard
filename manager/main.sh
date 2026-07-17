@@ -39,8 +39,14 @@ auto_fix() { echo "Auto Fix done"; sleep 1; }
 panel_menu() {
     while true; do
         clear
-        echo "=== PANEL CONTROL v1.0.1 - $PANEL_DIR ==="
-        echo "1) Restart Panel"; echo "2) Stop Panel"; echo "3) Start Panel"; echo "4) Logs"; echo "0) Back"; read -p "Select: " OPT
+        echo "=== 🎛️  PANEL CONTROL v1.0.1 - $PANEL_DIR ==="
+        echo "1) 🔄 Restart Panel"
+        echo "2) ⏹️  Stop Panel"
+        echo "3) ▶️  Start Panel"
+        echo "4) 📜 View Logs"
+        echo ""
+        echo "0) ↩️  Back"
+        read -p "Select: " OPT
         case $OPT in
             1) (cd "$PANEL_DIR" && docker compose down && docker compose up -d); read -p "Press Enter..." ;;
             2) (cd "$PANEL_DIR" && docker compose down); read -p "Press Enter..." ;;
@@ -54,8 +60,17 @@ panel_menu() {
 tools_menu() {
     while true; do
         clear
-        echo "=== TOOLS v1.0.1 ==="
-        echo "1) Domain Separator"; echo "2) Theme Manager"; echo "3) Settings"; echo "4) Diagnostics"; echo "5) Iran Mode"; echo "6) Monitor"; echo "7) Doctor"; echo "0) Back"; read -p "Select: " OPT
+        echo "=== 🛠️  TOOLS v1.0.1 ==="
+        echo "1) 🌐 Domain Separator"
+        echo "2) 🎨 Theme Manager"
+        echo "3) ⚙️  Settings"
+        echo "4) 🩺 Diagnostics"
+        echo "5) 🇮🇷 Iran Mode"
+        echo "6) 📊 Monitor"
+        echo "7) 🩺 Doctor"
+        echo ""
+        echo "0) ↩️  Back"
+        read -p "Select: " OPT
         case $OPT in
             1) bash /opt/mrm-manager/domain_separator.sh 2>/dev/null || echo "domain_separator not found"; read -p "Enter..." ;;
             2) bash /opt/mrm-manager/theme.sh 2>/dev/null || echo "theme not found"; read -p "Enter..." ;;
@@ -87,14 +102,14 @@ main_menu() {
         echo "Version: $VER | Type: mrm --version for info"
         echo ""
         # NO heavy docker checks here to avoid hang
-        echo "1) SSL Certificates"
-        echo "2) Backup & Restore"
-        echo "3) Panel Control"
-        echo "4) Tools"
-        echo "5) Update"
-        echo "6) Uninstall"
+        echo "1) 🔐 SSL Certificates"
+        echo "2) 💾 Backup & Restore"
+        echo "3) 🎛️  Panel Control"
+        echo "4) 🛠️  Tools"
+        echo "5) 🔄 Update Script"
+        echo "6) 🗑️  Uninstall"
         echo ""
-        echo "0) Exit"
+        echo "0) 🚪 Exit"
         echo ""
         read -p "Select: " OPT
         case $OPT in
