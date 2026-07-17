@@ -108,7 +108,7 @@ if ! declare -f ui_header >/dev/null 2>&1; then
     ui_header() {
         clear
         echo -e "${CYAN}╔══════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${CYAN}║${NC}  ${BOLD}$1${NC}"
+        echo -e "${CYAN}║  ${BOLD}$1${NC}"                                                    ║${NC}"
         echo -e "${CYAN}╚══════════════════════════════════════════════════════════╝${NC}"
         echo ""
     }
@@ -571,10 +571,10 @@ validate_domain_dns() {
     # Check mismatch
     if [[ "$server_ip" != "$domain_ip" ]]; then
         echo -e "${RED}╔══════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${RED}║              ⚠️  DNS MISMATCH WARNING  ⚠️                 ║${NC}"
+        echo -e "${RED}║              ⚠️  DNS MISMATCH WARNING  ⚠️                           ║${NC}"
         echo -e "${RED}╠══════════════════════════════════════════════════════════╣${NC}"
-        echo -e "${RED}║${NC}  Domain IP:  ${YELLOW}$domain_ip${NC}"
-        echo -e "${RED}║${NC}  Server IP:  ${YELLOW}$server_ip${NC}"
+        echo -e "${RED}║${NC}  Domain IP:  ${YELLOW}$domain_ip${NC}"                         ║${NC}"
+        echo -e "${RED}║${NC}  Server IP:  ${YELLOW}$server_ip${NC}"                         ║${NC}"
         echo -e "${RED}╚══════════════════════════════════════════════════════════╝${NC}"
         log_warning "DNS mismatch for $domain"
         
