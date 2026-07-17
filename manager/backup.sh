@@ -2,17 +2,7 @@
 # MRM Manager v1.0.0
 
 # ==========================================
-# MRM BACKUP & RESTORE - VERSION 1 (STABLE)
-# Final Fix for 31MB Issue - Bug Free
-# ==========================================
-# Fixes:
-# - node-data/assets/geoip.dat + geosite.dat (15MB+)
-# - node-data/xray-core/xray binary (25MB+)
-# - panel/backup/backup.zip recursive loop
-# - /etc/letsencrypt full copy (20MB)
-# - /etc/nginx full copy (5MB)
-# Result: 31MB -> 2-5MB, 90% smaller
-# Restore tested: Lite + Full compatible
+# MRM BACKUP & RESTORE - VERSION 1.0.0
 # ==========================================
 
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
@@ -164,7 +154,7 @@ get_server_ip() {
 }
 
 # ==========================================
-# ENV FIXER (from original, bug-free)
+# ENV FIXER
 # ==========================================
 fix_env_file() {
     local ENV_FILE=$1
@@ -241,7 +231,7 @@ send_to_telegram() {
     if [ -z "$TK" ] || [ -z "$CH" ]; then log_backup "ERROR" "Invalid Telegram config"; return 1; fi
     if [ -n "$FILE" ] && [ -f "$FILE" ]; then
         local FILE_SIZE=$(du -h "$FILE" | cut -f1)
-        local CAPTION="✅ MRM Backup V1 Stable
+        local CAPTION="✅ MRM Backup V1.0.0
 🖥 $(hostname)
 📅 $(date '+%Y-%m-%d %H:%M')
 📦 $(basename "$FILE")
