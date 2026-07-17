@@ -42,9 +42,13 @@ echo ""
 echo -e "${BLUE}[3/4] Installing optional files...${NC}"
 curl -sL -f -o "$INSTALL_DIR/index.html" "$REPO_BASE_URL/templates/subscription/index.html" 2>/dev/null && echo -e "  ${GREEN}✔${NC} Downloaded: index.html" || echo -e "  ⚠ Skipped: index.html"
 
+# Remove an old symlink before writing the launcher.
+# Otherwise shell redirection can overwrite /opt/mrm-manager/main.sh.
+rm -f /usr/local/bin/mrm
+
 cat > /usr/local/bin/mrm << 'EOF'
 #!/bin/bash
-if [[ "$1" == "--version" ]]; then echo "MRM Manager $(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.0.3)"; exit 0; fi
+if [[ "$1" == "--version" || "$1" == "-v" ]]; then echo "MRM Manager $(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.0.4)"; exit 0; fi
 exec bash /opt/mrm-manager/main.sh "$@"
 EOF
 chmod +x /usr/local/bin/mrm
