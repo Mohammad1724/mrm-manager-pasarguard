@@ -231,12 +231,11 @@ send_to_telegram() {
     if [ -z "$TK" ] || [ -z "$CH" ]; then log_backup "ERROR" "Invalid Telegram config"; return 1; fi
     if [ -n "$FILE" ] && [ -f "$FILE" ]; then
         local FILE_SIZE=$(du -h "$FILE" | cut -f1)
-        local CAPTION="✅ MRM Backup v1.0.1
-🖥 $(hostname)
+        local CAPTION="✅ MRM Backup
+🖥 $(serverip)
 📅 $(date '+%Y-%m-%d %H:%M')
 📦 $(basename "$FILE")
 💾 $FILE_SIZE
-🚀 Fixed 31MB Issue
 🔧 $MRM_BACKUP_VERSION"
         RESULT=$(curl -4 -s -m 600 "${CURL_PROXY_ARGS[@]}" -F chat_id="$CH" -F caption="$CAPTION" -F document=@"$FILE" "https://api.telegram.org/bot$TK/sendDocument")
         log_backup "DEBUG" "Telegram response: $RESULT"
