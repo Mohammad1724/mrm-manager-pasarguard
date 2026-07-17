@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager Installer v1.0.1 - Balanced (Keep download, remove cleanup messages & hang)
+# MRM Manager Installer v1.0.2 - Fix prompt + fix hang
 
 INSTALL_DIR="/opt/mrm-manager"
 REPO_BASE_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main"
@@ -9,6 +9,7 @@ TEMPLATE_REPO_URL="$REPO_BASE_URL/templates/subscription/index.html"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
@@ -18,7 +19,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 echo -e "${CYAN}╔══════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║      MRM Manager Installer v1.0.1            ║${NC}"
+echo -e "${CYAN}║      MRM Manager Installer v1.0.2            ║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -26,25 +27,11 @@ echo -e "${BLUE}[1/4] Creating directories...${NC}"
 mkdir -p "$INSTALL_DIR"
 
 FILES=(
-    "utils.sh"
-    "ui.sh"
-    "ssl.sh"
-    "backup.sh"
-    "domain_separator.sh"
-    "theme.sh"
-    "settings.sh"
-    "diagnostics.sh"
-    "offline.sh"
-    "safe_ops.sh"
-    "mirza.sh"
-    "monitor.sh"
-    "main.sh"
-    "VERSION"
+    "utils.sh" "ui.sh" "ssl.sh" "backup.sh" "domain_separator.sh"
+    "theme.sh" "settings.sh" "diagnostics.sh" "offline.sh"
+    "safe_ops.sh" "mirza.sh" "monitor.sh" "main.sh" "VERSION"
 )
-
-OPT_FILES=(
-    "index.html"
-)
+OPT_FILES=("index.html")
 
 get_remote_url() {
     case "$1" in
@@ -65,12 +52,8 @@ install_file() {
     else
         rm -f "$TARGET_PATH"
         if [[ "$FILE" == "VERSION" ]]; then
-            echo "1.0.1" > "$TARGET_PATH"
+            echo "1.0.2" > "$TARGET_PATH"
             echo -e "  ${GREEN}✔${NC} Created: $FILE"
-            return 0
-        fi
-        if [[ "$FILE" == "monitor.sh" ]]; then
-            echo -e "  ${GREEN}✔${NC} Skipped: $FILE (will be updated)"
             return 0
         fi
         echo -e "  ${RED}✘${NC} Failed: $FILE"
@@ -78,17 +61,13 @@ install_file() {
     fi
 }
 
-# --- Silent cleanup - NO OUTPUT (Fix) ---
-# Old modules removed silently, no "Cleaning up..." message
+# Silent cleanup
 rm -f "$INSTALL_DIR/site.sh" "$INSTALL_DIR/port_manager.sh" "$INSTALL_DIR/migrator.sh" "$INSTALL_DIR/inbound.sh" 2>/dev/null
 rm -rf "$INSTALL_DIR/inbound" 2>/dev/null
 
-echo -e "${BLUE}[2/4] Installing core files v1.0.1...${NC}"
+echo -e "${BLUE}[2/4] Installing core files v1.0.2...${NC}"
 for FILE in "${FILES[@]}"; do
-    install_file "$FILE" || {
-        echo -e "${RED}Failed: $FILE${NC}"
-        exit 1
-    }
+    install_file "$FILE" || exit 1
 done
 
 echo ""
@@ -99,18 +78,13 @@ for FILE in "${OPT_FILES[@]}"; do
     if curl -s -L -f -o "$TARGET" "$URL" 2>/dev/null; then
         echo -e "  ${GREEN}✔${NC} Downloaded: $FILE"
     else
-        echo -e "  ${YELLOW}⚠${NC} Skipped optional: $FILE"
+        echo -e "  ${YELLOW}⚠${NC} Skipped: $FILE"
     fi
 done
 
-# --- NO SemVer Next message, NO cleaning messages ---
-# Create mrm command
 cat > /usr/local/bin/mrm << 'EOF'
 #!/bin/bash
-if [[ "$1" == "--version" || "$1" == "-v" || "$1" == "version" ]]; then
-    echo "MRM Manager $(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.0.1)"
-    exit 0
-fi
+if [[ "$1" == "--version" || "$1" == "-v" ]]; then echo "MRM Manager $(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.0.2)"; exit 0; fi
 [[ "$1" == "doctor" ]] && exec bash /opt/mrm-manager/diagnostics.sh doctor
 [[ "$1" == "monitor" ]] && exec bash /opt/mrm-manager/monitor.sh
 [[ "$1" == "update" ]] && exec bash -c "$(curl -sL https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main/install.sh)"
@@ -119,7 +93,17 @@ EOF
 chmod +x /usr/local/bin/mrm
 
 echo ""
-echo -e "${GREEN}✔ MRM Manager v1.0.1 installed${NC}"
+echo -e "${GREEN}✔ MRM Manager v1.0.2 installed${NC}"
 echo -e "${CYAN}Type 'mrm' to run${NC}"
-# No prompt "Run MRM Manager now?" - Fix hang
+echo ""
+
+# FIX 1: Ask with timeout, no hang
+read -t 10 -p "Run MRM Manager now? (y/n): " RUN_NOW || RUN_NOW="n"
+echo ""
+if [[ "$RUN_NOW" =~ ^[Yy]$ ]]; then
+    # FIX 2: Run with SKIP_DEPS to avoid apt hang on first run after install
+    echo -e "${BLUE}Starting MRM Manager...${NC}"
+    MRM_SKIP_DEPS=1 bash "$INSTALL_DIR/main.sh" || bash "$INSTALL_DIR/main.sh"
+fi
+
 exit 0
