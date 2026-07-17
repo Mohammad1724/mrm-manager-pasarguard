@@ -25,7 +25,7 @@ mrm
 - 💾 ایجاد، مشاهده و بازگردانی Backup
 - 🤖 ارسال Backup به Telegram و زمان‌بندی آن
 - 🎛️ کنترل سرویس‌های Panel و مشاهده‌ی Logها
-- 🌐 مدیریت Domain Separator و Nginx
+- 🌐 جداسازی لینک‌پنل و لینک‌ساب Domain Separator
 - 🎨 مدیریت Theme
 - 🩺 بررسی سلامت سرویس‌ها و منابع سرور
 - 📊 Monitor و هشدار Telegram
