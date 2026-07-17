@@ -1,20 +1,13 @@
 #!/bin/bash
-# MRM MANAGER v1.0.2 - Fix hang in install_deps + prompt
+# MRM MANAGER v1.0.2 - Fix hang in dashboard
 
-if [[ "$1" == "--version" || "$1" == "-v" || "$1" == "version" ]]; then
-    echo "MRM Manager $(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.0.2)"
-    exit 0
-fi
-if [[ "$1" == "doctor" ]]; then exec bash /opt/mrm-manager/diagnostics.sh doctor "${@:2}"; fi
-if [[ "$1" == "monitor" ]]; then exec bash /opt/mrm-manager/monitor.sh "${@:2}"; fi
-if [[ "$1" == "update" ]]; then bash -c "$(curl -sL https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main/install.sh)"; exit 0; fi
+if [[ "$1" == "--version" || "$1" == "-v" ]]; then echo "MRM Manager $(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.0.2)"; exit 0; fi
+[[ "$1" == "doctor" ]] && exec bash /opt/mrm-manager/diagnostics.sh doctor
+[[ "$1" == "monitor" ]] && exec bash /opt/mrm-manager/monitor.sh
+[[ "$1" == "update" ]] && bash -c "$(curl -sL https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main/install.sh)"; exit 0
 
 bootstrap_error() { echo -e "\033[0;31m[MRM Bootstrap Error]\033[0m $1" >&2; }
-load_required_module() {
-    local MODULE_PATH="$1"
-    [ -r "$MODULE_PATH" ] || { bootstrap_error "Not found: $MODULE_PATH (skip)"; return 1; }
-    source "$MODULE_PATH" || { bootstrap_error "Failed: $MODULE_PATH"; return 1; }
-}
+load_required_module() { [ -r "$1" ] || { bootstrap_error "Not found: $1 (skip)"; return 1; }; source "$1" || { bootstrap_error "Failed: $1"; return 1; }; }
 
 load_required_module "/opt/mrm-manager/utils.sh"
 load_required_module "/opt/mrm-manager/ui.sh"
@@ -34,34 +27,14 @@ detect_active_panel > /dev/null 2>&1 || true
 edit_file() { [ -f "$1" ] && nano "$1" || { ui_error "File not found: $1"; pause; }; }
 invalid_menu_option() { ui_error "Invalid option"; sleep 1; }
 get_panel_compose_file() { for CANDIDATE in "$PANEL_DIR/docker-compose.yml" "$PANEL_DIR/docker-compose.yaml" "$PANEL_DIR/compose.yml" "$PANEL_DIR/compose.yaml"; do [ -f "$CANDIDATE" ] && { printf '%s\n' "$CANDIDATE"; return 0; }; done; return 1; }
-ensure_panel_compose_ready() {
-    detect_active_panel >/dev/null 2>&1 || true
-    [ -z "$PANEL_DIR" ] || [ ! -d "$PANEL_DIR" ] && { ui_error "Panel dir not found: ${PANEL_DIR:-unknown}"; return 1; }
-    command -v docker >/dev/null 2>&1 || { ui_error "Docker not installed"; return 1; }
-    docker compose version >/dev/null 2>&1 || { ui_error "Docker Compose missing"; return 1; }
-    get_panel_compose_file >/dev/null 2>&1 || { ui_error "No compose file in $PANEL_DIR"; return 1; }
-}
+ensure_panel_compose_ready() { detect_active_panel >/dev/null 2>&1 || true; [ -z "$PANEL_DIR" ] || [ ! -d "$PANEL_DIR" ] && { ui_error "Panel dir not found"; return 1; }; command -v docker >/dev/null 2>&1 || { ui_error "Docker not installed"; return 1; }; docker compose version >/dev/null 2>&1 || { ui_error "Compose missing"; return 1; }; get_panel_compose_file >/dev/null 2>&1 || { ui_error "No compose file"; return 1; }; }
 run_panel_compose() { ensure_panel_compose_ready || return 1; (cd "$PANEL_DIR" && docker compose "$@"); }
-edit_panel_compose_file() { local COMPOSE_FILE; COMPOSE_FILE="$(get_panel_compose_file 2>/dev/null)" || { ui_error "No compose file"; pause; return 1; }; edit_file "$COMPOSE_FILE"; }
+edit_panel_compose_file() { local COMPOSE_FILE; COMPOSE_FILE="$(get_panel_compose_file 2>/dev/null)" || { ui_error "No compose"; pause; return 1; }; edit_file "$COMPOSE_FILE"; }
 show_panel_logs() { ensure_panel_compose_ready || { pause; return 1; }; (cd "$PANEL_DIR" && docker compose logs -f); }
-remove_mrm_cron_jobs() {
-    local CURRENT_CRON="$(mktemp /tmp/mrm-cron-current.XXXXXX)" FILTERED_CRON="$(mktemp /tmp/mrm-cron-filtered.XXXXXX)"
-    crontab -l 2>/dev/null > "$CURRENT_CRON" && { grep -vE '(/opt/mrm-manager/|/usr/local/bin/mrm|mrm-manager)' "$CURRENT_CRON" > "$FILTERED_CRON" || true; crontab "$FILTERED_CRON" 2>/dev/null || true; }
-    rm -f "$CURRENT_CRON" "$FILTERED_CRON"
-}
-uninstall_mrm_manager() {
-    clear; ui_header "UNINSTALL MRM MANAGER v1.0.2"
-    echo -e "${RED}Will remove MRM Manager${NC}\n"
-    read -r -p "Type UNINSTALL to continue: " CONFIRM_UNINSTALL
-    [[ "$CONFIRM_UNINSTALL" != "UNINSTALL" ]] && { ui_warning "Cancelled"; pause; return; }
-    read -r -p "Remove Telegram config too? (y/N): " RM_TG
-    ui_spinner_start "Removing cron..."; remove_mrm_cron_jobs; rm -f /etc/cron.d/ssl-auto-renew >/dev/null 2>&1; ui_spinner_stop
-    ui_spinner_start "Removing files..."; rm -f /usr/local/bin/mrm >/dev/null 2>&1; [[ "$RM_TG" =~ ^[Yy]$ ]] && rm -f /root/.mrm_telegram >/dev/null 2>&1; rm -f /var/log/mrm-backup.log /var/log/mrm-monitor.log >/dev/null 2>&1; rm -rf /var/log/ssl-manager /tmp/mrm_workspace /tmp/mrm-monitor-state /opt/mrm-manager >/dev/null 2>&1; ui_spinner_stop
-    ui_success "Uninstall completed"; echo -e "${CYAN}Backups kept: /root/mrm-backups${NC}"; read -p "Press Enter..."; clear; exit 0
-}
+remove_mrm_cron_jobs() { local a="$(mktemp /tmp/mrm-cron-current.XXXXXX)" b="$(mktemp /tmp/mrm-cron-filtered.XXXXXX)"; crontab -l 2>/dev/null > "$a" && { grep -vE '(/opt/mrm-manager/|/usr/local/bin/mrm)' "$a" > "$b" || true; crontab "$b" 2>/dev/null || true; }; rm -f "$a" "$b"; }
+uninstall_mrm_manager() { clear; ui_header "UNINSTALL MRM MANAGER v1.0.2"; echo -e "${RED}Will remove MRM${NC}\n"; read -r -p "Type UNINSTALL: " CONFIRM_UNINSTALL; [[ "$CONFIRM_UNINSTALL" != "UNINSTALL" ]] && { ui_warning "Cancelled"; pause; return; }; read -r -p "Remove Telegram config? (y/N): " RM_TG; ui_spinner_start "Removing cron..."; remove_mrm_cron_jobs; rm -f /etc/cron.d/ssl-auto-renew >/dev/null 2>&1; ui_spinner_stop; ui_spinner_start "Removing files..."; rm -f /usr/local/bin/mrm >/dev/null 2>&1; [[ "$RM_TG" =~ ^[Yy]$ ]] && rm -f /root/.mrm_telegram >/dev/null 2>&1; rm -f /var/log/mrm-backup.log /var/log/mrm-monitor.log >/dev/null 2>&1; rm -rf /var/log/ssl-manager /tmp/mrm_workspace /tmp/mrm-monitor-state /opt/mrm-manager >/dev/null 2>&1; ui_spinner_stop; ui_success "Uninstall done"; echo -e "${CYAN}Backups kept: /root/mrm-backups${NC}"; read -p "Press Enter..."; clear; exit 0; }
 optimize_network() {
-    ui_header "NETWORK OPTIMIZATION"
-    ui_spinner_start "Enabling BBR..."; grep -q "net.core.default_qdisc=fq" /etc/sysctl.conf || echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf; grep -q "net.ipv4.tcp_congestion_control=bbr" /etc/sysctl.conf || echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf; ui_spinner_stop; ui_success "BBR Enabled"
+    ui_header "NETWORK OPTIMIZATION"; ui_spinner_start "Enabling BBR..."; grep -q "net.core.default_qdisc=fq" /etc/sysctl.conf || echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf; grep -q "net.ipv4.tcp_congestion_control=bbr" /etc/sysctl.conf || echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf; ui_spinner_stop; ui_success "BBR Enabled"
     ui_spinner_start "Tuning TCP..."; cat <<EOF > /etc/sysctl.d/99-mrm-speed.conf
 fs.file-max = 1000000
 net.core.rmem_max = 67108864
@@ -79,7 +52,7 @@ net.ipv4.tcp_max_tw_buckets = 5000
 net.ipv4.tcp_mtu_probing = 1
 EOF
     sysctl -p /etc/sysctl.d/99-mrm-speed.conf >/dev/null 2>&1; sysctl --system >/dev/null 2>&1; ui_spinner_stop; ui_success "TCP Tuned"
-    ui_spinner_start "Increasing limits..."; grep -q "^\* soft nofile 1000000" /etc/security/limits.conf || { echo "* soft nofile 1000000" >> /etc/security/limits.conf; echo "* hard nofile 1000000" >> /etc/security/limits.conf; echo "root soft nofile 1000000" >> /etc/security/limits.conf; echo "root hard nofile 1000000" >> /etc/security/limits.conf; }; ui_spinner_stop; ui_success "Limits Increased"; echo ""; ui_success "Complete!"; pause
+    ui_spinner_start "Limits..."; grep -q "^\* soft nofile 1000000" /etc/security/limits.conf || { echo "* soft nofile 1000000" >> /etc/security/limits.conf; echo "* hard nofile 1000000" >> /etc/security/limits.conf; echo "root soft nofile 1000000" >> /etc/security/limits.conf; echo "root hard nofile 1000000" >> /etc/security/limits.conf; }; ui_spinner_stop; ui_success "Limits Increased"; echo ""; ui_success "Complete!"; pause
 }
 auto_fix() {
     local FIREWALL_APPLIED=false ENV_FIXED=false RESTART_TARGET_FOUND=false
@@ -92,40 +65,28 @@ auto_fix() {
     echo ""; ui_success "Auto Fix Complete!"; pause
 }
 panel_menu() {
-    while true; do
-        clear; ui_header "PANEL CONTROL v1.0.2"; detect_active_panel >/dev/null 2>&1 || true
-        echo -e "Active: ${CYAN}$PANEL_DIR${NC} | Ver: $(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.0.2)"; echo ""
-        echo "1) 🔄 Restart Panel"; echo "2) ⏹️  Stop Panel"; echo "3) ▶️  Start Panel"; echo "4) 📋 View Logs"; echo "5) 👤 Create Admin"; echo "6) 🔑 Reset Admin Password"; echo "7) 📝 Edit .env"; echo "8) 📝 Edit docker-compose.yml"; echo ""; echo "0) ↩️  Back"; echo ""; read -p "Select: " OPT
-        case $OPT in
-            1) restart_service "panel"; pause ;; 2) run_panel_compose down && ui_success "Stopped" || ui_error "Failed"; pause ;; 3) run_panel_compose up -d && ui_success "Started" || ui_error "Failed"; pause ;; 4) show_panel_logs ;; 5) admin_create; pause ;; 6) admin_reset; pause ;; 7) edit_file "$PANEL_ENV" ;; 8) edit_panel_compose_file ;; 0) return ;; *) invalid_menu_option ;;
-        esac
+    while true; do clear; ui_header "PANEL CONTROL v1.0.2"; detect_active_panel >/dev/null 2>&1 || true; echo -e "Active: ${CYAN}$PANEL_DIR${NC} | Ver: $(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.0.2)"; echo ""; echo "1) 🔄 Restart Panel"; echo "2) ⏹️  Stop Panel"; echo "3) ▶️  Start Panel"; echo "4) 📋 View Logs"; echo "5) 👤 Create Admin"; echo "6) 🔑 Reset Admin Password"; echo "7) 📝 Edit .env"; echo "8) 📝 Edit docker-compose.yml"; echo ""; echo "0) ↩️  Back"; echo ""; read -p "Select: " OPT
+        case $OPT in 1) restart_service "panel"; pause ;; 2) run_panel_compose down && ui_success "Stopped" || ui_error "Failed"; pause ;; 3) run_panel_compose up -d && ui_success "Started" || ui_error "Failed"; pause ;; 4) show_panel_logs ;; 5) admin_create; pause ;; 6) admin_reset; pause ;; 7) edit_file "$PANEL_ENV" ;; 8) edit_panel_compose_file ;; 0) return ;; *) invalid_menu_option ;; esac
     done
 }
 tools_menu() {
-    while true; do
-        clear; ui_header "TOOLS v1.0.2"
-        echo "1) 🌐 Domain Separator"; echo "2) 🎨 Theme Manager"; echo "3) ⚙️  Settings Center"; echo "4) 🩺 Diagnostics & Doctor"; echo "5) 🇮🇷 Iran / Offline Mode"; echo "6) ♻️  Restore Points"; echo ""; echo "7) ⚡ Optimize Network (BBR)"; echo "8) 🔧 Auto Fix"; echo "9) 🤖 Monitor & Alerts"; echo "10) 🩺 Doctor - Quick Check"; echo ""; echo "0) ↩️  Back"; echo ""; read -p "Select: " OPT
-        case $OPT in
-            1) domain_menu ;; 2) theme_menu ;; 3) settings_menu ;; 4) diagnostics_menu ;; 5) offline_menu ;; 6) safe_ops_menu ;; 7) optimize_network ;; 8) auto_fix ;; 9) bash /opt/mrm-manager/monitor.sh menu 2>/dev/null || { ui_error "monitor.sh not found"; pause; } ;; 10) clear; bash /opt/mrm-manager/diagnostics.sh doctor; pause ;; 0) return ;; *) invalid_menu_option ;;
-        esac
+    while true; do clear; ui_header "TOOLS v1.0.2"; echo "1) 🌐 Domain Separator"; echo "2) 🎨 Theme Manager"; echo "3) ⚙️  Settings Center"; echo "4) 🩺 Diagnostics & Doctor"; echo "5) 🇮🇷 Iran / Offline Mode"; echo "6) ♻️  Restore Points"; echo ""; echo "7) ⚡ Optimize Network (BBR)"; echo "8) 🔧 Auto Fix"; echo "9) 🤖 Monitor & Alerts"; echo "10) 🩺 Doctor - Quick Check"; echo ""; echo "0) ↩️  Back"; echo ""; read -p "Select: " OPT
+        case $OPT in 1) domain_menu ;; 2) theme_menu ;; 3) settings_menu ;; 4) diagnostics_menu ;; 5) offline_menu ;; 6) safe_ops_menu ;; 7) optimize_network ;; 8) auto_fix ;; 9) bash /opt/mrm-manager/monitor.sh menu 2>/dev/null || { ui_error "monitor.sh not found"; pause; } ;; 10) clear; bash /opt/mrm-manager/diagnostics.sh doctor; pause ;; 0) return ;; *) invalid_menu_option ;; esac
     done
 }
 main_menu() {
-    # FIX: Skip deps if env set (avoid hang after install)
-    if [ -z "$MRM_SKIP_DEPS" ]; then
+    # FIX: Skip heavy checks on first run after install to avoid hang
+    if [ -z "$MRM_FIRST_RUN" ]; then
         check_root
-        # FIX: Safe install_deps - no hang
+        # Safe deps check - no hang
         local NEED_INSTALL=false
-        for CMD in certbot nginx python3 sqlite3 docker jq lsof curl nano socat tar unzip; do
-            command -v "$CMD" >/dev/null 2>&1 || NEED_INSTALL=true
-        done
+        for CMD in certbot nginx python3 sqlite3 docker jq lsof curl nano socat tar unzip; do command -v "$CMD" >/dev/null 2>&1 || NEED_INSTALL=true; done
         if [ "$NEED_INSTALL" = true ]; then
             if fuser /var/lib/dpkg/lock >/dev/null 2>&1 || fuser /var/lib/apt/lists/lock >/dev/null 2>&1; then
-                echo -e "${YELLOW}apt is locked, skipping dependency install${NC}"
-                sleep 2
+                echo -e "${YELLOW}apt is locked, skipping dep install${NC}"; sleep 2
             else
                 echo -e "${BLUE}[INFO] Installing dependencies...${NC}"
-                timeout 60 apt-get update -qq >/dev/null 2>&1 || echo -e "${YELLOW}apt update failed/timeout, continuing...${NC}"
+                timeout 60 apt-get update -qq >/dev/null 2>&1 || echo -e "${YELLOW}apt update timeout, continuing...${NC}"
                 timeout 120 apt-get install -y certbot lsof curl nano socat tar python3 nginx unzip jq sqlite3 -qq >/dev/null 2>&1 || true
                 if ! command -v docker >/dev/null 2>&1; then
                     echo -e "${BLUE}[INFO] Installing Docker...${NC}"
@@ -139,8 +100,15 @@ main_menu() {
         clear
         local MRM_VER=$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.0.2")
         ui_header "MRM MANAGER v$MRM_VER" 50
-        ui_status_bar 2>/dev/null || true
-        declare -f mrm_render_home_dashboard >/dev/null 2>&1 && mrm_render_home_dashboard
+        # FIX: Skip heavy docker checks on first run to avoid hang
+        if [ -z "$MRM_FIRST_RUN" ]; then
+            ui_status_bar 2>/dev/null || true
+            declare -f mrm_render_home_dashboard >/dev/null 2>&1 && timeout 5 bash -c 'source /opt/mrm-manager/diagnostics.sh >/dev/null 2>&1; mrm_render_home_dashboard' 2>/dev/null || echo -e "${CYAN}Dashboard loading... (docker may be slow)${NC}"
+        else
+            echo -e "${CYAN}First run mode - Skipping heavy checks to avoid hang${NC}"
+            echo -e "Panel: $PANEL_DIR"
+            echo ""
+        fi
 
         ui_section "MAIN MENU v$MRM_VER"
         echo "1) 🔐 SSL Certificates"
