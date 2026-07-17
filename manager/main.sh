@@ -80,7 +80,7 @@ main_menu() {
         clear
         local VER=$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.0.3")
         echo "╔══════════════════════════════════════╗"
-        echo "║      MRM Manager v$VER - NO HANG       ║"
+        echo "║      MRM Manager v$VER        ║"
         echo "╚══════════════════════════════════════════════╝"
         echo ""
         echo "Panel: ${PANEL_DIR:-/opt/pasarguard} | Config: $(cat /opt/mrm-manager/panel.conf 2>/dev/null || echo pasarguard)"
@@ -88,7 +88,7 @@ main_menu() {
         echo ""
         # NO heavy docker checks here to avoid hang
         echo "1) SSL Certificates"
-        echo "2) Backup & Restore (2MB Fixed)"
+        echo "2) Backup & Restore"
         echo "3) Panel Control"
         echo "4) Tools"
         echo "5) Update"
