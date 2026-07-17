@@ -20,7 +20,7 @@ mkdir -p "$INSTALL_DIR"
 
 FILES=(
     "utils.sh" "ui.sh" "ssl.sh" "backup.sh" "domain_separator.sh"
-    "theme.sh" "settings.sh" "diagnostics.sh" "offline.sh"
+    "theme.sh" "diagnostics.sh" "offline.sh"
     "safe_ops.sh" "mirza.sh" "monitor.sh" "main.sh" "VERSION"
 )
 
