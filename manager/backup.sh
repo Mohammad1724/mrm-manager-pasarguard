@@ -29,7 +29,7 @@ TG_CONFIG="/root/.mrm_telegram"
 TEMP_BASE="/tmp/mrm_workspace"
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 BACKUP_LOG="/var/log/mrm-backup.log"
-VERSION="v9.0-STABLE-V1"
+MRM_BACKUP_VERSION="v9.0-STABLE-V1"
 
 # ==========================================
 # LOGGING
