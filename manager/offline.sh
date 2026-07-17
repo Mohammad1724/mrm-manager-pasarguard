@@ -305,7 +305,7 @@ PYEOF
 offline_show_status() {
     local CODENAME CURRENT_APT CURRENT_DOCKER
     clear
-    ui_header "IRAN / OFFLINE MODE v1.0.0
+    ui_header "IRAN / OFFLINE MODE v1.0.0"
     if ! offline_require_ubuntu; then
         ui_error "This module currently supports Ubuntu only"
         echo ""
@@ -383,7 +383,7 @@ offline_test_mirrors() {
 offline_apply_recommended_apt() {
     local BACKUP_DIR
     clear
-    ui_header "APPLY IRAN APT MIRROR v1.0.0
+    ui_header "APPLY IRAN APT MIRROR v1.0.0"
     if ! offline_require_ubuntu; then
         ui_error "This module currently supports Ubuntu only"
         pause
@@ -444,7 +444,7 @@ offline_apply_recommended_docker() {
 offline_apply_both_recommended() {
     local BACKUP_DIR
     clear
-    ui_header "APPLY IRAN MIRRORS v1.0.0
+    ui_header "APPLY IRAN MIRRORS v1.0.0"
     if ! offline_require_ubuntu; then
         ui_error "This module currently supports Ubuntu only"
         pause
@@ -721,7 +721,7 @@ offline_install_node_local() {
 offline_menu() {
     while true; do
         clear
-        ui_header "IRAN / OFFLINE MODE v1.0.0
+        ui_header "IRAN / OFFLINE MODE v1.0.0"
         echo "1) 🇮🇷 Show Current Mirror Status"
         echo "2) 🧪 Test Iran Mirrors"
         echo "3) 📦 Apply Recommended Ubuntu APT Mirror [Preserves 3rd-party]"
