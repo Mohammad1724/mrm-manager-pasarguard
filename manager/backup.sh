@@ -1291,7 +1291,7 @@ backup_menu() {
     init_backup_logging
     while true; do
         clear
-        ui_header "BACKUP & RESTORE V1 STABLE - $VERSION"
+        ui_header "BACKUP & RESTORE V1.0.1 - $VERSION"
         setup_env
         local BACKUP_COUNT=$(ls "$BACKUP_DIR"/*.tar.gz 2>/dev/null | wc -l)
         local TG_STATUS="${RED}Not Configured${NC}"
@@ -1306,17 +1306,17 @@ backup_menu() {
         echo -e "Panel: ${CYAN}$(basename "$PANEL_DIR")${NC} | IP: ${CYAN}$SERVER_IP${NC} | Version: ${CYAN}$VERSION${NC}"
         echo -e "Backups: ${CYAN}$BACKUP_COUNT${NC} | Last: ${CYAN}$LAST_SIZE${NC} | Telegram: $TG_STATUS | Cron: $CRON_STATUS"
         echo ""
-        echo "1)  📦 Create Backup V1 - Stable (2-5MB) [RECOMMENDED]"
-        echo "2)  📥 Restore from Backup V1 - Stable"
+        echo "1)  📦 Create Backup"
+        echo "2)  📥 Restore from Backup"
         echo "3)  📋 List All Backups"
         echo "4)  🗑️  Delete Backup"
         echo "5)  🤖 Setup Telegram Bot"
         echo "6)  🧪 Test Telegram"
         echo "7)  ❌ Remove Telegram Settings"
-        echo "8)  ⏰ Setup Cron Scheduler (V1)"
+        echo "8)  ⏰ Setup Cron Scheduler"
         echo "9)  🔧 Run Smart Fix Only"
         echo "10) 📋 View Logs"
-        echo "11) 🔍 Analyze Size (Find 31MB cause)"
+        echo "11) 🔍 Analyze Size"
         echo ""
         echo "0)  ↩️  Back to Main"
         echo ""
