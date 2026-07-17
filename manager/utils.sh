@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager utils.sh v1.0.3 - Fix hang on no panel (no prompt)
+# MRM Manager utils.sh v1.0.3
 
 export RED='\033[0;31m'
 export GREEN='\033[0;32m'
