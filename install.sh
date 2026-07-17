@@ -176,7 +176,7 @@ echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}║        ${GREEN}✔ Installation Complete v1.0.0 ${CYAN}      ║${NC}"
 echo -e "${CYAN}╠══════════════════════════════════════════════╣${NC}"
-echo -e "${CYAN}║${NC}  Version: ${GREEN}1.0.0${NC} (SemVer)                     ${CYAN}║${NC}"
+echo -e "${CYAN}║${NC}  Version: ${GREEN}1.0.0${NC}                     ${CYAN}║${NC}"
 echo -e "${CYAN}║${NC}  
 
 ╚══════════════════════════════════════════════╝${NC}"
