@@ -1,7 +1,8 @@
 #!/bin/bash
+# MRM Manager v1.0.0
 
 # ═══════════════════════════════════════════════════════════════════════════
-# SSL MANAGEMENT MODULE v4.0 (Production Ready)
+# SSL MANAGEMENT MODULE v1.0.0
 # ═══════════════════════════════════════════════════════════════════════════
 # Author: MRM Manager Team
 # License: MIT
