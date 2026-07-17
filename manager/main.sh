@@ -98,7 +98,7 @@ main_menu() {
         echo ""
         read -p "Select: " OPT
         case $OPT in
-            1) bash /opt/mrm-manager/ssl.sh 2>/dev/null || { echo "ssl.sh not found"; sleep 1; } ;;
+            1) bash /opt/mrm-manager/ssl.sh || { echo "SSL Manager could not be started"; sleep 1; } ;;
             2) bash /opt/mrm-manager/backup.sh 2>/dev/null || { echo "backup.sh not found"; sleep 1; } ;;
             3) panel_menu ;;
             4) tools_menu ;;
