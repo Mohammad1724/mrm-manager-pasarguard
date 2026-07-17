@@ -764,14 +764,7 @@ EOF
         fi
         echo -e "${GREEN}║${NC} Fixes: ${GREEN}geoip, xray binary, backup.zip loop${NC}"
         echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
-        echo ""
-        echo -e "${CYAN}Fixed Issues:${NC}"
-        echo -e "  ✔ node-data/assets/geoip.dat, geosite.dat excluded"
-        echo -e "  ✔ node-data/xray-core/xray binary excluded (25MB)"
-        echo -e "  ✔ panel/backup/backup.zip loop removed"
-        echo -e "  ✔ /etc/letsencrypt full -> only data/certs"
-        echo -e "  ✔ /etc/nginx full -> only panel_separate.conf"
-        echo ""
+                echo ""
         pause
     fi
 }
