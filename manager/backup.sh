@@ -496,7 +496,7 @@ do_backup() {
         fi
     fi
 
-    # 2. Panel Essentials - ONLY what's needed (Fix 31MB)
+    # 2. Panel Essentials - ONLY what's needed
     [ "$MODE" != "auto" ] && ui_spinner_start "Backing up panel essentials..."
     
     # .env - most important
@@ -611,7 +611,7 @@ do_backup() {
     
     cat > "$B_PATH/backup_info.txt" << EOF
 ========================================
-MRM BACKUP v1.0.1 - $MRM_BACKUP_VERSION
+MRM BACKUP  - $MRM_BACKUP_VERSION
 ========================================
 Backup Date: $(date '+%Y-%m-%d %H:%M:%S')
 Hostname: $(hostname)
@@ -755,7 +755,7 @@ EOF
         echo -e "${GREEN}║          ✔ BACKUP v1.0.1 COMPLETED!                ║${NC}"
         echo -e "${GREEN}╠══════════════════════════════════════════════════════════╣${NC}"
         echo -e "${GREEN}║${NC} File: ${CYAN}$BACKUP_DIR/$B_NAME.tar.gz${NC}"
-        echo -e "${GREEN}║${NC} Size: ${CYAN}$FINAL_SIZE${NC} ${YELLOW}(was 31MB)${NC}"
+        echo -e "${GREEN}║${NC} Size: ${CYAN}$FINAL_SIZE${NC}"
         echo -e "${GREEN}║${NC} Raw Size: $TOTAL_RAW_SIZE -> Compressed: $FINAL_SIZE"
         if [ "$DB_SUCCESS" = false ]; then
             echo -e "${GREEN}║${NC} Database: ${RED}NOT EXPORTED${NC}"
