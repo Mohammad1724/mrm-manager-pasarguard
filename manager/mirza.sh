@@ -1,4 +1,5 @@
 #!/bin/bash
+# MRM Manager v1.0.0
 
 # --- Colors ---
 RED='\033[0;31m'
