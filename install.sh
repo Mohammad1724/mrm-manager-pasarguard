@@ -21,7 +21,7 @@ mkdir -p "$INSTALL_DIR"
 FILES=(
     "utils.sh" "ui.sh" "ssl.sh" "backup.sh" "domain_separator.sh"
     "theme.sh" "diagnostics.sh" "offline.sh"
-    "safe_ops.sh" "mirza.sh" "monitor.sh" "main.sh" "VERSION"
+    "safe_ops.sh" "mirza.sh" "monitor.sh" "main.sh" "VERSION" "versions.conf"
 )
 
 rm -f "$INSTALL_DIR/site.sh" "$INSTALL_DIR/port_manager.sh" "$INSTALL_DIR/migrator.sh" 2>/dev/null
@@ -29,12 +29,24 @@ rm -f "$INSTALL_DIR/site.sh" "$INSTALL_DIR/port_manager.sh" "$INSTALL_DIR/migrat
 echo -e "${BLUE}[2/4] Installing core files v1.0.4...${NC}"
 for FILE in "${FILES[@]}"; do
     URL="$MANAGER_REPO_URL/$FILE"
-    [ "$FILE" = "VERSION" ] && URL="$REPO_BASE_URL/VERSION"
+    [[ "$FILE" == "VERSION" || "$FILE" == "versions.conf" ]] && URL="$REPO_BASE_URL/$FILE"
     if curl -sL -f -o "$INSTALL_DIR/$FILE" "$URL" 2>/dev/null; then
         chmod +x "$INSTALL_DIR/$FILE" 2>/dev/null
         echo -e "  ${GREEN}✔${NC} Downloaded: $FILE"
     else
-        if [ "$FILE" = "VERSION" ]; then echo "1.0.3" > "$INSTALL_DIR/$FILE"; echo -e "  ${GREEN}✔${NC} Created: $FILE"; else echo -e "  ${RED}✘${NC} Failed: $FILE"; fi
+        if [ "$FILE" = "VERSION" ]; then
+            echo "1.0.4" > "$INSTALL_DIR/$FILE"
+            echo -e "  ${GREEN}✔${NC} Created: $FILE"
+        elif [ "$FILE" = "versions.conf" ]; then
+            cat > "$INSTALL_DIR/$FILE" << 'EOF'
+SSL_VERSION="1.0.1"
+BACKUP_VERSION="1.0.1"
+THEME_VERSION="1.0.1"
+EOF
+            echo -e "  ${GREEN}✔${NC} Created: $FILE"
+        else
+            echo -e "  ${RED}✘${NC} Failed: $FILE"
+        fi
     fi
 done
 
