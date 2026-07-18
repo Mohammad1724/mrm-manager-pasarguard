@@ -4,6 +4,8 @@
 if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
 if ! declare -f ui_header >/dev/null 2>&1 && [ -r /opt/mrm-manager/ui.sh ]; then source /opt/mrm-manager/ui.sh; fi
 if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manager/safe_ops.sh ]; then source /opt/mrm-manager/safe_ops.sh; fi
+[ -r "/opt/mrm-manager/versions.conf" ] && source /opt/mrm-manager/versions.conf
+THEME_VERSION="${THEME_VERSION:-1.0.1}"
 
 # ✅ اطمینان از تشخیص پنل و تنظیم DATA_DIR
 detect_active_panel > /dev/null
@@ -434,7 +436,7 @@ theme_menu() {
         detect_active_panel > /dev/null
         
         echo -e "${BLUE}===========================================${NC}"
-        echo -e "${YELLOW}      THEME MANAGER                        ${NC}"
+        echo -e "${YELLOW}      THEME MANAGER v${THEME_VERSION}               ${NC}"
         echo -e "${BLUE}===========================================${NC}"
         echo -e "Panel: ${CYAN}$PANEL_DIR${NC}"
         echo -e "Data:  ${CYAN}$DATA_DIR${NC}"
@@ -461,3 +463,7 @@ theme_menu() {
         esac
     done
 }
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    theme_menu
+fi
