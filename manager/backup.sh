@@ -235,20 +235,19 @@ send_to_telegram() {
         local BACKUP_LABEL
         local CAPTION
 
-FILE_SIZE="$(du -h "$FILE" | cut -f1)"
-SERVER_IP="$(get_server_ip)"
+        FILE_SIZE="$(du -h "$FILE" | cut -f1)"
+        SERVER_IP="$(get_server_ip)"
+        [ -z "$SERVER_IP" ] && SERVER_IP="Unknown"
 
-[ -z "$SERVER_IP" ] && SERVER_IP="Unknown"
+        BACKUP_LABEL="$(basename "$FILE" .tar.gz)"
 
-BACKUP_LABEL="MRM -$(date '+%Y%m%d-%H%M%S')"
-
-CAPTION="✅ MRM Backup
-
-🖥 ${SERVER_IP}
-📅 $(date '+%Y-%m-%d %H:%M')
+        CAPTION="🛡️ MRM Backup
+━━━━━━━━━━━━━━━━━━
+🌐 ${SERVER_IP}
+🗓️ $(date '+%Y-%m-%d %H:%M')
 📦 ${BACKUP_LABEL}
 💾 ${FILE_SIZE}
-🔧 ${MRM_BACKUP_VERSION}"
+🏷️ ${MRM_BACKUP_VERSION}"
         RESULT=$(curl -4 -s -m 600 "${CURL_PROXY_ARGS[@]}" -F chat_id="$CH" -F caption="$CAPTION" -F document=@"$FILE" "https://api.telegram.org/bot$TK/sendDocument")
         log_backup "DEBUG" "Telegram response: $RESULT"
         if echo "$RESULT" | grep -q '"ok":true'; then log_backup "SUCCESS" "File sent to Telegram: $(basename "$FILE") $FILE_SIZE"; return 0; else log_backup "ERROR" "Failed to send to Telegram: $RESULT"; return 1; fi
@@ -268,7 +267,7 @@ test_telegram() {
     CH=$(grep "TG_CHAT" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
     PROXY=$(grep "TG_PROXY" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
     mapfile -t CURL_PROXY_ARGS < <(build_telegram_proxy_args "$PROXY")
-    RESULT=$(curl -4 -s "${CURL_PROXY_ARGS[@]}" -X POST "https://api.telegram.org/bot$TK/sendMessage" -d chat_id="$CH" -d text="🧪 MRM Backup v1.0.1 Test - $(date '+%Y-%m-%d %H:%M') Size fix verified" 2>&1)
+    RESULT=$(curl -4 -s "${CURL_PROXY_ARGS[@]}" -X POST "https://api.telegram.org/bot$TK/sendMessage" -d chat_id="$CH" -d text="🧪 MRM Backup test - $(date '+%Y-%m-%d %H:%M')" 2>&1)
     ui_spinner_stop
     if echo "$RESULT" | grep -q '"ok":true'; then ui_success "Telegram connection successful!"; return 0; else ui_error "Telegram connection failed!"; echo -e "${YELLOW}Error: $RESULT${NC}"; return 1; fi
 }
@@ -439,19 +438,33 @@ do_backup() {
     init_backup_logging
 
     [ "$MODE" != "auto" ] && clear
-    [ "$MODE" != "auto" ] && ui_header "BACKUP v1.0.1 - $MRM_BACKUP_VERSION"
+    [ "$MODE" != "auto" ] && ui_header "BACKUP v1.0.1"
 
-    log_backup "INFO" "========== Starting backup v1.0.1 ($MRM_BACKUP_VERSION) mode: $MODE =========="
+    log_backup "INFO" "========== Starting backup $MRM_BACKUP_VERSION mode: $MODE =========="
     log_backup "INFO" "PANEL_DIR: $PANEL_DIR DATA_DIR: $DATA_DIR"
 
-    local TS=$(date +%Y%m%d_%H%M%S)
-    local B_NAME="MRM_V1_${TS}"
-    local B_PATH="$TEMP_BASE/$B_NAME"
+    local TS
+    local B_NAME
+    local B_PATH
+    local ARCHIVE_BASE
+    local ARCHIVE_PATH
+    local COPY_NUMBER=2
+
+    TS="$(date +%Y%m%d_%H%M%S)"
+    B_NAME="MRM_V1_${TS}"
+    B_PATH="$TEMP_BASE/$B_NAME"
+    ARCHIVE_BASE="MRM-${TS/_/-}"
 
     # Always clean temp first (avoid leftovers)
     rm -rf "$TEMP_BASE"
     mkdir -p "$B_PATH/database" "$B_PATH/panel" "$B_PATH/data" "$B_PATH/node"
     mkdir -p "$BACKUP_DIR"
+
+    ARCHIVE_PATH="$BACKUP_DIR/${ARCHIVE_BASE}.tar.gz"
+    while [ -e "$ARCHIVE_PATH" ]; do
+        ARCHIVE_PATH="$BACKUP_DIR/${ARCHIVE_BASE}-${COPY_NUMBER}.tar.gz"
+        COPY_NUMBER=$((COPY_NUMBER + 1))
+    done
 
     # 1. Export Database - Core of backup
     [ "$MODE" != "auto" ] && ui_spinner_start "Exporting database..."
@@ -668,7 +681,7 @@ Auto Restore (Recommended):
    - Apply smart fixes
 
 Manual Restore (if needed):
-1. Extract: tar -xzf MRM_V1_*.tar.gz -C /tmp/
+1. Extract: tar -xzf MRM-*.tar.gz -C /tmp/
 2. Panel:
    cp /tmp/MRM_V1_*/panel/.env $PANEL_DIR/.env
    cp /tmp/MRM_V1_*/panel/*.yml $PANEL_DIR/
@@ -725,9 +738,9 @@ EOF
         --exclude='*MRM_*.tar.gz'
     )
 
-    if tar -czf "$BACKUP_DIR/$B_NAME.tar.gz" "${EXCLUDE_ARGS[@]}" -C "$TEMP_BASE" "$B_NAME" 2>/dev/null; then
-        local BACKUP_SIZE=$(du -h "$BACKUP_DIR/$B_NAME.tar.gz" | cut -f1)
-        local BACKUP_SIZE_BYTES=$(stat -c%s "$BACKUP_DIR/$B_NAME.tar.gz" 2>/dev/null || echo "0")
+    if tar -czf "$ARCHIVE_PATH" "${EXCLUDE_ARGS[@]}" -C "$TEMP_BASE" "$B_NAME" 2>/dev/null; then
+        local BACKUP_SIZE=$(du -h "$ARCHIVE_PATH" | cut -f1)
+        local BACKUP_SIZE_BYTES=$(stat -c%s "$ARCHIVE_PATH" 2>/dev/null || echo "0")
         local SAVED_PERCENT=0
         if [ "$SIZE_BEFORE" -gt 0 ]; then
             SAVED_PERCENT=$((100 - BACKUP_SIZE_BYTES * 100 / SIZE_BEFORE))
@@ -744,10 +757,10 @@ EOF
     rm -rf "$TEMP_BASE"
 
     # 9. Send to Telegram - Now small and fast
-    local FINAL_SIZE=$(du -h "$BACKUP_DIR/$B_NAME.tar.gz" | cut -f1)
+    local FINAL_SIZE=$(du -h "$ARCHIVE_PATH" | cut -f1)
     if [ -f "$TG_CONFIG" ]; then
         [ "$MODE" != "auto" ] && ui_spinner_start "Sending v1.0.1 backup to Telegram ($FINAL_SIZE)..."
-        if send_to_telegram "$BACKUP_DIR/$B_NAME.tar.gz"; then
+        if send_to_telegram "$ARCHIVE_PATH"; then
             [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "v1.0.1 backup sent to Telegram! ($FINAL_SIZE)"
         else
             [ "$MODE" != "auto" ] && ui_spinner_stop && ui_warning "Telegram send failed - check log. Size: $FINAL_SIZE"
@@ -757,7 +770,7 @@ EOF
     # 10. Rotate old backups - keep last 7
     ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null | tail -n +8 | xargs rm -f 2>/dev/null || true
 
-    log_backup "SUCCESS" "v1.0.1 backup completed: $B_NAME.tar.gz ($FINAL_SIZE) - Fixed 31MB issue"
+    log_backup "SUCCESS" "v1.0.1 backup completed: $(basename "$ARCHIVE_PATH") ($FINAL_SIZE)"
     log_backup "INFO" "========== Backup v1.0.1 finished =========="
 
     if [ "$MODE" != "auto" ]; then
@@ -765,7 +778,7 @@ EOF
         echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
         echo -e "${GREEN}║          ✔ BACKUP v1.0.1 COMPLETED!                ║${NC}"
         echo -e "${GREEN}╠══════════════════════════════════════════════════════════╣${NC}"
-        echo -e "${GREEN}║${NC} File: ${CYAN}$BACKUP_DIR/$B_NAME.tar.gz${NC}"
+        echo -e "${GREEN}║${NC} File: ${CYAN}$(basename "$ARCHIVE_PATH")${NC}"
         echo -e "${GREEN}║${NC} Size: ${CYAN}$FINAL_SIZE${NC}"
         echo -e "${GREEN}║${NC} Raw Size: $TOTAL_RAW_SIZE -> Compressed: $FINAL_SIZE"
         if [ "$DB_SUCCESS" = false ]; then
