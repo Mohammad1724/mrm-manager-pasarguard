@@ -524,81 +524,176 @@ check_port_availability() {
 # DNS VALIDATION
 # ═══════════════════════════════════════════════════════════════════════════
 
-get_server_ip() {
-    local ip=""
-    
-    # Try multiple sources
-    ip=$(curl -4 -s --connect-timeout "$DNS_TIMEOUT" ifconfig.me 2>/dev/null) ||
-    ip=$(curl -4 -s --connect-timeout "$DNS_TIMEOUT" icanhazip.com 2>/dev/null) ||
-    ip=$(curl -4 -s --connect-timeout "$DNS_TIMEOUT" ipecho.net/plain 2>/dev/null)
-    
-    echo "$ip"
+is_ipv6_address() {
+    local address="$1"
+
+    [[ "$address" == *:* ]] || return 1
+    [[ "$address" =~ ^[0-9A-Fa-f:]+$ ]] || return 1
+    [[ "$address" != *":::"* ]] || return 1
+    return 0
 }
 
-get_domain_ip() {
+get_server_ipv4() {
+    local endpoint candidate
+    local -a endpoints=(
+        "https://api.ipify.org"
+        "https://icanhazip.com"
+        "https://ifconfig.co/ip"
+    )
+
+    for endpoint in "${endpoints[@]}"; do
+        candidate="$(curl -4 -fsS --connect-timeout "$DNS_TIMEOUT" --max-time "$DNS_TIMEOUT" "$endpoint" 2>/dev/null | tr -d '[:space:]')"
+        if validate_ip "$candidate"; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+
+    candidate="$(ip -4 -o addr show scope global 2>/dev/null | awk 'NR==1 {split($4, address, "/"); print address[1]}')"
+    if validate_ip "$candidate"; then
+        echo "$candidate"
+        return 0
+    fi
+
+    return 1
+}
+
+get_server_ipv6() {
+    local endpoint candidate
+    local -a endpoints=(
+        "https://api64.ipify.org"
+        "https://icanhazip.com"
+        "https://ifconfig.co/ip"
+    )
+
+    for endpoint in "${endpoints[@]}"; do
+        candidate="$(curl -6 -fsS --connect-timeout "$DNS_TIMEOUT" --max-time "$DNS_TIMEOUT" "$endpoint" 2>/dev/null | tr -d '[:space:]')"
+        if is_ipv6_address "$candidate"; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+
+    candidate="$(ip -6 -o addr show scope global 2>/dev/null | awk 'NR==1 {split($4, address, "/"); print address[1]}')"
+    if is_ipv6_address "$candidate"; then
+        echo "$candidate"
+        return 0
+    fi
+
+    return 1
+}
+
+get_domain_ipv4() {
     local domain="$1"
-    local ip=""
-    
-    # Try getent first (most reliable)
-    ip=$(getent hosts "$domain" 2>/dev/null | awk '{ print $1 }' | head -1)
-    
-    # Fallback to dig if available
-    if [[ -z "$ip" ]] && command -v dig &>/dev/null; then
-        ip=$(dig +short +timeout="$DNS_TIMEOUT" "$domain" A 2>/dev/null | grep -E '^[0-9]+\.' | head -1)
+    local addresses=""
+
+    if command -v dig >/dev/null 2>&1; then
+        addresses="$(dig +short +timeout="$DNS_TIMEOUT" "$domain" A 2>/dev/null | while IFS= read -r address; do validate_ip "$address" && echo "$address"; done)"
     fi
-    
-    # Fallback to host
-    if [[ -z "$ip" ]] && command -v host &>/dev/null; then
-        ip=$(host -W "$DNS_TIMEOUT" "$domain" 2>/dev/null | grep "has address" | awk '{print $NF}' | head -1)
+
+    if [[ -z "$addresses" ]]; then
+        addresses="$(getent ahostsv4 "$domain" 2>/dev/null | awk '{print $1}' | while IFS= read -r address; do validate_ip "$address" && echo "$address"; done)"
     fi
-    
-    echo "$ip"
+
+    printf '%s\n' "$addresses" | awk 'NF && !seen[$0]++'
+}
+
+get_domain_ipv6() {
+    local domain="$1"
+    local addresses=""
+
+    if command -v dig >/dev/null 2>&1; then
+        addresses="$(dig +short +timeout="$DNS_TIMEOUT" "$domain" AAAA 2>/dev/null | while IFS= read -r address; do is_ipv6_address "$address" && echo "$address"; done)"
+    fi
+
+    if [[ -z "$addresses" ]]; then
+        addresses="$(getent ahostsv6 "$domain" 2>/dev/null | awk '{print $1}' | while IFS= read -r address; do is_ipv6_address "$address" && echo "$address"; done)"
+    fi
+
+    printf '%s\n' "$addresses" | awk 'NF && !seen[$0]++'
+}
+
+all_records_match_server() {
+    local server_address="$1"
+    shift
+    local dns_address
+
+    for dns_address in "$@"; do
+        [[ "$dns_address" == "$server_address" ]] || return 1
+    done
+
+    return 0
 }
 
 validate_domain_dns() {
     local domain="$1"
     local skip_mismatch="${2:-false}"
-    
+    local server_ipv4=""
+    local server_ipv6=""
+    local mismatch=false
+    local -a domain_ipv4=()
+    local -a domain_ipv6=()
+
     ui_info "Validating DNS for: $domain"
-    
-    local server_ip domain_ip
-    server_ip=$(get_server_ip)
-    domain_ip=$(get_domain_ip "$domain")
-    
-    log_info "DNS Check - Domain: $domain, Server IP: $server_ip, Domain IP: $domain_ip"
-    
-    # Check resolution
-    if [[ -z "$domain_ip" ]]; then
-        ui_error "Cannot resolve domain: $domain"
+
+    mapfile -t domain_ipv4 < <(get_domain_ipv4 "$domain")
+    mapfile -t domain_ipv6 < <(get_domain_ipv6 "$domain")
+
+    if [[ ${#domain_ipv4[@]} -eq 0 && ${#domain_ipv6[@]} -eq 0 ]]; then
+        ui_error "Cannot resolve A or AAAA record for: $domain"
         log_error "DNS resolution failed for $domain"
         return 1
     fi
-    
-    # Check IP validity
-    if ! validate_ip "$domain_ip"; then
-        ui_error "Invalid IP resolved for $domain: $domain_ip"
-        return 1
-    fi
-    
-    # Check mismatch
-    if [[ "$server_ip" != "$domain_ip" ]]; then
-        echo -e "${RED}╔══════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${RED}║              ⚠️  DNS MISMATCH WARNING  ⚠️                           ║${NC}"
-        echo -e "${RED}╠══════════════════════════════════════════════════════════╣${NC}"
-        echo -e "${RED}║${NC}  Domain IP:  ${YELLOW}$domain_ip${NC}"                         ║${NC}"
-        echo -e "${RED}║${NC}  Server IP:  ${YELLOW}$server_ip${NC}"                         ║${NC}"
-        echo -e "${RED}╚══════════════════════════════════════════════════════════╝${NC}"
-        log_warning "DNS mismatch for $domain"
-        
-        if [[ "$skip_mismatch" != "true" ]]; then
-            read -r -p "Continue anyway? (y/N): " response
-            [[ ! "$response" =~ ^[Yy]$ ]] && return 1
-            log_warning "User chose to continue despite DNS mismatch"
+
+    server_ipv4="$(get_server_ipv4 2>/dev/null || true)"
+    server_ipv6="$(get_server_ipv6 2>/dev/null || true)"
+
+    log_info "DNS Check - Domain: $domain, Server IPv4: ${server_ipv4:-none}, Server IPv6: ${server_ipv6:-none}, A: ${domain_ipv4[*]:-none}, AAAA: ${domain_ipv6[*]:-none}"
+
+    if [[ ${#domain_ipv4[@]} -gt 0 ]]; then
+        if [[ -z "$server_ipv4" ]]; then
+            ui_error "Domain has an A record, but no public IPv4 was detected on this server."
+            mismatch=true
+        elif ! all_records_match_server "$server_ipv4" "${domain_ipv4[@]}"; then
+            ui_error "One or more A records do not match this server's IPv4."
+            mismatch=true
         fi
-    else
-        ui_success "DNS OK: $domain → $domain_ip"
     fi
-    
+
+    if [[ ${#domain_ipv6[@]} -gt 0 ]]; then
+        if [[ -z "$server_ipv6" ]]; then
+            ui_error "Domain has an AAAA record, but no public IPv6 was detected on this server."
+            mismatch=true
+        elif ! all_records_match_server "$server_ipv6" "${domain_ipv6[@]}"; then
+            ui_error "One or more AAAA records do not match this server's IPv6."
+            mismatch=true
+        fi
+    fi
+
+    if [[ "$mismatch" == "true" ]]; then
+        echo -e "${YELLOW}A records:    ${domain_ipv4[*]:-none}${NC}"
+        echo -e "${YELLOW}AAAA records: ${domain_ipv6[*]:-none}${NC}"
+        echo -e "${YELLOW}Server IPv4:  ${server_ipv4:-none}${NC}"
+        echo -e "${YELLOW}Server IPv6:  ${server_ipv6:-none}${NC}"
+        log_warning "DNS mismatch for $domain"
+
+        if [[ "$skip_mismatch" == "true" ]]; then
+            return 1
+        fi
+
+        read -r -p "Continue anyway? (y/N): " response
+        [[ "$response" =~ ^[Yy]$ ]] || return 1
+        log_warning "User chose to continue despite DNS mismatch"
+    fi
+
+    if [[ ${#domain_ipv4[@]} -gt 0 && ${#domain_ipv6[@]} -gt 0 ]]; then
+        ui_success "DNS OK: $domain (IPv4 and IPv6)"
+    elif [[ ${#domain_ipv6[@]} -gt 0 ]]; then
+        ui_success "DNS OK: $domain (IPv6)"
+    else
+        ui_success "DNS OK: $domain (IPv4)"
+    fi
+
     return 0
 }
 
