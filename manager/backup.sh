@@ -12,6 +12,7 @@ export HOME="${HOME:-/root}"
 if [ -f "/opt/mrm-manager/utils.sh" ]; then source /opt/mrm-manager/utils.sh; fi
 if [ -f "/opt/mrm-manager/ui.sh" ]; then source /opt/mrm-manager/ui.sh; fi
 if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r "/opt/mrm-manager/safe_ops.sh" ]; then source /opt/mrm-manager/safe_ops.sh; fi
+[ -r "/opt/mrm-manager/versions.conf" ] && source /opt/mrm-manager/versions.conf
 
 # Configuration
 BACKUP_DIR="/root/mrm-backups"
@@ -19,7 +20,7 @@ TG_CONFIG="/root/.mrm_telegram"
 TEMP_BASE="/tmp/mrm_workspace"
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 BACKUP_LOG="/var/log/mrm-backup.log"
-MRM_BACKUP_VERSION="v1.0.1"
+MRM_BACKUP_VERSION="v${BACKUP_VERSION:-1.0.1}"
 
 # ==========================================
 # LOGGING
