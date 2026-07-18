@@ -1,7 +1,7 @@
 #!/bin/bash
-# MRM Manager v1.0.1
+# MRM Manager
 
-if [[ "$1" == "--version" || "$1" == "-v" ]]; then echo "MRM Manager $(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.0.3)"; exit 0; fi
+if [[ "$1" == "--version" || "$1" == "-v" ]]; then source /opt/mrm-manager/versions.conf 2>/dev/null || true; echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.0.4)}"; exit 0; fi
 [[ "$1" == "doctor" ]] && exec bash /opt/mrm-manager/diagnostics.sh doctor
 [[ "$1" == "monitor" ]] && exec bash /opt/mrm-manager/monitor.sh
 [[ "$1" == "update" ]] && exec bash -c "$(curl -sL https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main/install.sh)"
@@ -20,6 +20,7 @@ load_required_module "/opt/mrm-manager/offline.sh"
 load_required_module "/opt/mrm-manager/safe_ops.sh"
 load_required_module "/opt/mrm-manager/mirza.sh"
 load_required_module "/opt/mrm-manager/monitor.sh" || true
+[ -r "/opt/mrm-manager/versions.conf" ] && source /opt/mrm-manager/versions.conf
 
 detect_active_panel > /dev/null 2>&1 || true
 
@@ -115,7 +116,7 @@ mrm_main_dashboard() {
 panel_menu() {
     while true; do
         clear
-        echo "=== 🎛️  PANEL CONTROL v1.0.1 ==="
+        echo "=== 🎛️  PANEL CONTROL v${MRM_VERSION:-$VER} ==="
         echo ""
         echo "1) 🔄 Restart Panel"
         echo "2) ⏹️  Stop Panel"
@@ -137,7 +138,7 @@ panel_menu() {
 tools_menu() {
     while true; do
         clear
-        echo "=== 🛠️  TOOLS v1.0.1 ==="
+        echo "=== 🛠️  TOOLS v${MRM_VERSION:-$VER} ==="
         echo ""
         echo "1) 🌐 Domain Separator"
         echo "2) 🎨 Theme Manager"
@@ -167,7 +168,7 @@ main_menu() {
 
     while true; do
         clear
-        local VER=$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.0.3")
+        local VER="${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.0.4")}"
         echo "╔══════════════════════════════════════════════╗"
         echo "║      MRM Manager v$VER                      ║"
         echo "╚══════════════════════════════════════════════╝"
