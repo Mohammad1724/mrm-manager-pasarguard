@@ -1,8 +1,8 @@
 #!/bin/bash
-# MRM Manager Backup v1.0.1
+# MRM Manager Backup v${BACKUP_VERSION}
 
 # ==========================================
-# MRM Backup & Restore v1.0.1
+# MRM Backup & Restore v${BACKUP_VERSION}
 # ==========================================
 
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
@@ -275,7 +275,7 @@ test_telegram() {
 
 setup_telegram() {
     clear
-    ui_header "SETUP TELEGRAM BOT - v1.0.1"
+    ui_header "SETUP TELEGRAM BOT - v${BACKUP_VERSION}"
     echo -e "${CYAN}To get Bot Token:${NC}\n  1. Message @BotFather on Telegram\n  2. Send /newbot and follow instructions\n  3. Copy the token\n"
     echo -e "${CYAN}To get Chat ID:${NC}\n  1. Message @userinfobot on Telegram\n  2. It will show your Chat ID\n"
     read -p "Enter Bot Token: " TK
@@ -431,7 +431,7 @@ export_postgresql_database() {
 }
 
 # ==========================================
-# Backup v1.0.1
+# Backup v${BACKUP_VERSION}
 # ==========================================
 do_backup() {
     local MODE="${1:-manual}"
@@ -439,7 +439,7 @@ do_backup() {
     init_backup_logging
 
     [ "$MODE" != "auto" ] && clear
-    [ "$MODE" != "auto" ] && ui_header "BACKUP v1.0.1"
+    [ "$MODE" != "auto" ] && ui_header "BACKUP v${BACKUP_VERSION}"
 
     log_backup "INFO" "========== Starting backup $MRM_BACKUP_VERSION mode: $MODE =========="
     log_backup "INFO" "PANEL_DIR: $PANEL_DIR DATA_DIR: $DATA_DIR"
@@ -649,7 +649,7 @@ Database Exported: $DB_SUCCESS
 Database Size: $DB_SIZE
 Raw Size Before Compression: $TOTAL_RAW_SIZE
 Version: $MRM_BACKUP_VERSION
-Backup profile: v1.0.1
+Backup profile: v${BACKUP_VERSION}
 Changes from v7.9:
 - Excluded node-data/assets/geoip.dat, geosite.dat (15MB+)
 - Excluded node-data/xray-core/xray binary (25MB+)
@@ -661,12 +661,12 @@ Changes from v7.9:
 EOF
 
     cat > "$B_PATH/file_list.txt" << EOF
-=== Files in v1.0.1 Backup ===
+=== Files in v${BACKUP_VERSION} Backup ===
 $(find "$B_PATH" -type f | sort)
 EOF
 
     cat > "$B_PATH/restore_guide.txt" << EOF
-MRM BACKUP v1.0.1 - RESTORE GUIDE
+MRM BACKUP v${BACKUP_VERSION} - RESTORE GUIDE
 =========================================
 
 Auto Restore (Recommended):
@@ -699,7 +699,7 @@ Manual Restore (if needed):
 6. Restart:
    cd $PANEL_DIR && docker compose up -d
 
-Note: This v1.0.1 backup does NOT contain:
+Note: This v${BACKUP_VERSION} backup does NOT contain:
 - geoip.dat, geosite.dat (will be re-downloaded by xray)
 - xray binary (will be re-downloaded with node update)
 - backup.zip loops
@@ -709,7 +709,7 @@ So it's small but complete!
 EOF
 
     # 7. Create archive with maximum compression + excludes (double safety)
-    [ "$MODE" != "auto" ] && ui_spinner_start "Creating v1.0.1 archive (high compression)..."
+    [ "$MODE" != "auto" ] && ui_spinner_start "Creating v${BACKUP_VERSION} archive (high compression)..."
 
     local SIZE_BEFORE=$(du -sb "$B_PATH" | cut -f1)
 
@@ -746,7 +746,7 @@ EOF
         if [ "$SIZE_BEFORE" -gt 0 ]; then
             SAVED_PERCENT=$((100 - BACKUP_SIZE_BYTES * 100 / SIZE_BEFORE))
         fi
-        [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "v1.0.1 archive created ($BACKUP_SIZE, saved ${SAVED_PERCENT}% raw)"
+        [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "v${BACKUP_VERSION} archive created ($BACKUP_SIZE, saved ${SAVED_PERCENT}% raw)"
     else
         [ "$MODE" != "auto" ] && ui_spinner_stop && ui_error "Failed to create archive!"
         log_backup "ERROR" "Failed to create tar.gz"
@@ -760,9 +760,9 @@ EOF
     # 9. Send to Telegram - Now small and fast
     local FINAL_SIZE=$(du -h "$ARCHIVE_PATH" | cut -f1)
     if [ -f "$TG_CONFIG" ]; then
-        [ "$MODE" != "auto" ] && ui_spinner_start "Sending v1.0.1 backup to Telegram ($FINAL_SIZE)..."
+        [ "$MODE" != "auto" ] && ui_spinner_start "Sending v${BACKUP_VERSION} backup to Telegram ($FINAL_SIZE)..."
         if send_to_telegram "$ARCHIVE_PATH"; then
-            [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "v1.0.1 backup sent to Telegram! ($FINAL_SIZE)"
+            [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "v${BACKUP_VERSION} backup sent to Telegram! ($FINAL_SIZE)"
         else
             [ "$MODE" != "auto" ] && ui_spinner_stop && ui_warning "Telegram send failed - check log. Size: $FINAL_SIZE"
         fi
@@ -771,13 +771,13 @@ EOF
     # 10. Rotate old backups - keep last 7
     ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null | tail -n +8 | xargs rm -f 2>/dev/null || true
 
-    log_backup "SUCCESS" "v1.0.1 backup completed: $(basename "$ARCHIVE_PATH") ($FINAL_SIZE)"
-    log_backup "INFO" "========== Backup v1.0.1 finished =========="
+    log_backup "SUCCESS" "v${BACKUP_VERSION} backup completed: $(basename "$ARCHIVE_PATH") ($FINAL_SIZE)"
+    log_backup "INFO" "========== Backup v${BACKUP_VERSION} finished =========="
 
     if [ "$MODE" != "auto" ]; then
         echo ""
         echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${GREEN}║          ✔ BACKUP v1.0.1 COMPLETED!                ║${NC}"
+        echo -e "${GREEN}║          ✔ BACKUP v${BACKUP_VERSION} COMPLETED!                ║${NC}"
         echo -e "${GREEN}╠══════════════════════════════════════════════════════════╣${NC}"
         echo -e "${GREEN}║${NC} File: ${CYAN}$(basename "$ARCHIVE_PATH")${NC}"
         echo -e "${GREEN}║${NC} Size: ${CYAN}$FINAL_SIZE${NC}"
@@ -795,11 +795,11 @@ EOF
 }
 
 # ==========================================
-# RESTORE v1.0.1
+# RESTORE v${BACKUP_VERSION}
 # ==========================================
 do_restore() {
     clear
-    ui_header "RESTORE FROM BACKUP - v1.0.1"
+    ui_header "RESTORE FROM BACKUP - v${BACKUP_VERSION}"
     setup_env
     init_backup_logging
 
@@ -815,10 +815,10 @@ do_restore() {
     for i in "${!FILES[@]}"; do
         local SIZE=$(du -h "${FILES[$i]}" | cut -f1)
         local DATE=$(stat -c %y "${FILES[$i]}" | cut -d' ' -f1)
-        local TYPE="v1.0.1"
+        local TYPE="v${BACKUP_VERSION}"
         [[ "$(basename "${FILES[$i]}")" == *"Full"* ]] && TYPE="FULL-OLD"
         [[ "$(basename "${FILES[$i]}")" == *"Lite"* ]] && TYPE="LITE-OLD"
-        [[ "$(basename "${FILES[$i]}")" == *"V1"* ]] && TYPE="v1.0.1"
+        [[ "$(basename "${FILES[$i]}")" == *"V1"* ]] && TYPE="v${BACKUP_VERSION}"
         echo "$((i+1))) [$TYPE] $(basename "${FILES[$i]}") [$SIZE] - $DATE"
     done
     echo ""
@@ -834,7 +834,7 @@ do_restore() {
     read -p "Continue restore? (y/N): " CONFIRM
     if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then echo "Cancelled"; pause; return; fi
 
-    log_backup "INFO" "Starting restore v1.0.1 from: $(basename "$SELECTED")"
+    log_backup "INFO" "Starting restore v${BACKUP_VERSION} from: $(basename "$SELECTED")"
 
     local WORK_DIR="$TEMP_BASE/restore_$(date +%s)"
     mkdir -p "$WORK_DIR"
@@ -948,8 +948,8 @@ do_restore() {
         ui_success "FULL files restored"
     else
         # Restore essentials
-        log_backup "INFO" "Restoring v1.0.1 essentials"
-        ui_spinner_start "Restoring v1.0.1 essentials..."
+        log_backup "INFO" "Restoring v${BACKUP_VERSION} essentials"
+        ui_spinner_start "Restoring v${BACKUP_VERSION} essentials..."
 
         mkdir -p "$PANEL_DIR" "$DATA_DIR"
 
@@ -1013,7 +1013,7 @@ do_restore() {
         chown -R 1000:1000 "$DATA_DIR" 2>/dev/null || true
 
         ui_spinner_stop
-        ui_success "v1.0.1 essentials restored"
+        ui_success "v${BACKUP_VERSION} essentials restored"
     fi
 
     # Fix env files
@@ -1131,15 +1131,15 @@ do_restore() {
     trap - RETURN
 
     local NEW_SERVER_IP=$(get_server_ip)
-    log_backup "SUCCESS" "Restore v1.0.1 completed from: $(basename "$SELECTED")"
+    log_backup "SUCCESS" "Restore v${BACKUP_VERSION} completed from: $(basename "$SELECTED")"
 
     echo ""
     echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║              ✔ RESTORE v1.0.1 COMPLETED!                     ║${NC}"
+    echo -e "${GREEN}║              ✔ RESTORE v${BACKUP_VERSION} COMPLETED!                     ║${NC}"
     echo -e "${GREEN}╠══════════════════════════════════════════════════════════╣${NC}"
     echo -e "${GREEN}║${NC} Server IP: ${CYAN}$NEW_SERVER_IP${NC}"
     echo -e "${GREEN}║${NC} Backup: ${CYAN}$(basename "$SELECTED")${NC}"
-    echo -e "${GREEN}║${NC} Type: ${CYAN}v1.0.1${NC}"
+    echo -e "${GREEN}║${NC} Type: ${CYAN}v${BACKUP_VERSION}${NC}"
     echo -e "${GREEN}║${NC} Data: ${CYAN}Safe & Complete${NC}"
     echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -1154,7 +1154,7 @@ do_restore() {
 # ==========================================
 setup_cron() {
     clear
-    ui_header "BACKUP SCHEDULER - v1.0.1"
+    ui_header "BACKUP SCHEDULER - v${BACKUP_VERSION}"
     echo "Current cron status:"
     if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH"; then
         local CURRENT=$(crontab -l | grep "$SCRIPT_PATH")
@@ -1163,7 +1163,7 @@ setup_cron() {
         echo -e "${YELLOW}No scheduled backup${NC}"
     fi
     echo ""
-    echo "Select backup interval (v1.0.1):"
+    echo "Select backup interval (v${BACKUP_VERSION}):"
     echo "1) Every 6 hours"
     echo "2) Every 12 hours"
     echo "3) Every 24 hours (Daily) [Recommended]"
@@ -1185,20 +1185,20 @@ setup_cron() {
     (crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH" | grep -v "/opt/mrm-manager/main.sh auto" | grep -v "/opt/mrm-manager/backup.sh auto"
      [ -n "$CRON_TIME" ] && echo "$CRON_TIME /bin/bash $SCRIPT_PATH auto >> $BACKUP_LOG 2>&1"
     ) | crontab -
-    if [ -n "$CRON_TIME" ]; then ui_success "Scheduled v1.0.1 backup enabled: $CRON_TIME"; log_backup "INFO" "Cron scheduled: $CRON_TIME"; else ui_success "Scheduled backup disabled"; log_backup "INFO" "Cron disabled"; fi
+    if [ -n "$CRON_TIME" ]; then ui_success "Scheduled v${BACKUP_VERSION} backup enabled: $CRON_TIME"; log_backup "INFO" "Cron scheduled: $CRON_TIME"; else ui_success "Scheduled backup disabled"; log_backup "INFO" "Cron disabled"; fi
     pause
 }
 
 view_backup_logs() {
     clear
-    ui_header "BACKUP LOGS - v1.0.1"
+    ui_header "BACKUP LOGS - v${BACKUP_VERSION}"
     if [ -f "$BACKUP_LOG" ]; then echo -e "${YELLOW}Last 50 entries:${NC}\n"; tail -n 50 "$BACKUP_LOG"; else ui_warning "No logs found"; fi
     pause
 }
 
 list_backups() {
     clear
-    ui_header "AVAILABLE BACKUPS - v1.0.1"
+    ui_header "AVAILABLE BACKUPS - v${BACKUP_VERSION}"
     local FILES=($(ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null))
     if [ ${#FILES[@]} -eq 0 ]; then ui_warning "No backups found"; pause; return; fi
     echo -e "${GREEN}ID │ Type       │ Filename                              │ Size   │ Date${NC}"
@@ -1207,10 +1207,10 @@ list_backups() {
         local NAME=$(basename "${FILES[$i]}")
         local SIZE=$(du -h "${FILES[$i]}" | cut -f1)
         local DATE=$(stat -c %y "${FILES[$i]}" | cut -d' ' -f1)
-        local TYPE="v1.0.1"
+        local TYPE="v${BACKUP_VERSION}"
         [[ "$NAME" == *"Full"* ]] && TYPE="FULL-OLD"
         [[ "$NAME" == *"Lite"* ]] && TYPE="LITE-OLD"
-        [[ "$NAME" == *"V1"* ]] && TYPE="v1.0.1"
+        [[ "$NAME" == *"V1"* ]] && TYPE="v${BACKUP_VERSION}"
         printf "%-2s │ %-10s │ %-39s │ %-6s │ %s\n" "$((i+1))" "$TYPE" "$NAME" "$SIZE" "$DATE"
     done
     echo ""
@@ -1218,7 +1218,7 @@ list_backups() {
     echo -e "Location: ${CYAN}$BACKUP_DIR${NC}"
     echo -e "Version: ${CYAN}$MRM_BACKUP_VERSION${NC}"
     echo ""
-    echo -e "${YELLOW}Tip: v1.0.1 backups are ready for Telegram${NC}"
+    echo -e "${YELLOW}Tip: v${BACKUP_VERSION} backups are ready for Telegram${NC}"
     pause
 }
 
@@ -1245,7 +1245,7 @@ delete_backup() {
 
 debug_backup_size() {
     clear
-    ui_header "BACKUP SIZE ANALYZER - v1.0.1"
+    ui_header "BACKUP SIZE ANALYZER - v${BACKUP_VERSION}"
     setup_env
     echo -e "${CYAN}Analyzing current data sizes (find 31MB cause):${NC}\n"
     echo -e "${YELLOW}=== PANEL_DIR ($PANEL_DIR) ===${NC}"
@@ -1295,7 +1295,7 @@ debug_backup_size() {
     echo -e "${YELLOW}=== /etc/letsencrypt ===${NC} $(du -sh /etc/letsencrypt 2>/dev/null | cut -f1 || echo "Not found")"
     echo -e "${YELLOW}=== /etc/nginx ===${NC} $(du -sh /etc/nginx 2>/dev/null | cut -f1 || echo "Not found")"
     echo ""
-    echo -e "${GREEN}=== v1.0.1 ===${NC}"
+    echo -e "${GREEN}=== v${BACKUP_VERSION} ===${NC}"
     echo -e "Exclude: assets/*, xray-core/*, backup/*, geoip.dat, geosite.dat, xray binary"
     echo -e "Result: 31MB -> 2-5MB"
     echo ""
