@@ -1680,6 +1680,17 @@ do_restore() {
     pause
 }
 
+# Xray release asset name for this machine's architecture.
+# IMPORTANT: XTLS/Xray-core assets are Xray-linux-64.zip (x86_64) and
+# Xray-linux-arm64-v8a.zip (aarch64) - NOT x64/arm64 (those URLs 404!).
+mrm_xray_arch() {
+    case "$(uname -m 2>/dev/null)" in
+        aarch64|arm64)          echo "arm64-v8a" ;;
+        armv7l|armv7)           echo "arm32-v7a" ;;
+        x86_64|amd64|*)         echo "64" ;;
+    esac
+}
+
 # Download Xray-core binary if missing (backups intentionally exclude the ~25MB
 # binary + geo files; the panel needs them at /var/lib/pg-node/xray-core/xray).
 # Mirrors the official installer's download logic. No-op if already present.
@@ -1725,11 +1736,7 @@ mrm_ensure_xray_core() {
         return 1
     fi
     local ARCH ZIP_URL
-    case "$(uname -m 2>/dev/null)" in
-        x86_64|amd64)  ARCH="x64" ;;
-        aarch64|arm64) ARCH="arm64" ;;
-        *)             ARCH="x64" ;;
-    esac
+    ARCH="$(mrm_xray_arch)"
     ZIP_URL="https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-${ARCH}.zip"
     log_backup "INFO" "Downloading xray-core ($ARCH) from $ZIP_URL"
     local TMPZ
@@ -1977,6 +1984,23 @@ backup_menu() {
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     if [ "$1" == "auto" ]; then
         do_backup "auto"
+    elif [ "$1" == "fix-node" ]; then
+        # mrm fix-node : repair xray-core + geo files on the CURRENT server
+        # (no restore needed - handy after a restore where xray was missing)
+        setup_env
+        init_backup_logging
+        echo -e "${CYAN}Checking/repairing node xray-core...${NC}"
+        if mrm_ensure_xray_core; then
+            echo -e "${GREEN}✔ xray-core ready: $(dirname "$NODE_DEF_CERTS" 2>/dev/null)/xray-core/xray${NC}"
+            echo -e "${YELLOW}Restarting node container so it picks up xray...${NC}"
+            if docker ps -a --format '{{.Names}}' | grep -qi "node"; then
+                docker restart "$(docker ps -a --format '{{.Names}}' | grep -i node | head -1)" >/dev/null 2>&1 && echo -e "${GREEN}✔ Node restarted${NC}"
+            fi
+            exit 0
+        else
+            echo -e "${RED}✘ xray-core repair failed - see $BACKUP_LOG${NC}"
+            exit 1
+        fi
     else
         backup_menu
     fi
