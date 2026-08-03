@@ -4,6 +4,7 @@
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then source /opt/mrm-manager/versions.conf 2>/dev/null || true; echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.0.4)}"; exit 0; fi
 [[ "$1" == "doctor" ]] && exec bash /opt/mrm-manager/diagnostics.sh doctor
 [[ "$1" == "monitor" ]] && exec bash /opt/mrm-manager/monitor.sh
+[[ "$1" == "fix-node" ]] && exec bash /opt/mrm-manager/backup.sh fix-node
 [[ "$1" == "update" ]] && exec bash -c "$(curl -sL https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main/install.sh)"
 
 bootstrap_error() { echo -e "\033[0;31m[MRM Error]\033[0m $1" >&2; }
