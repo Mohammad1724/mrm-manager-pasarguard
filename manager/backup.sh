@@ -931,6 +931,24 @@ do_backup() {
         log_backup "INFO" "Copied nginx panel_separate.conf (not full nginx)"
     fi
 
+    # 4b. Let's Encrypt certificates (small ~5KB per domain)
+    # Needed so post-restore can copy them to /etc/letsencrypt/live/ for Nginx
+    if [ -d "/etc/letsencrypt/live" ]; then
+        local LETS_COUNT=$(find /etc/letsencrypt/live -name "fullchain.pem" 2>/dev/null | wc -l)
+        if [ "$LETS_COUNT" -gt 0 ] 2>/dev/null; then
+            mkdir -p "$B_PATH/letsencrypt"
+            for CERT_DIR in /etc/letsencrypt/live/*/; do
+                [ -d "$CERT_DIR" ] || continue
+                local DOMAIN_NAME=$(basename "$CERT_DIR")
+                mkdir -p "$B_PATH/letsencrypt/$DOMAIN_NAME"
+                [ -f "$CERT_DIR/fullchain.pem" ] && cp "$CERT_DIR/fullchain.pem" "$B_PATH/letsencrypt/$DOMAIN_NAME/" 2>/dev/null
+                [ -f "$CERT_DIR/privkey.pem" ] && cp "$CERT_DIR/privkey.pem" "$B_PATH/letsencrypt/$DOMAIN_NAME/" 2>/dev/null
+                [ -f "$CERT_DIR/chain.pem" ] && cp "$CERT_DIR/chain.pem" "$B_PATH/letsencrypt/$DOMAIN_NAME/" 2>/dev/null
+            done
+            log_backup "INFO" "Copied Let's Encrypt certs for $LETS_COUNT domains (small, ~5KB each)"
+        fi
+    fi
+
     # 5. CLEANUP - Remove any heavy files that accidentally slipped in
     # This is the FIX for the 31MB issue you reported
     [ "$MODE" != "auto" ] && ui_spinner_start "Cleaning unnecessary heavy files..."
@@ -1763,6 +1781,26 @@ do_restore() {
             ui_warning "Node restart failed - try: docker restart \$(docker ps -a --format '{{.Names}}' | grep -i node | head -1)"
             log_backup "WARNING" "Node restart failed after xray-core download"
         fi
+    fi
+
+    # ═══════════════════════════════════════════════════════════════
+    # POST-RESTORE AUTO-FIX (Nginx + SSL + Sub URL)
+    # Fix common issues after restore:
+    #   - Install Nginx if missing
+    #   - Copy SSL certs to /etc/letsencrypt/live/
+    #   - Set XRAY_SUBSCRIPTION_URL_PREFIX
+    #   - Test and start Nginx
+    #   - Restart panel with new settings
+    # ═══════════════════════════════════════════════════════════════
+    if [ -f "/opt/mrm-manager/post_restore_fix.sh" ]; then
+        echo ""
+        echo -e "${CYAN}🔧 Running post-restore auto-fix...${NC}"
+        bash /opt/mrm-manager/post_restore_fix.sh 2>&1 | tee -a /var/log/mrm-post-restore.log
+        echo -e "${GREEN}✔ Post-restore auto-fix completed${NC}"
+        log_backup "SUCCESS" "Post-restore auto-fix executed"
+    else
+        echo -e "${YELLOW}⚠ post_restore_fix.sh not found - skipping auto-fix${NC}"
+        log_backup "WARNING" "post_restore_fix.sh not found"
     fi
 
     # Final cleanup
