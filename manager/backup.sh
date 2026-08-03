@@ -1809,90 +1809,155 @@ mrm_xray_arch() {
 # binary + geo files; the panel needs them at /var/lib/pg-node/xray-core/xray).
 # Mirrors the official installer's download logic. No-op if already present.
 mrm_ensure_xray_core() {
+    local VERBOSE="${MRM_XRAY_VERBOSE:-false}"
     local XRAY_DIR ASSETS_DIR XRAY_BIN
-    # Node data dir is usually /var/lib/pg-node (where the panel execs xray)
     local NODE_DATA
     NODE_DATA="$(dirname "${NODE_DEF_CERTS:-/var/lib/pg-node/certs}" 2>/dev/null)"
     [ -z "$NODE_DATA" ] && NODE_DATA="/var/lib/pg-node"
     XRAY_DIR="$NODE_DATA/xray-core"
     ASSETS_DIR="$NODE_DATA/assets"
     XRAY_BIN="$XRAY_DIR/xray"
+
+    _xlog() { [ "$VERBOSE" = true ] && echo -e "  ${CYAN}→${NC} $*" || true; log_backup "INFO" "$*"; }
+    _xerr() { [ "$VERBOSE" = true ] && echo -e "  ${RED}✘${NC} $*" || true; log_backup "ERROR" "$*"; }
+    _xok()  { [ "$VERBOSE" = true ] && echo -e "  ${GREEN}✔${NC} $*" || true; log_backup "SUCCESS" "$*"; }
+
+    # --- Step 0: Check if already working ---
     local XRAY_OK=false
     if [ -x "$XRAY_BIN" ]; then
-        # Verify it actually RUNS (catches wrong-arch binaries restored from a
-        # different server); if broken we re-download.
         if "$XRAY_BIN" -version >/dev/null 2>&1; then
             XRAY_OK=true
+            _xok "xray-core already working: $XRAY_BIN"
         else
-            log_backup "WARN" "xray-core present but not runnable (wrong arch?) - re-downloading"
+            _xlog "xray binary present but not runnable (wrong arch?) - re-downloading"
             rm -f "$XRAY_BIN"
         fi
     fi
-    mkdir -p "$XRAY_DIR" "$ASSETS_DIR" 2>/dev/null || return 1
 
-    # Ensure geo files exist even when the binary is fine (small-backup restores)
-    if [ ! -f "$ASSETS_DIR/geoip.dat" ] || [ ! -f "$ASSETS_DIR/geosite.dat" ]; then
-        if command -v curl >/dev/null 2>&1; then
-            log_backup "INFO" "Downloading geo files to $ASSETS_DIR"
-            # Try primary (GitHub) then fallback mirrors (for restricted networks)
-            local GEO_MIRRORS=(
-                "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
-                "https://gh.api.99988866.xyz/https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
-                "https://ghfast.top/https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
-            )
-            for MIRROR in "${GEO_MIRRORS[@]}"; do
-                [ -f "$ASSETS_DIR/geoip.dat" ] && [ -f "$ASSETS_DIR/geosite.dat" ] && break
-                curl -fsSL --connect-timeout 20 --max-time 120 "$MIRROR/geoip.dat" -o "$ASSETS_DIR/geoip.dat" 2>/dev/null || true
-                curl -fsSL --connect-timeout 20 --max-time 120 "$MIRROR/geosite.dat" -o "$ASSETS_DIR/geosite.dat" 2>/dev/null || true
-                [ -s "$ASSETS_DIR/geoip.dat" ] && [ -s "$ASSETS_DIR/geosite.dat" ] && log_backup "SUCCESS" "Geo files downloaded from $MIRROR" && break
-                rm -f "$ASSETS_DIR/geoip.dat" "$ASSETS_DIR/geosite.dat" 2>/dev/null
-            done
+    mkdir -p "$XRAY_DIR" "$ASSETS_DIR" 2>/dev/null || { _xerr "Cannot create dirs: $XRAY_DIR $ASSETS_DIR"; return 1; }
+
+    # --- Step 1: Ensure prerequisites ---
+    if ! command -v curl >/dev/null 2>&1; then
+        _xerr "curl is NOT installed! Installing..."
+        if [ "$VERBOSE" = true ]; then
+            apt-get update -qq && apt-get install -y -qq curl 2>/dev/null || yum install -y curl 2>/dev/null || { _xerr "Cannot install curl"; return 1; }
+        else
+            apt-get update -qq && apt-get install -y -qq curl 2>/dev/null || yum install -y curl 2>/dev/null || { log_backup "ERROR" "Cannot install curl"; return 1; }
         fi
+        _xok "curl installed"
+    fi
+
+    if ! command -v unzip >/dev/null 2>&1; then
+        _xlog "unzip is NOT installed! Installing..."
+        if [ "$VERBOSE" = true ]; then
+            apt-get update -qq && apt-get install -y -qq unzip 2>/dev/null || yum install -y unzip 2>/dev/null || { _xerr "Cannot install unzip"; return 1; }
+        else
+            apt-get update -qq && apt-get install -y -qq unzip 2>/dev/null || yum install -y unzip 2>/dev/null || { log_backup "ERROR" "Cannot install unzip"; return 1; }
+        fi
+        _xok "unzip installed"
+    fi
+
+    if ! command -v unzip >/dev/null 2>&1; then
+        _xerr "unzip still not available after install attempt!"
+        return 1
+    fi
+
+    # --- Step 2: Download geo files if missing ---
+    if [ ! -f "$ASSETS_DIR/geoip.dat" ] || [ ! -f "$ASSETS_DIR/geosite.dat" ]; then
+        _xlog "Downloading geo files..."
+        local GEO_MIRRORS=(
+            "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
+            "https://gh.api.99988866.xyz/https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
+            "https://ghfast.top/https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
+            "https://mirror.ghproxy.com/https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
+        )
+        local GEO_OK=false
+        for MIRROR in "${GEO_MIRRORS[@]}"; do
+            [ "$GEO_OK" = true ] && break
+            _xlog "Trying geo mirror: $MIRROR"
+            local CURL_ERR
+            CURL_ERR="$(mktemp /tmp/geo_err.XXXXXX)"
+            curl -fsSL --connect-timeout 20 --max-time 120 "$MIRROR/geoip.dat" -o "$ASSETS_DIR/geoip.dat" 2>"$CURL_ERR" || true
+            curl -fsSL --connect-timeout 20 --max-time 120 "$MIRROR/geosite.dat" -o "$ASSETS_DIR/geosite.dat" 2>>"$CURL_ERR" || true
+            if [ -s "$ASSETS_DIR/geoip.dat" ] && [ -s "$ASSETS_DIR/geosite.dat" ]; then
+                GEO_OK=true
+                _xok "Geo files downloaded from mirror"
+            else
+                if [ "$VERBOSE" = true ] && [ -s "$CURL_ERR" ]; then
+                    _xlog "Mirror failed: $(head -1 "$CURL_ERR")"
+                fi
+                rm -f "$ASSETS_DIR/geoip.dat" "$ASSETS_DIR/geosite.dat" 2>/dev/null
+            fi
+            rm -f "$CURL_ERR"
+        done
+        [ "$GEO_OK" = false ] && _xerr "All geo mirrors failed"
     fi
 
     if [ "$XRAY_OK" = true ]; then
-        log_backup "INFO" "xray-core already present and working: $XRAY_BIN"
         return 0
     fi
 
-    if ! command -v curl >/dev/null 2>&1; then
-        log_backup "ERROR" "curl not available for xray download"
+    # --- Step 3: Download xray-core binary ---
+    local ARCH
+    ARCH="$(mrm_xray_arch)"
+    _xlog "System arch: $(uname -m) → xray arch: $ARCH"
+    _xlog "Target path: $XRAY_BIN"
+
+    # Test basic internet connectivity first
+    if ! curl -fsSL --connect-timeout 10 "https://www.google.com" -o /dev/null 2>/dev/null &&        ! curl -fsSL --connect-timeout 10 "https://1.1.1.1" -o /dev/null 2>/dev/null; then
+        _xerr "NO INTERNET CONNECTION detected! Cannot download xray-core."
+        _xerr "Check: curl -v https://github.com 2>&1 | head -20"
         return 1
     fi
-    local ARCH ZIP_URL
-    ARCH="$(mrm_xray_arch)"
-    log_backup "INFO" "xray-core not found, downloading for arch: $ARCH"
+    _xok "Internet connectivity confirmed"
 
-    # Try multiple mirrors: direct GitHub first, then GitHub proxy mirrors
-    # (critical for servers in Iran/restricted networks where GitHub is blocked)
     local XRAY_MIRRORS=(
         "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-${ARCH}.zip"
         "https://gh.api.99988866.xyz/https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-${ARCH}.zip"
         "https://ghfast.top/https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-${ARCH}.zip"
+        "https://mirror.ghproxy.com/https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-${ARCH}.zip"
     )
 
-    local TMPZ
-    TMPZ="$(mktemp /tmp/xray.XXXXXX.zip)" || return 1
-    local DOWNLOADED=false
+    local TMPZ DOWNLOADED=false LAST_ERR=""
+    TMPZ="$(mktemp /tmp/xray.XXXXXX.zip)" || { _xerr "Cannot create temp file"; return 1; }
 
     for MIRROR_URL in "${XRAY_MIRRORS[@]}"; do
-        log_backup "INFO" "Trying xray download from: $MIRROR_URL"
-        if curl -fsSL --connect-timeout 20 --max-time 180 "$MIRROR_URL" -o "$TMPZ" 2>/dev/null; then
+        [ "$DOWNLOADED" = true ] && break
+        _xlog "Trying: $MIRROR_URL"
+        local CURL_ERR_FILE
+        CURL_ERR_FILE="$(mktemp /tmp/xray_err.XXXXXX)"
+        if curl -fsSL --connect-timeout 20 --max-time 180 "$MIRROR_URL" -o "$TMPZ" 2>"$CURL_ERR_FILE"; then
             if [ -s "$TMPZ" ]; then
-                if command -v unzip >/dev/null 2>&1 && unzip -o "$TMPZ" -d "$XRAY_DIR" >/dev/null 2>&1; then
+                local ZIP_SIZE
+                ZIP_SIZE="$(stat -c%s "$TMPZ" 2>/dev/null || echo 0)"
+                _xlog "Downloaded: $(( ZIP_SIZE / 1024 ))KB"
+                if unzip -o "$TMPZ" -d "$XRAY_DIR" >/dev/null 2>/dev/null; then
                     chmod +x "$XRAY_DIR/xray" 2>/dev/null
-                    if "$XRAY_BIN" -version >/dev/null 2>&1; then
+                    if [ -x "$XRAY_BIN" ] && "$XRAY_BIN" -version >/dev/null 2>&1; then
                         DOWNLOADED=true
-                        log_backup "SUCCESS" "xray-core downloaded and verified from: $MIRROR_URL"
-                        break
+                        _xok "xray-core downloaded and verified!"
                     else
-                        log_backup "WARN" "xray binary from $MIRROR_URL is not runnable (wrong arch?)"
+                        _xerr "xray binary not runnable after extraction (wrong arch: $(uname -m))"
                         rm -f "$XRAY_BIN" 2>/dev/null
                     fi
+                else
+                    _xerr "unzip failed! Trying to install unzip..."
+                    apt-get install -y -qq unzip 2>/dev/null || yum install -y -qq unzip 2>/dev/null || true
+                    if command -v unzip >/dev/null 2>&1; then
+                        unzip -o "$TMPZ" -d "$XRAY_DIR" >/dev/null 2>/dev/null &&                         chmod +x "$XRAY_DIR/xray" 2>/dev/null &&                         [ -x "$XRAY_BIN" ] && "$XRAY_BIN" -version >/dev/null 2>&1 &&                         DOWNLOADED=true && _xok "xray-core downloaded after unzip reinstall!"
+                    fi
                 fi
+            else
+                _xerr "Downloaded file is empty (0 bytes)"
+            fi
+        else
+            LAST_ERR="$(cat "$CURL_ERR_FILE" 2>/dev/null | head -1)"
+            if [ "$VERBOSE" = true ] && [ -n "$LAST_ERR" ]; then
+                _xlog "curl error: $LAST_ERR"
             fi
         fi
-        rm -f "$TMPZ" 2>/dev/null
+        rm -f "$CURL_ERR_FILE" "$TMPZ" 2>/dev/null
+        TMPZ="$(mktemp /tmp/xray.XXXXXX.zip)" 2>/dev/null || true
     done
 
     rm -f "$TMPZ" 2>/dev/null
@@ -1901,8 +1966,17 @@ mrm_ensure_xray_core() {
         return 0
     fi
 
-    log_backup "ERROR" "xray-core download failed from all mirrors. Server may not have internet access or GitHub is blocked."
-    log_backup "ERROR" "Manual fix: run 'mrm fix-node' or download xray-core manually to $XRAY_DIR/xray"
+    _xerr "ALL MIRRORS FAILED!"
+    _xerr "Target: $XRAY_BIN"
+    _xerr "Arch: $ARCH ($(uname -m))"
+    if [ -n "$LAST_ERR" ]; then
+        _xerr "Last error: $LAST_ERR"
+    fi
+    _xerr ""
+    _xerr "Manual fix options:"
+    _xerr "  1. mrm fix-node --verbose  (show detailed errors)"
+    _xerr "  2. curl -v https://github.com  (test connectivity)"
+    _xerr "  3. Download manually and place at: $XRAY_BIN"
     return 1
 }
 
@@ -2137,20 +2211,82 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     if [ "$1" == "auto" ]; then
         do_backup "auto"
     elif [ "$1" == "fix-node" ]; then
-        # mrm fix-node : repair xray-core + geo files on the CURRENT server
-        # (no restore needed - handy after a restore where xray was missing)
+        # mrm fix-node [--verbose] : repair xray-core + geo files
         setup_env
         init_backup_logging
-        echo -e "${CYAN}Checking/repairing node xray-core...${NC}"
+
+        FIX_VERBOSE=false
+        [[ "$2" == "--verbose" ]] || [[ "$2" == "-v" ]] && FIX_VERBOSE=true
+        export MRM_XRAY_VERBOSE="$FIX_VERBOSE"
+
+        NODE_DATA_DIR="$(dirname "${NODE_DEF_CERTS:-/var/lib/pg-node/certs}" 2>/dev/null)"
+        [ -z "$NODE_DATA_DIR" ] && NODE_DATA_DIR="/var/lib/pg-node"
+
+        echo -e "${CYAN}╔══════════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}║  🔧 Node xray-core Repair Tool          ║${NC}"
+        echo -e "${CYAN}╚══════════════════════════════════════════╝${NC}"
+        echo ""
+        echo -e "  ${CYAN}Node data dir:${NC} $NODE_DATA_DIR"
+        echo -e "  ${CYAN}Expected path:${NC} $NODE_DATA_DIR/xray-core/xray"
+        echo -e "  ${CYAN}System arch:${NC}   $(uname -m)"
+        echo -e "  ${CYAN}Verbose:${NC}       $FIX_VERBOSE"
+        echo ""
+
+        # Pre-flight checks
+        echo -e "${YELLOW}Pre-flight checks:${NC}"
+        if command -v curl >/dev/null 2>&1; then
+            echo -e "  ${GREEN}✔${NC} curl: $(curl --version | head -1)"
+        else
+            echo -e "  ${RED}✘${NC} curl: NOT INSTALLED"
+        fi
+        if command -v unzip >/dev/null 2>&1; then
+            echo -e "  ${GREEN}✔${NC} unzip: installed"
+        else
+            echo -e "  ${RED}✘${NC} unzip: NOT INSTALLED"
+        fi
+        if [ -x "$NODE_DATA_DIR/xray-core/xray" ]; then
+            echo -e "  ${YELLOW}⚠${NC} xray binary exists but may be broken"
+        else
+            echo -e "  ${RED}✘${NC} xray binary: MISSING"
+        fi
+        echo ""
+
+        echo -e "${YELLOW}Downloading/repairing xray-core...${NC}"
         if mrm_ensure_xray_core; then
-            echo -e "${GREEN}✔ xray-core ready: $(dirname "$NODE_DEF_CERTS" 2>/dev/null)/xray-core/xray${NC}"
-            echo -e "${YELLOW}Restarting node container so it picks up xray...${NC}"
-            if docker ps -a --format '{{.Names}}' | grep -qi "node"; then
-                docker restart "$(docker ps -a --format '{{.Names}}' | grep -i node | head -1)" >/dev/null 2>&1 && echo -e "${GREEN}✔ Node restarted${NC}"
+            echo ""
+            echo -e "${GREEN}✔ xray-core ready: $NODE_DATA_DIR/xray-core/xray${NC}"
+            "$NODE_DATA_DIR/xray-core/xray" -version 2>/dev/null | head -1 && true
+            echo ""
+            echo -e "${YELLOW}Restarting node container...${NC}"
+            NODE_CNAME="$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -i node | head -1)"
+            if [ -n "$NODE_CNAME" ]; then
+                if docker restart "$NODE_CNAME" >/dev/null 2>&1; then
+                    echo -e "${GREEN}✔ Node restarted: $NODE_CNAME${NC}"
+                else
+                    echo -e "${RED}✘ Node restart failed: $NODE_CNAME${NC}"
+                fi
+            else
+                echo -e "${YELLOW}⚠ No node container found (is the node docker-compose running?)${NC}"
             fi
             exit 0
         else
-            echo -e "${RED}✘ xray-core repair failed - see $BACKUP_LOG${NC}"
+            echo ""
+            echo -e "${RED}╔══════════════════════════════════════════╗${NC}"
+            echo -e "${RED}║  ✘ REPAIR FAILED                        ║${NC}"
+            echo -e "${RED}╚══════════════════════════════════════════╝${NC}"
+            echo ""
+            echo -e "${YELLOW}Try these steps:${NC}"
+            echo -e "  1. ${CYAN}mrm fix-node --verbose${NC}  (see detailed errors)"
+            echo -e "  2. ${CYAN}apt install -y curl unzip${NC}  (ensure tools exist)"
+            echo -e "  3. ${CYAN}curl -v https://github.com 2>&1 | head -5${NC}  (test internet)"
+            echo -e "  4. Manual download:"
+            echo -e "     ${CYAN}ARCH=$( [ "$(uname -m)" = "aarch64" ] && echo arm64-v8a || echo 64 )${NC}"
+            echo -e "     ${CYAN}curl -L "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-\$ARCH.zip" -o /tmp/xray.zip${NC}"
+            echo -e "     ${CYAN}unzip -o /tmp/xray.zip -d $NODE_DATA_DIR/xray-core/${NC}"
+            echo -e "     ${CYAN}chmod +x $NODE_DATA_DIR/xray-core/xray${NC}"
+            echo -e "     ${CYAN}docker restart \$(docker ps -a --format '{{.Names}}' | grep -i node | head -1)${NC}"
+            echo ""
+            echo -e "${YELLOW}Full log: $BACKUP_LOG${NC}"
             exit 1
         fi
     else
