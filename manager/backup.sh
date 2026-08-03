@@ -382,7 +382,18 @@ apply_smart_fix() {
     fi
     if [ -d "$NODE_DIR" ]; then
         mkdir -p "$NODE_DEF_CERTS"
-        if [ ! -f "$NODE_DEF_CERTS/ssl_key.pem" ]; then ui_spinner_start "Generating Node SSL key..."; openssl genrsa -out "$NODE_DEF_CERTS/ssl_key.pem" 2048 >/dev/null 2>&1; ui_spinner_stop; ui_success "Node SSL key generated"; fi
+        # Generate BOTH key AND self-signed cert (node needs both for SSL)
+        if [ ! -f "$NODE_DEF_CERTS/ssl_key.pem" ] || [ ! -f "$NODE_DEF_CERTS/ssl_cert.pem" ]; then
+            ui_spinner_start "Generating Node SSL certificate..."
+            openssl req -x509 -newkey rsa:2048 \
+                -keyout "$NODE_DEF_CERTS/ssl_key.pem" \
+                -out "$NODE_DEF_CERTS/ssl_cert.pem" \
+                -days 3650 -nodes \
+                -subj "/CN=PasarGuard-Node" 2>/dev/null
+            ui_spinner_stop
+            ui_success "Node SSL key + cert generated (self-signed, 10yr)"
+            log_backup "INFO" "Generated self-signed SSL for node: $NODE_DEF_CERTS"
+        fi
     fi
     local NG_CONF="/etc/nginx/conf.d/panel_separate.conf"
     if [ -f "$NG_CONF" ]; then ui_spinner_start "Fixing Nginx config..."; sed -i 's|proxy_pass http://127.0.0.1:7431;|proxy_pass https://127.0.0.1:7431;\n        proxy_ssl_verify off;|g' "$NG_CONF"; systemctl restart nginx >/dev/null 2>&1; ui_spinner_stop; ui_success "Nginx configuration repaired"; fi
@@ -1324,6 +1335,19 @@ do_restore() {
             mkdir -p /etc/nginx
             cp -a "$ROOT/nginx/." /etc/nginx/ 2>/dev/null
         fi
+        # Safety net: Ensure node SSL certs exist (FULL restore)
+        if [ -n "$NODE_DEF_CERTS" ]; then
+            mkdir -p "$NODE_DEF_CERTS" 2>/dev/null
+            if [ ! -f "$NODE_DEF_CERTS/ssl_cert.pem" ] || [ ! -f "$NODE_DEF_CERTS/ssl_key.pem" ]; then
+                openssl req -x509 -newkey rsa:2048 \
+                    -keyout "$NODE_DEF_CERTS/ssl_key.pem" \
+                    -out "$NODE_DEF_CERTS/ssl_cert.pem" \
+                    -days 3650 -nodes \
+                    -subj "/CN=PasarGuard-Node" 2>/dev/null || true
+                log_backup "INFO" "Generated self-signed SSL for node (FULL restore)"
+            fi
+        fi
+
         chmod -R 755 "$DATA_DIR" 2>/dev/null || true
         chown -R 1000:1000 "$DATA_DIR" 2>/dev/null || true
         ui_spinner_stop
@@ -1402,6 +1426,20 @@ do_restore() {
                 mkdir -p "$NODE_DATA_DIR/assets"
                 cp -a "$ROOT/node/assets/." "$NODE_DATA_DIR/assets/" 2>/dev/null
                 log_backup "INFO" "Restored node assets/geo -> $NODE_DATA_DIR/assets"
+            fi
+        fi
+
+        # Safety net: Ensure node SSL certs exist (generate if missing from backup)
+        if [ -n "$NODE_DEF_CERTS" ]; then
+            mkdir -p "$NODE_DEF_CERTS" 2>/dev/null
+            if [ ! -f "$NODE_DEF_CERTS/ssl_cert.pem" ] || [ ! -f "$NODE_DEF_CERTS/ssl_key.pem" ]; then
+                log_backup "INFO" "Node SSL certs missing - generating self-signed"
+                openssl req -x509 -newkey rsa:2048 \
+                    -keyout "$NODE_DEF_CERTS/ssl_key.pem" \
+                    -out "$NODE_DEF_CERTS/ssl_cert.pem" \
+                    -days 3650 -nodes \
+                    -subj "/CN=PasarGuard-Node" 2>/dev/null || true
+                [ -f "$NODE_DEF_CERTS/ssl_cert.pem" ] && log_backup "SUCCESS" "Node SSL certs generated"
             fi
         fi
 
@@ -1537,9 +1575,22 @@ do_restore() {
                     DB_CONT=$(docker ps -a --format '{{.Names}}' | grep -iE "postgres|timescale" | head -1)
                     [ -n "$DB_CONT" ] && docker start "$DB_CONT" >/dev/null 2>&1
                 fi
-                # Wait until it accepts connections (max ~25s)
+                # NEW SERVER FIX: If no postgres container exists at all (brand new server),
+                # start it from the restored docker-compose to create it
+                if [ -z "$DB_CONT" ] && [ -n "$PANEL_COMPOSE_FILE" ] && [ -f "$PANEL_COMPOSE_FILE" ]; then
+                    log_backup "INFO" "No postgres container found - starting from restored compose (new server)"
+                    run_compose_file "$PANEL_COMPOSE_FILE" up -d postgres db postgresql >/dev/null 2>&1 || true
+                    sleep 3
+                    DB_CONT=$(docker ps --format '{{.Names}}' | grep -iE "postgres|timescale" | head -1)
+                    if [ -n "$DB_CONT" ]; then
+                        log_backup "SUCCESS" "Postgres container created from compose: $DB_CONT"
+                    else
+                        log_backup "ERROR" "Could not create postgres container from compose"
+                    fi
+                fi
+                # Wait until it accepts connections (max ~30s)
                 local TRIES=0
-                while [ "$TRIES" -lt 25 ]; do
+                while [ "$TRIES" -lt 30 ]; do
                     if [ -n "$DB_CONT" ] && docker exec "$DB_CONT" pg_isready -U postgres >/dev/null 2>&1; then break; fi
                     sleep 1; TRIES=$((TRIES+1))
                 done
@@ -1604,7 +1655,25 @@ do_restore() {
                 if [ -z "$DB_CONT" ]; then
                     DB_CONT=$(docker ps -a --format '{{.Names}}' | grep -iE "mysql|mariadb" | head -1)
                     [ -n "$DB_CONT" ] && docker start "$DB_CONT" >/dev/null 2>&1
-                    sleep 5
+                fi
+                # NEW SERVER FIX: If no mysql container exists at all (brand new server),
+                # start it from the restored docker-compose to create it
+                if [ -z "$DB_CONT" ] && [ -n "$PANEL_COMPOSE_FILE" ] && [ -f "$PANEL_COMPOSE_FILE" ]; then
+                    log_backup "INFO" "No MySQL container found - starting from restored compose (new server)"
+                    run_compose_file "$PANEL_COMPOSE_FILE" up -d mysql mariadb db >/dev/null 2>&1 || true
+                    sleep 3
+                    DB_CONT=$(docker ps --format '{{.Names}}' | grep -iE "mysql|mariadb" | head -1)
+                    if [ -n "$DB_CONT" ]; then
+                        log_backup "SUCCESS" "MySQL container created from compose: $DB_CONT"
+                    fi
+                fi
+                if [ -n "$DB_CONT" ]; then
+                    # Wait for MySQL to be ready (max 30s)
+                    local MYSQL_TRIES=0
+                    while [ "$MYSQL_TRIES" -lt 30 ]; do
+                        if docker exec "$DB_CONT" mysqladmin ping -u root >/dev/null 2>&1; then break; fi
+                        sleep 1; MYSQL_TRIES=$((MYSQL_TRIES+1))
+                    done
                 fi
                 if [ -n "$DB_CONT" ]; then
                     parse_db_credentials "$PANEL_ENV"
@@ -1714,7 +1783,13 @@ do_restore() {
     echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${YELLOW}Safety backup: $SAFETY_BACKUP${NC}"
-    echo -e "${CYAN}Note: xray-core & geo files are included in this backup - no downloads needed${NC}"
+    if [ "$XRAY_WAS_DOWNLOADED" = true ]; then
+        echo -e "${YELLOW}Note: xray-core was downloaded during restore (not in backup)${NC}"
+    elif [ -x "$XRAY_BIN_PATH" ]; then
+        echo -e "${CYAN}Note: xray-core was present or restored from backup${NC}"
+    else
+        echo -e "${RED}⚠ WARNING: xray-core is MISSING! Run: mrm fix-node${NC}"
+    fi
     echo ""
     pause
 }
