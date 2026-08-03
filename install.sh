@@ -35,7 +35,7 @@ mkdir -p "$INSTALL_DIR"
 FILES=(
     "utils.sh" "ui.sh" "ssl.sh" "backup.sh" "domain_separator.sh"
     "theme.sh" "diagnostics.sh" "offline.sh"
-    "safe_ops.sh" "monitor.sh" "main.sh" "VERSION" "versions.conf"
+    "safe_ops.sh" "monitor.sh" "main.sh" "post_restore_fix.sh" "VERSION" "versions.conf"
 )
 
 # Remove deprecated/unused files
