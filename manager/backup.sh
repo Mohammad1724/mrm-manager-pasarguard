@@ -395,39 +395,225 @@ parse_db_credentials() {
 }
 
 # ==========================================
-# DATABASE EXPORT - BUG FREE
+# DATABASE LAYER - FIXED for PasarGuard v5
+# PasarGuard v5 stores SQLite INSIDE the panel
+# container (/code/db.sqlite3 by default), so
+# host-path checks alone silently miss the DB.
+# We ask the panel itself where its DB lives.
 # ==========================================
-export_postgresql_database() {
-    local DEST_DIR="$1"
-    local DB_EXPORTED=false
-    log_backup "INFO" "=== Starting PostgreSQL Export (Pipe Method) ==="
-    local DB_CONT=$(docker ps --format '{{.Names}}' | grep -iE "postgres|timescale|db" | head -1)
-    if [ -z "$DB_CONT" ]; then log_backup "ERROR" "No PostgreSQL container found!"; echo "ERROR: No database container found"; return 1; fi
-    log_backup "INFO" "Found DB container: $DB_CONT"
-    parse_db_credentials "$PANEL_ENV"
-    log_backup "INFO" "Credentials - User: $DB_USER, Pass: [${#DB_PASS} chars], DB: $DB_NAME"
-    declare -a CREDS_TO_TRY
-    if [ -n "$DB_USER" ] && [ -n "$DB_PASS" ]; then CREDS_TO_TRY+=("$DB_USER|$DB_PASS|$DB_NAME"); fi
-    CREDS_TO_TRY+=("pasarguard|17240304|pasarguard")
-    CREDS_TO_TRY+=("marzban|marzban|marzban")
-    CREDS_TO_TRY+=("postgres||postgres")
-    for CRED in "${CREDS_TO_TRY[@]}"; do
-        IFS='|' read -r TRY_USER TRY_PASS TRY_DB <<< "$CRED"
-        [ -z "$TRY_DB" ] && TRY_DB="$TRY_USER"
-        log_backup "INFO" "Trying pg_dump - User: $TRY_USER, DB: $TRY_DB"
-        if [ -n "$TRY_PASS" ]; then
-            docker exec -e PGPASSWORD="$TRY_PASS" "$DB_CONT" pg_dump -U "$TRY_USER" -d "$TRY_DB" 2>/dev/null > "$DEST_DIR/db.sql"
-        else
-            docker exec "$DB_CONT" pg_dump -U "$TRY_USER" -d "$TRY_DB" 2>/dev/null > "$DEST_DIR/db.sql"
+
+# Find the running panel container (most reliable source of DB info)
+mrm_panel_container() {
+    local COMPOSE_FILE CID
+    COMPOSE_FILE="$(get_existing_compose_file panel 2>/dev/null || true)"
+    if [ -n "$COMPOSE_FILE" ] && [ -f "$COMPOSE_FILE" ]; then
+        CID="$(docker compose -f "$COMPOSE_FILE" ps -q 2>/dev/null | head -1)"
+        [ -n "$CID" ] && { printf '%s\n' "$CID"; return 0; }
+    fi
+    # Fallback: by container name/image
+    docker ps --format '{{.ID}}|{{.Names}}|{{.Image}}' 2>/dev/null | grep -iE "pasarguard" | head -1 | cut -d'|' -f1
+}
+
+# Ask the panel itself. Prints: TYPE|INFO
+#   sqlite   -> sqlite|/abs/path/to/db.sqlite3
+#   postgres -> postgres|host|port|user|b64pass|db
+#   mysql    -> mysql|host|port|user|b64pass|db
+#   UNKNOWN  -> UNKNOWN|<raw url>
+mrm_probe_database() {
+    local CONT="$1"
+    [ -z "$CONT" ] && return 1
+    docker exec -i "$CONT" python - <<'PY' 2>/dev/null
+import os, base64
+from sqlalchemy.engine import make_url
+try:
+    from config import database_settings as s
+    url = s.url
+except Exception:
+    print("UNKNOWN|"); raise SystemExit(0)
+try:
+    u = make_url(url)
+    dr = (u.drivername or "").lower()
+    if dr.startswith("sqlite"):
+        path = u.database or ""
+        if path and path != ":memory:" and not path.startswith("/"):
+            path = os.path.abspath(path)
+        print("sqlite|" + path)
+    elif dr.startswith("postgres"):
+        b64 = base64.b64encode((u.password or "").encode()).decode()
+        print("postgres|%s|%s|%s|%s|%s" % (u.host or "localhost", u.port or 5432, u.username or "", b64, u.database or ""))
+    elif dr.startswith(("mysql", "mariadb")):
+        b64 = base64.b64encode((u.password or "").encode()).decode()
+        print("mysql|%s|%s|%s|%s|%s" % (u.host or "localhost", u.port or 3306, u.username or "", b64, u.database or ""))
+    else:
+        print("UNKNOWN|" + url)
+except Exception:
+    print("UNKNOWN|" + url)
+PY
+}
+
+mrm_b64dec() { printf '%s' "$1" | base64 -d 2>/dev/null; }
+
+# Export SQLite safely (live-safe backup API) from inside the panel container
+mrm_export_sqlite() {
+    local CONT="$1" SRC="$2" DEST="$3"
+    log_backup "INFO" "SQLite export: container=$CONT src=$SRC -> $DEST"
+    docker exec -i "$CONT" python - "$SRC" <<'PY' 2>/dev/null || return 1
+import sqlite3, sys, os
+src_path = sys.argv[1]
+if not src_path or not os.path.exists(src_path):
+    raise SystemExit("MISSING")
+src = sqlite3.connect(src_path)
+dst = sqlite3.connect("/tmp/mrm_db_backup.sqlite3")
+src.backup(dst)
+src.close(); dst.close()
+PY
+    docker cp "$CONT:/tmp/mrm_db_backup.sqlite3" "$DEST" >/dev/null 2>&1 || return 1
+    docker exec "$CONT" rm -f /tmp/mrm_db_backup.sqlite3 2>/dev/null || true
+    [ -s "$DEST" ] || return 1
+    log_backup "SUCCESS" "SQLite exported via container ($(du -h "$DEST" | cut -f1))"
+    return 0
+}
+
+# Export PostgreSQL (try: dedicated postgres container, then host pg_dump)
+mrm_export_postgres() {
+    local DEST="$1" HOST="$2" PORT="$3" USER="$4" PASS="$5" DBNAME="$6"
+    local CONT
+    if [ -n "$PASS" ]; then export PGPASSWORD="$PASS"; fi
+    CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "postgres|timescale" | head -1)
+    if [ -n "$CONT" ]; then
+        log_backup "INFO" "pg_dump via container: $CONT ($USER@$HOST:$PORT/$DBNAME)"
+        if docker exec -e PGPASSWORD="$PASS" "$CONT" pg_dump -h "$HOST" -p "$PORT" -U "$USER" -d "$DBNAME" 2>/dev/null > "$DEST" \
+           && [ -s "$DEST" ] && [ "$(stat -c%s "$DEST" 2>/dev/null || echo 0)" -gt 100 ]; then
+            unset PGPASSWORD; return 0
         fi
-        if [ -f "$DEST_DIR/db.sql" ]; then
-            local FILE_SIZE=$(stat -c%s "$DEST_DIR/db.sql" 2>/dev/null || echo "0")
-            if [ "$FILE_SIZE" -gt 100 ]; then log_backup "SUCCESS" "pg_dump OK with '$TRY_USER' - Size: $FILE_SIZE bytes"; DB_EXPORTED=true; break; else log_backup "WARN" "pg_dump with '$TRY_USER' small file ($FILE_SIZE)"; rm -f "$DEST_DIR/db.sql"; fi
-        else
-            log_backup "WARN" "pg_dump with '$TRY_USER' failed"
+    fi
+    if command -v pg_dump >/dev/null 2>&1; then
+        log_backup "INFO" "pg_dump via host: $HOST:$PORT ($USER/$DBNAME)"
+        if pg_dump -h "$HOST" -p "$PORT" -U "$USER" -d "$DBNAME" 2>/dev/null > "$DEST" \
+           && [ -s "$DEST" ] && [ "$(stat -c%s "$DEST" 2>/dev/null || echo 0)" -gt 100 ]; then
+            unset PGPASSWORD; return 0
+        fi
+    fi
+    unset PGPASSWORD
+    return 1
+}
+
+# Export MySQL/MariaDB (try: container mysqldump, then host mysqldump)
+mrm_export_mysql() {
+    local DEST="$1" HOST="$2" PORT="$3" USER="$4" PASS="$5" DBNAME="$6"
+    local CONT
+    if [ -n "$PASS" ]; then export MYSQL_PWD="$PASS"; fi
+    CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "mysql|mariadb" | head -1)
+    if [ -n "$CONT" ]; then
+        if docker exec -e MYSQL_PWD="$PASS" "$CONT" mysqldump -h"$HOST" -P"$PORT" -u"$USER" "$DBNAME" 2>/dev/null > "$DEST" \
+           && [ -s "$DEST" ] && [ "$(stat -c%s "$DEST" 2>/dev/null || echo 0)" -gt 100 ]; then
+            unset MYSQL_PWD; return 0
+        fi
+    fi
+    if command -v mysqldump >/dev/null 2>&1; then
+        if mysqldump -h"$HOST" -P"$PORT" -u"$USER" "$DBNAME" 2>/dev/null > "$DEST" \
+           && [ -s "$DEST" ] && [ "$(stat -c%s "$DEST" 2>/dev/null || echo 0)" -gt 100 ]; then
+            unset MYSQL_PWD; return 0
+        fi
+    fi
+    unset MYSQL_PWD
+    return 1
+}
+
+# Main DB backup entry: mrm_backup_database <dest_dir>
+# Sets globals: DB_BACKUP_FILE, DB_BACKUP_DESC. Returns 0 = success.
+DB_BACKUP_FILE=""; DB_BACKUP_DESC=""
+mrm_backup_database() {
+    local DEST_DIR="$1" CONT PROBE TYPE
+    DB_BACKUP_FILE=""; DB_BACKUP_DESC=""
+    CONT="$(mrm_panel_container)"
+    log_backup "INFO" "Panel container: ${CONT:-NOT FOUND}"
+    if [ -n "$CONT" ]; then
+        PROBE="$(mrm_probe_database "$CONT")"
+    fi
+    TYPE="$(printf '%s' "$PROBE" | cut -d'|' -f1)"
+    log_backup "INFO" "Database probe: ${PROBE:-none}"
+
+    if [ "$TYPE" = "sqlite" ]; then
+        local SQLITE_PATH
+        SQLITE_PATH="$(printf '%s' "$PROBE" | cut -d'|' -f2-)"
+        if [ -n "$SQLITE_PATH" ] && mrm_export_sqlite "$CONT" "$SQLITE_PATH" "$DEST_DIR/db.sqlite3"; then
+            DB_BACKUP_FILE="$DEST_DIR/db.sqlite3"
+            DB_BACKUP_DESC="SQLite ($(du -h "$DB_BACKUP_FILE" | cut -f1))"
+            return 0
+        fi
+        # Fallback: host-side copies (older PasarGuard stored the DB on the volume)
+        local HOST_CAND
+        for HOST_CAND in "$DATA_DIR/db.sqlite3" "$PANEL_DIR/db.sqlite3"; do
+            if [ -f "$HOST_CAND" ] && [ -s "$HOST_CAND" ]; then
+                cp "$HOST_CAND" "$DEST_DIR/db.sqlite3" 2>/dev/null || continue
+                DB_BACKUP_FILE="$DEST_DIR/db.sqlite3"
+                DB_BACKUP_DESC="SQLite (host copy)"
+                log_backup "SUCCESS" "SQLite exported from host path: $HOST_CAND"
+                return 0
+            fi
+        done
+        log_backup "ERROR" "SQLite not found (container=$SQLITE_PATH, host=$DATA_DIR|$PANEL_DIR)"
+        return 1
+    elif [ "$TYPE" = "postgres" ]; then
+        local PHOST PPORT PUSER PPASS PDB
+        PHOST="$(printf '%s' "$PROBE" | cut -d'|' -f2)"
+        PPORT="$(printf '%s' "$PROBE" | cut -d'|' -f3)"
+        PUSER="$(printf '%s' "$PROBE" | cut -d'|' -f4)"
+        PPASS="$(mrm_b64dec "$(printf '%s' "$PROBE" | cut -d'|' -f5)")"
+        PDB="$(printf '%s' "$PROBE" | cut -d'|' -f6)"
+        if [ -n "$PUSER" ] && [ -n "$PDB" ] && mrm_export_postgres "$DEST_DIR/db.sql" "$PHOST" "$PPORT" "$PUSER" "$PPASS" "$PDB"; then
+            DB_BACKUP_FILE="$DEST_DIR/db.sql"; DB_BACKUP_DESC="PostgreSQL"
+            return 0
+        fi
+        # Legacy fallback credential sets
+        local CRED TU TP TDB
+        for CRED in "pasarguard|17240304|pasarguard" "marzban|marzban|marzban" "postgres||postgres"; do
+            IFS='|' read -r TU TP TDB <<< "$CRED"
+            [ -z "$TDB" ] && TDB="$TU"
+            if mrm_export_postgres "$DEST_DIR/db.sql" "127.0.0.1" "5432" "$TU" "$TP" "$TDB"; then
+                DB_BACKUP_FILE="$DEST_DIR/db.sql"; DB_BACKUP_DESC="PostgreSQL (fallback)"
+                return 0
+            fi
+        done
+        log_backup "ERROR" "PostgreSQL export failed ($PDB@$PHOST:$PPORT)"
+        return 1
+    elif [ "$TYPE" = "mysql" ]; then
+        local MHOST MPORT MUSER MPASS MDB
+        MHOST="$(printf '%s' "$PROBE" | cut -d'|' -f2)"
+        MPORT="$(printf '%s' "$PROBE" | cut -d'|' -f3)"
+        MUSER="$(printf '%s' "$PROBE" | cut -d'|' -f4)"
+        MPASS="$(mrm_b64dec "$(printf '%s' "$PROBE" | cut -d'|' -f5)")"
+        MDB="$(printf '%s' "$PROBE" | cut -d'|' -f6)"
+        if [ -n "$MUSER" ] && [ -n "$MDB" ] && mrm_export_mysql "$DEST_DIR/db.sql" "$MHOST" "$MPORT" "$MUSER" "$MPASS" "$MDB"; then
+            DB_BACKUP_FILE="$DEST_DIR/db.sql"; DB_BACKUP_DESC="MySQL/MariaDB"
+            return 0
+        fi
+        log_backup "ERROR" "MySQL export failed"
+        return 1
+    fi
+
+    # Probe failed / unknown -> fall back to old .env grep behavior
+    log_backup "WARN" "DB probe failed, falling back to .env detection"
+    if grep -qiE "postgresql|postgres" "$PANEL_ENV" 2>/dev/null; then
+        parse_db_credentials "$PANEL_ENV"
+        if mrm_export_postgres "$DEST_DIR/db.sql" "${DB_HOST:-127.0.0.1}" "5432" "${DB_USER:-pasarguard}" "$DB_PASS" "${DB_NAME:-pasarguard}"; then
+            DB_BACKUP_FILE="$DEST_DIR/db.sql"; DB_BACKUP_DESC="PostgreSQL"
+            return 0
+        fi
+        return 1
+    fi
+    # Assume sqlite, try host paths
+    local HOST_CAND
+    for HOST_CAND in "$DATA_DIR/db.sqlite3" "$PANEL_DIR/db.sqlite3"; do
+        if [ -f "$HOST_CAND" ] && [ -s "$HOST_CAND" ]; then
+            cp "$HOST_CAND" "$DEST_DIR/db.sqlite3" 2>/dev/null || continue
+            DB_BACKUP_FILE="$DEST_DIR/db.sqlite3"; DB_BACKUP_DESC="SQLite (host copy)"
+            return 0
         fi
     done
-    if [ "$DB_EXPORTED" = true ]; then return 0; else log_backup "ERROR" "All pg_dump attempts failed!"; return 1; fi
+    log_backup "ERROR" "No database found/exportable"
+    return 1
 }
 
 # ==========================================
@@ -473,40 +659,24 @@ do_backup() {
     local DB_SIZE="0"
     local DB_RAW_PATH=""
 
-    if grep -qiE "postgresql|postgres" "$PANEL_ENV" 2>/dev/null; then
-        log_backup "INFO" "PostgreSQL detected"
-        if export_postgresql_database "$B_PATH/database"; then
-            DB_SUCCESS=true
-            DB_SIZE=$(du -h "$B_PATH/database/db.sql" | cut -f1)
-            DB_RAW_PATH="$B_PATH/database/db.sql"
-            # Compress to db.sql.gz with -9
+    if mrm_backup_database "$B_PATH/database"; then
+        DB_SUCCESS=true
+        DB_RAW_PATH="$DB_BACKUP_FILE"
+        DB_SIZE=$(du -h "$DB_RAW_PATH" 2>/dev/null | cut -f1)
+        log_backup "INFO" "DB exported: $DB_BACKUP_DESC ($DB_SIZE)"
+        # Compress SQL dumps (postgres/mysql); sqlite stays raw (already compact)
+        if [[ "$DB_RAW_PATH" == *.sql ]]; then
             if gzip -9 -c "$DB_RAW_PATH" > "$B_PATH/database/db.sql.gz"; then
                 rm -f "$DB_RAW_PATH"
-                log_backup "INFO" "DB compressed $DB_SIZE -> $(du -h "$B_PATH/database/db.sql.gz" | cut -f1)"
+                DB_BACKUP_FILE="$B_PATH/database/db.sql.gz"
+                DB_BACKUP_DESC="$DB_BACKUP_DESC (gzip -9)"
+                log_backup "INFO" "DB compressed -> $(du -h "$DB_BACKUP_FILE" | cut -f1)"
             fi
-            [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "Database exported & compressed ($DB_SIZE)"
-        else
-            [ "$MODE" != "auto" ] && ui_spinner_stop && ui_error "Database export FAILED!"
-            log_backup "ERROR" "PostgreSQL export failed"
         fi
+        [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "Database exported ($DB_SIZE) [$DB_BACKUP_DESC]"
     else
-        log_backup "INFO" "SQLite mode"
-        local SQLITE_PATH=""
-        if [ -f "$DATA_DIR/db.sqlite3" ]; then SQLITE_PATH="$DATA_DIR/db.sqlite3"
-        elif [ -f "$PANEL_DIR/db.sqlite3" ]; then SQLITE_PATH="$PANEL_DIR/db.sqlite3"
-        fi
-        if [ -n "$SQLITE_PATH" ] && [ -f "$SQLITE_PATH" ]; then
-            # VACUUM to shrink
-            sqlite3 "$SQLITE_PATH" "VACUUM;" 2>/dev/null || true
-            cp "$SQLITE_PATH" "$B_PATH/database/"
-            DB_SUCCESS=true
-            DB_SIZE=$(du -h "$B_PATH/database/db.sqlite3" | cut -f1)
-            log_backup "INFO" "SQLite exported: $DB_SIZE"
-            [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "Database exported ($DB_SIZE)"
-        else
-            log_backup "ERROR" "No SQLite database found"
-            [ "$MODE" != "auto" ] && ui_spinner_stop && ui_error "No database found!"
-        fi
+        [ "$MODE" != "auto" ] && ui_spinner_stop && ui_error "Database export FAILED!"
+        log_backup "ERROR" "Database export failed - backup will NOT contain the DB"
     fi
 
     if [ "$DB_SUCCESS" = false ] && [ "$MODE" != "auto" ]; then
@@ -647,6 +817,7 @@ Data Dir: $DATA_DIR
 Node Dir: $NODE_DIR
 Database Exported: $DB_SUCCESS
 Database Size: $DB_SIZE
+Database Type: ${DB_BACKUP_DESC:-N/A}
 Raw Size Before Compression: $TOTAL_RAW_SIZE
 Version: $MRM_BACKUP_VERSION
 Backup profile: v${BACKUP_VERSION}
@@ -694,8 +865,13 @@ Manual Restore (if needed):
    cp -a /tmp/MRM_V1_*/node/certs/* /var/lib/pg-node/certs/
 5. Database PostgreSQL:
    gunzip -c /tmp/MRM_V1_*/database/db.sql.gz | docker exec -i \$(docker ps --format '{{.Names}}' | grep -iE "postgres|timescale" | head -1) psql -U pasarguard -d pasarguard
-   Or SQLite:
-   cp /tmp/MRM_V1_*/database/db.sqlite3 $DATA_DIR/db.sqlite3
+   Or SQLite (PasarGuard v5 keeps it INSIDE the panel container at /code/db.sqlite3):
+   docker cp /tmp/MRM_V1_*/database/db.sqlite3 \$(docker ps -q -f name=pasarguard | head -1):/tmp/restore.sqlite3
+   docker exec -i \$(docker ps -q -f name=pasarguard | head -1) python -c "
+import sqlite3
+src=sqlite3.connect('/tmp/restore.sqlite3')
+dst=sqlite3.connect('/code/db.sqlite3')
+src.backup(dst); dst.close(); src.close()"
 6. Restart:
    cd $PANEL_DIR && docker compose up -d
 
@@ -766,6 +942,14 @@ EOF
         else
             [ "$MODE" != "auto" ] && ui_spinner_stop && ui_warning "Telegram send failed - check log. Size: $FINAL_SIZE"
         fi
+        # Loud warning when the DB is missing (how the 39KB backups happened)
+        if [ "$DB_SUCCESS" = false ]; then
+            send_to_telegram "" "⚠️ MRM Backup created WITHOUT DATABASE!
+File: $(basename "$ARCHIVE_PATH") ($FINAL_SIZE)
+Reason: Database export failed - see /var/log/mrm-backup.log
+Check: SQLite lives inside the panel container in PasarGuard v5." >/dev/null 2>&1 || true
+            log_backup "ERROR" "Backup has NO DATABASE - sent Telegram warning"
+        fi
     fi
 
     # 10. Rotate old backups - keep last 7
@@ -785,7 +969,7 @@ EOF
         if [ "$DB_SUCCESS" = false ]; then
             echo -e "${GREEN}║${NC} Database: ${RED}NOT EXPORTED${NC}"
         else
-            echo -e "${GREEN}║${NC} Database: ${GREEN}Exported${NC} ($DB_SIZE) + gzip -9"
+            echo -e "${GREEN}║${NC} Database: ${GREEN}Exported${NC} ($DB_SIZE) [${DB_BACKUP_DESC}]"
         fi
         echo -e "${GREEN}║${NC} Fixes: ${GREEN}geoip, xray binary, backup.zip loop${NC}"
         echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
@@ -1016,20 +1200,13 @@ do_restore() {
         ui_success "v${BACKUP_VERSION} essentials restored"
     fi
 
-    # Fix env files
-    local RESTORE_ENV_OK=true
-    ui_spinner_start "Fixing .env files..."
-    if [ -f "$PANEL_ENV" ]; then fix_env_file "$PANEL_ENV" || RESTORE_ENV_OK=false; fi
-    if [ -f "$NODE_ENV" ]; then fix_env_file "$NODE_ENV" || RESTORE_ENV_OK=false; fi
-    ui_spinner_stop
-    if [ "$RESTORE_ENV_OK" = true ]; then ui_success ".env files fixed"; else ui_warning ".env fix had issues"; fi
-
-    # Fix IPs
-    ui_spinner_start "Updating IPs in docker-compose..."
-    if fix_docker_compose; then ui_spinner_stop; ui_success "Docker compose IPs updated"; else ui_spinner_stop; ui_warning "Compose IP update skipped"; fi
-
-    # Smart fix
-    apply_smart_fix
+    # NOTE: We deliberately do NOT rewrite .env / apply smart fixes here.
+    # fix_env_file + apply_smart_fix used to mangle the panel .env during
+    # restore, which caused DB connection errors after restore.
+    # Restored files are used as-is from the backup.
+    echo -e "${CYAN}✓ Restored files are used as-is (no auto .env rewrite).${NC}"
+    echo -e "${YELLOW}If you need IP updates or firewall fixes, use 'Smart Fix' from the Backup menu.${NC}"
+    sleep 1
 
     # Start services
     local STARTED_ANY=false START_FAILED=false
@@ -1047,26 +1224,75 @@ do_restore() {
 
     if [ "$START_FAILED" = true ]; then ui_error "Failed to start one or more services"; elif [ "$STARTED_ANY" = true ]; then ui_success "Services started"; else ui_warning "No compose services found to start"; fi
 
-    # Restore database - Critical part, bug free
+    # Restore database - FIXED: sqlite checked BEFORE sql (db.sqlite3 used to match *db.sql*)
     local DB_RESTORE_PATH=""
     local DB_IS_GZ=false
-
-    if [ -f "$ROOT/database/db.sql.gz" ]; then
-        DB_RESTORE_PATH="$ROOT/database/db.sql.gz"
-        DB_IS_GZ=true
-    elif [ -f "$ROOT/database/db.sql" ]; then
-        DB_RESTORE_PATH="$ROOT/database/db.sql"
-    elif [ -f "$ROOT/database/db.sqlite3" ]; then
-        DB_RESTORE_PATH="$ROOT/database/db.sqlite3"
-    fi
+    local DB_IS_SQLITE=false
+    local DB_PICK
+    DB_PICK="$(mrm_pick_db_restore "$ROOT")"
+    case "$(printf '%s' "$DB_PICK" | cut -d'|' -f1)" in
+        sqlite) DB_IS_SQLITE=true ;;
+        gz)     DB_IS_GZ=true ;;
+    esac
+    DB_RESTORE_PATH="$(printf '%s' "$DB_PICK" | cut -d'|' -f2-)"
 
     if [ -n "$DB_RESTORE_PATH" ]; then
-        log_backup "INFO" "Found DB to restore: $DB_RESTORE_PATH"
+        log_backup "INFO" "Found DB to restore: $DB_RESTORE_PATH (sqlite=$DB_IS_SQLITE gz=$DB_IS_GZ)"
 
-        if [[ "$DB_RESTORE_PATH" == *"db.sql"* ]]; then
-            # PostgreSQL restore
+        if [ "$DB_IS_SQLITE" = true ]; then
+            # --- SQLite restore: import back into the panel container ---
+            ui_spinner_start "Restoring SQLite database..."
+            local DB_IMPORTED=false
+            local PCONT
+            PCONT="$(mrm_panel_container)"
+            if [ -n "$PCONT" ]; then
+                local PROBE SQLITE_PATH
+                PROBE="$(mrm_probe_database "$PCONT")"
+                if [ "$(printf '%s' "$PROBE" | cut -d'|' -f1)" = "sqlite" ]; then
+                    SQLITE_PATH="$(printf '%s' "$PROBE" | cut -d'|' -f2-)"
+                fi
+                [ -z "$SQLITE_PATH" ] && SQLITE_PATH="/code/db.sqlite3"
+                log_backup "INFO" "SQLite target inside container: $SQLITE_PATH"
+                if docker cp "$DB_RESTORE_PATH" "$PCONT:/tmp/mrm_db_restore.sqlite3" >/dev/null 2>&1 \
+                   && docker exec -i "$PCONT" python - "$SQLITE_PATH" <<'PY' 2>/dev/null
+import sqlite3, sys, os
+target = sys.argv[1]
+d = os.path.dirname(target)
+if d:
+    os.makedirs(d, exist_ok=True)
+src = sqlite3.connect("/tmp/mrm_db_restore.sqlite3")
+dst = sqlite3.connect(target)
+src.backup(dst)
+dst.commit(); dst.close(); src.close()
+PY
+                then
+                    docker exec "$PCONT" rm -f /tmp/mrm_db_restore.sqlite3 2>/dev/null || true
+                    DB_IMPORTED=true
+                    log_backup "SUCCESS" "SQLite DB imported into container: $SQLITE_PATH"
+                else
+                    log_backup "ERROR" "SQLite import into container failed"
+                fi
+            fi
+            # Also drop copies on the host for older installs / manual access
+            [ -d "$DATA_DIR" ] && cp "$DB_RESTORE_PATH" "$DATA_DIR/db.sqlite3" 2>/dev/null
+            [ -d "$PANEL_DIR" ] && cp "$DB_RESTORE_PATH" "$PANEL_DIR/db.sqlite3" 2>/dev/null
+            ui_spinner_stop
+            if [ "$DB_IMPORTED" = true ]; then
+                ui_success "SQLite database imported into container!"
+                # Restart the panel so it reopens the DB with restored data
+                ui_spinner_start "Restarting panel to load restored DB..."
+                if [ -n "$PANEL_COMPOSE_FILE" ]; then
+                    run_compose_file "$PANEL_COMPOSE_FILE" restart >/dev/null 2>&1 || true
+                fi
+                ui_spinner_stop
+                ui_success "Panel restarted with restored database"
+            else
+                ui_error "SQLite import failed - check /var/log/mrm-backup.log"
+            fi
+        else
+            # --- PostgreSQL / MySQL dump restore ---
+            local DB_IMPORTED=false
             if grep -qiE "postgresql|postgres" "$PANEL_ENV" 2>/dev/null; then
-                local DB_IMPORTED=false
                 echo -e "${YELLOW}Waiting for database to initialize (30s)...${NC}"
                 sleep 30
                 ui_spinner_start "Importing PostgreSQL database..."
@@ -1100,26 +1326,52 @@ do_restore() {
                         fi
                     fi
 
-                    # Clean temp gunzipped file if created
                     [ "$DB_IS_GZ" = true ] && [ -f "$TEMP_SQL" ] && [ "$TEMP_SQL" != "$DB_RESTORE_PATH" ] && rm -f "$TEMP_SQL"
                 else
-                    log_backup "ERROR" "No DB container found for restore"
+                    # Try host psql as a fallback
+                    if command -v psql >/dev/null 2>&1; then
+                        local SQL_FILE2="$DB_RESTORE_PATH"
+                        if [ "$DB_IS_GZ" = true ]; then
+                            SQL_FILE2="$ROOT/database/db.sql"
+                            gunzip -c "$DB_RESTORE_PATH" > "$SQL_FILE2" 2>/dev/null
+                        fi
+                        parse_db_credentials "$PANEL_ENV"
+                        [ -z "$DB_USER" ] && DB_USER="pasarguard"
+                        [ -z "$DB_NAME" ] && DB_NAME="$DB_USER"
+                        export PGPASSWORD="$DB_PASS"
+                        if psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1 && \
+                           psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" -f "$SQL_FILE2" >/dev/null 2>&1; then
+                            DB_IMPORTED=true
+                        fi
+                        unset PGPASSWORD
+                        [ "$DB_IS_GZ" = true ] && [ -f "$SQL_FILE2" ] && rm -f "$SQL_FILE2"
+                    else
+                        log_backup "ERROR" "No DB container or psql found for restore"
+                    fi
                 fi
                 ui_spinner_stop
-                if [ "$DB_IMPORTED" = true ]; then ui_success "Database imported successfully!"; log_backup "SUCCESS" "DB imported"; else ui_error "Database import failed! Check logs"; log_backup "ERROR" "DB import failed"; fi
+                if [ "$DB_IMPORTED" = true ]; then ui_success "PostgreSQL database imported successfully!"; log_backup "SUCCESS" "PostgreSQL DB imported"; else ui_error "PostgreSQL database import failed! Check logs"; log_backup "ERROR" "PostgreSQL DB import failed"; fi
+            elif grep -qiE "mysql|mariadb" "$PANEL_ENV" 2>/dev/null; then
+                ui_spinner_start "Importing MySQL/MariaDB database..."
+                local DB_CONT=$(docker ps --format '{{.Names}}' | grep -iE "mysql|mariadb" | head -1)
+                if [ -n "$DB_CONT" ]; then
+                    parse_db_credentials "$PANEL_ENV"
+                    [ -z "$DB_USER" ] && DB_USER="pasarguard"
+                    [ -z "$DB_NAME" ] && DB_NAME="$DB_USER"
+                    local SQL_FILE="$DB_RESTORE_PATH"
+                    local TEMP_SQL=""
+                    if [ "$DB_IS_GZ" = true ]; then
+                        TEMP_SQL="$ROOT/database/db.sql"
+                        gunzip -c "$DB_RESTORE_PATH" > "$TEMP_SQL" 2>/dev/null && SQL_FILE="$TEMP_SQL"
+                    fi
+                    if docker exec -e MYSQL_PWD="$DB_PASS" "$DB_CONT" mysql -u "$DB_USER" "$DB_NAME" < "$SQL_FILE" 2>/dev/null; then
+                        DB_IMPORTED=true
+                    fi
+                    [ "$DB_IS_GZ" = true ] && [ -f "$TEMP_SQL" ] && [ "$TEMP_SQL" != "$DB_RESTORE_PATH" ] && rm -f "$TEMP_SQL"
+                fi
+                ui_spinner_stop
+                if [ "$DB_IMPORTED" = true ]; then ui_success "MySQL database imported successfully!"; log_backup "SUCCESS" "MySQL DB imported"; else ui_error "MySQL database import failed!"; log_backup "ERROR" "MySQL DB import failed"; fi
             fi
-        elif [[ "$DB_RESTORE_PATH" == *"db.sqlite3"* ]]; then
-            # SQLite restore
-            ui_spinner_start "Restoring SQLite database..."
-            local RESTORED=false
-            if [ -f "$DATA_DIR/db.sqlite3" ] || [ -d "$DATA_DIR" ]; then
-                if cp "$DB_RESTORE_PATH" "$DATA_DIR/db.sqlite3" 2>/dev/null; then RESTORED=true; fi
-            fi
-            if [ "$RESTORED" = false ] && [ -d "$PANEL_DIR" ]; then
-                if cp "$DB_RESTORE_PATH" "$PANEL_DIR/db.sqlite3" 2>/dev/null; then RESTORED=true; fi
-            fi
-            ui_spinner_stop
-            if [ "$RESTORED" = true ]; then ui_success "SQLite database restored"; else ui_error "SQLite restore failed"; fi
         fi
     else
         log_backup "WARNING" "No database file found in backup to restore"
@@ -1147,6 +1399,22 @@ do_restore() {
     echo -e "${CYAN}Note: geoip.dat, xray binary will be re-downloaded automatically on node start${NC}"
     echo ""
     pause
+}
+
+# Pick which DB file to restore from a backup root. Prints "TYPE|PATH"
+# (sqlite MUST be checked before *.sql - "db.sqlite3" matches "*db.sql*"!)
+mrm_pick_db_restore() {
+    local ROOT="$1"
+    if [ -f "$ROOT/database/db.sqlite3" ]; then
+        printf 'sqlite|%s\n' "$ROOT/database/db.sqlite3"; return 0
+    fi
+    if [ -f "$ROOT/database/db.sql.gz" ]; then
+        printf 'gz|%s\n' "$ROOT/database/db.sql.gz"; return 0
+    fi
+    if [ -f "$ROOT/database/db.sql" ]; then
+        printf 'sql|%s\n' "$ROOT/database/db.sql"; return 0
+    fi
+    printf 'none|\n'; return 1
 }
 
 # ==========================================
