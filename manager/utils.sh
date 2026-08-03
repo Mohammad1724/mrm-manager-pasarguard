@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager utils.sh v1.0.3
+# MRM Manager utils.sh v1.0.5
 
 export RED='\033[0;31m'
 export GREEN='\033[0;32m'
@@ -12,7 +12,8 @@ export NC='\033[0m'
 
 CONFIG_FILE="/opt/mrm-manager/panel.conf"
 MRM_VERSION_FILE="/opt/mrm-manager/VERSION"
-MRM_DEFAULT_VERSION="1.0.3"
+# FIX: Default version matches current release (was "1.0.3")
+MRM_DEFAULT_VERSION="1.0.5"
 
 ensure_mrm_config_dir() {
     mkdir -p "$(dirname "$CONFIG_FILE")"
@@ -117,7 +118,7 @@ get_panel_container_id() {
 select_panel() {
     echo ""
     echo -e "${CYAN}══════════════════════════════════════${NC}"
-    echo -e "${CYAN}       SELECT YOUR PANEL TYPE         ${NC}"
+    echo -e "${CYAN} SELECT YOUR PANEL TYPE ${NC}"
     echo -e "${CYAN}══════════════════════════════════════${NC}"
     echo ""
     echo "1) Pasarguard"
@@ -157,16 +158,13 @@ load_panel_config() {
     fi
 
     # FIX: No prompt on load - default to pasarguard silently
-    # Only prompt when user explicitly calls select_panel via settings menu
-    # Check if we're in interactive mode and MRM_FIRST_RUN is not set
     if [ -n "$MRM_FIRST_RUN" ] || [ ! -t 0 ]; then
-        # Non-interactive or first run after install - default without prompt
         save_panel_config "pasarguard" 2>/dev/null || true
         apply_panel_config "pasarguard"
         return 0
     fi
 
-    # Even in interactive, if no panels installed, default without prompt to avoid hang
+    # Even in interactive, if no panels installed, default without prompt
     local PANELS
     PANELS=$(get_installed_panels)
     if [ -z "$PANELS" ]; then
@@ -175,8 +173,7 @@ load_panel_config() {
         return 0
     fi
 
-    # If multiple panels and interactive, then we can prompt (but this is called on source, so avoid)
-    # Default to first found
+    # If multiple panels and interactive, default to first found
     local FIRST=$(echo "$PANELS" | head -1)
     if [ -n "$FIRST" ]; then
         save_panel_config "$FIRST" 2>/dev/null || true
@@ -254,7 +251,7 @@ get_panel_cli() {
         rebecca) echo "rebecca-cli" ;;
         pasarguard) echo "pasarguard-cli" ;;
         marzban) echo "marzban-cli" ;;
-        *) echo "marzban-cli" ;;
+        *) echo "pasarguard-cli" ;;
     esac
 }
 
