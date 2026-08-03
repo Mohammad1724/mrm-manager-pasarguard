@@ -402,7 +402,8 @@ parse_db_credentials() {
 # We ask the panel itself where its DB lives.
 # ==========================================
 
-# Find the running panel container (most reliable source of DB info)
+# Find the RUNNING panel container. Prefers the compose project, falls back to
+# a precise name/image match (must NOT match node containers like "pasarguard-node").
 mrm_panel_container() {
     local COMPOSE_FILE CID
     COMPOSE_FILE="$(get_existing_compose_file panel 2>/dev/null || true)"
@@ -410,8 +411,26 @@ mrm_panel_container() {
         CID="$(docker compose -f "$COMPOSE_FILE" ps -q 2>/dev/null | head -1)"
         [ -n "$CID" ] && { printf '%s\n' "$CID"; return 0; }
     fi
-    # Fallback: by container name/image
-    docker ps --format '{{.ID}}|{{.Names}}|{{.Image}}' 2>/dev/null | grep -iE "pasarguard" | head -1 | cut -d'|' -f1
+    # Fallback: running container whose IMAGE is the panel image, or whose name
+    # is exactly "pasarguard" (exclude *-node / node-*).
+    docker ps --format '{{.ID}}|{{.Names}}|{{.Image}}' 2>/dev/null \
+        | grep -iE "pasarguard/panel:|pasarguard/panel$|pasarguard/panel\b" \
+        | head -1 | cut -d'|' -f1
+}
+
+# Find the panel container even if it is STOPPED (needed to copy the DB out/in
+# while the panel is down). Same precise matching, using `docker ps -a`.
+mrm_find_panel_container() {
+    local COMPOSE_FILE CID
+    COMPOSE_FILE="$(get_existing_compose_file panel 2>/dev/null || true)"
+    if [ -n "$COMPOSE_FILE" ] && [ -f "$COMPOSE_FILE" ]; then
+        CID="$(docker compose -f "$COMPOSE_FILE" ps -a -q 2>/dev/null | head -1)"
+        [ -n "$CID" ] && { printf '%s\n' "$CID"; return 0; }
+    fi
+    docker ps -a --format '{{.ID}}|{{.Names}}|{{.Image}}' 2>/dev/null \
+        | grep -iE "pasarguard/panel:|pasarguard/panel$|pasarguard/panel\b|(^|\|)pasarguard(\||$)" \
+        | grep -viE "node" \
+        | head -1 | cut -d'|' -f1
 }
 
 # Ask the panel itself. Prints: TYPE|INFO
@@ -424,7 +443,13 @@ mrm_probe_database() {
     [ -z "$CONT" ] && return 1
     docker exec -i "$CONT" python - <<'PY' 2>/dev/null
 import os, base64
-from sqlalchemy.engine import make_url
+try:
+    from sqlalchemy.engine import make_url
+except ImportError:
+    try:
+        from sqlalchemy import make_url
+    except Exception:
+        print("UNKNOWN|"); raise SystemExit(0)
 try:
     from config import database_settings as s
     url = s.url
@@ -453,6 +478,40 @@ PY
 
 mrm_b64dec() { printf '%s' "$1" | base64 -d 2>/dev/null; }
 
+# Sanity check: is this file a valid SQLite database? (magic header)
+mrm_is_sqlite_file() {
+    [ -s "$1" ] && head -c 16 "$1" 2>/dev/null | grep -q "SQLite format 3"
+}
+
+# Parse a sqlite+aiosqlite://... URL and print the DB path.
+#   absolute: sqlite+aiosqlite:////var/lib/db.sqlite3 -> /var/lib/db.sqlite3
+#   relative: sqlite+aiosqlite:///db.sqlite3          -> db.sqlite3
+mrm_sqlite_path_from_url() {
+    local URL="$1" SCHEME REST
+    SCHEME="${URL%%:*}"         # scheme = everything before the first ':'
+    REST="${URL#*://}"          # everything after the first ://
+    case "$SCHEME" in
+        sqlite*)
+            # REST starts with "//"  -> absolute path (drop ONE leading slash)
+            # REST starts with "/"   -> relative path  (drop the leading slash)
+            printf '%s\n' "${REST#/}"
+            return 0
+            ;;
+    esac
+    return 1
+}
+
+# Live-safe SQLite export via host sqlite3 CLI (.backup handles concurrent access).
+mrm_sqlite_host_backup() {
+    local SRC="$1" DEST="$2"
+    [ -n "$SRC" ] && [ -f "$SRC" ] || return 1
+    if command -v sqlite3 >/dev/null 2>&1; then
+        sqlite3 "$SRC" ".backup '$DEST'" 2>/dev/null && mrm_is_sqlite_file "$DEST" && return 0
+    fi
+    # Fallback: plain copy (fine for rollback-journal SQLite, panel may be running)
+    cp -f "$SRC" "$DEST" 2>/dev/null && mrm_is_sqlite_file "$DEST"
+}
+
 # Export SQLite safely (live-safe backup API) from inside the panel container
 mrm_export_sqlite() {
     local CONT="$1" SRC="$2" DEST="$3"
@@ -469,27 +528,60 @@ src.close(); dst.close()
 PY
     docker cp "$CONT:/tmp/mrm_db_backup.sqlite3" "$DEST" >/dev/null 2>&1 || return 1
     docker exec "$CONT" rm -f /tmp/mrm_db_backup.sqlite3 2>/dev/null || true
-    [ -s "$DEST" ] || return 1
+    mrm_is_sqlite_file "$DEST" || return 1
     log_backup "SUCCESS" "SQLite exported via container ($(du -h "$DEST" | cut -f1))"
     return 0
 }
 
-# Export PostgreSQL (try: dedicated postgres container, then host pg_dump)
+# Cold-copy SQLite from a STOPPED container (docker cp works while stopped).
+mrm_sqlite_cold_export() {
+    local CONT="$1" IN_PATH="$2" DEST="$3"
+    [ -n "$CONT" ] && [ -n "$IN_PATH" ] || return 1
+    docker cp "$CONT:$IN_PATH" "$DEST" >/dev/null 2>&1 && mrm_is_sqlite_file "$DEST"
+}
+
+# Try to find the sqlite path inside a (possibly stopped) container using
+# docker inspect: WORKDIR + Config.Env SQLALCHEMY_DATABASE_URL.
+mrm_sqlite_path_from_container() {
+    local CONT="$1" ENV_URL WORKDIR
+    ENV_URL="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$CONT" 2>/dev/null | grep -m1 '^SQLALCHEMY_DATABASE_URL=' | cut -d'=' -f2- | tr -d '"' | tr -d "'")"
+    if [ -n "$ENV_URL" ]; then
+        local P
+        P="$(mrm_sqlite_path_from_url "$ENV_URL" 2>/dev/null)"
+        if [ -n "$P" ]; then
+            if [[ "$P" == /* ]]; then printf '%s\n' "$P"; return 0; fi
+            WORKDIR="$(docker inspect -f '{{.Config.WorkingDir}}' "$CONT" 2>/dev/null)"
+            [ -z "$WORKDIR" ] && WORKDIR="/code"
+            printf '%s/%s\n' "${WORKDIR%/}" "$P"
+            return 0
+        fi
+    fi
+    # Common defaults (docker cp also works on STOPPED containers; errors if missing)
+    for CAND in "/code/db.sqlite3" "/var/lib/pasarguard/db.sqlite3" "/app/db.sqlite3"; do
+        if docker cp "$CONT:$CAND" /dev/null 2>/dev/null; then printf '%s\n' "$CAND"; return 0; fi
+    done
+    printf '%s\n' "/code/db.sqlite3"
+    return 0
+}
+
+# Export PostgreSQL (try: dedicated postgres container, then host pg_dump).
+# Always sets PGPASSWORD (even empty) and passes -w so pg_dump NEVER prompts
+# for a password interactively (would hang the menu / cron job).
 mrm_export_postgres() {
     local DEST="$1" HOST="$2" PORT="$3" USER="$4" PASS="$5" DBNAME="$6"
     local CONT
-    if [ -n "$PASS" ]; then export PGPASSWORD="$PASS"; fi
+    export PGPASSWORD="$PASS"
     CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "postgres|timescale" | head -1)
     if [ -n "$CONT" ]; then
         log_backup "INFO" "pg_dump via container: $CONT ($USER@$HOST:$PORT/$DBNAME)"
-        if docker exec -e PGPASSWORD="$PASS" "$CONT" pg_dump -h "$HOST" -p "$PORT" -U "$USER" -d "$DBNAME" 2>/dev/null > "$DEST" \
+        if docker exec -e PGPASSWORD="$PASS" "$CONT" pg_dump -w -h "$HOST" -p "$PORT" -U "$USER" -d "$DBNAME" 2>/dev/null > "$DEST" \
            && [ -s "$DEST" ] && [ "$(stat -c%s "$DEST" 2>/dev/null || echo 0)" -gt 100 ]; then
             unset PGPASSWORD; return 0
         fi
     fi
     if command -v pg_dump >/dev/null 2>&1; then
         log_backup "INFO" "pg_dump via host: $HOST:$PORT ($USER/$DBNAME)"
-        if pg_dump -h "$HOST" -p "$PORT" -U "$USER" -d "$DBNAME" 2>/dev/null > "$DEST" \
+        if pg_dump -w -h "$HOST" -p "$PORT" -U "$USER" -d "$DBNAME" 2>/dev/null > "$DEST" \
            && [ -s "$DEST" ] && [ "$(stat -c%s "$DEST" 2>/dev/null || echo 0)" -gt 100 ]; then
             unset PGPASSWORD; return 0
         fi
@@ -498,20 +590,21 @@ mrm_export_postgres() {
     return 1
 }
 
-# Export MySQL/MariaDB (try: container mysqldump, then host mysqldump)
+# Export MySQL/MariaDB (try: container mysqldump, then host mysqldump).
+# MYSQL_PWD is always set (even empty) so the client never prompts for a password.
 mrm_export_mysql() {
     local DEST="$1" HOST="$2" PORT="$3" USER="$4" PASS="$5" DBNAME="$6"
     local CONT
-    if [ -n "$PASS" ]; then export MYSQL_PWD="$PASS"; fi
+    export MYSQL_PWD="$PASS"
     CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "mysql|mariadb" | head -1)
     if [ -n "$CONT" ]; then
-        if docker exec -e MYSQL_PWD="$PASS" "$CONT" mysqldump -h"$HOST" -P"$PORT" -u"$USER" "$DBNAME" 2>/dev/null > "$DEST" \
+        if docker exec -e MYSQL_PWD="$PASS" "$CONT" mysqldump --connect-timeout=5 -h"$HOST" -P"$PORT" -u"$USER" "$DBNAME" 2>/dev/null > "$DEST" \
            && [ -s "$DEST" ] && [ "$(stat -c%s "$DEST" 2>/dev/null || echo 0)" -gt 100 ]; then
             unset MYSQL_PWD; return 0
         fi
     fi
     if command -v mysqldump >/dev/null 2>&1; then
-        if mysqldump -h"$HOST" -P"$PORT" -u"$USER" "$DBNAME" 2>/dev/null > "$DEST" \
+        if mysqldump --connect-timeout=5 -h"$HOST" -P"$PORT" -u"$USER" "$DBNAME" 2>/dev/null > "$DEST" \
            && [ -s "$DEST" ] && [ "$(stat -c%s "$DEST" 2>/dev/null || echo 0)" -gt 100 ]; then
             unset MYSQL_PWD; return 0
         fi
@@ -537,12 +630,36 @@ mrm_backup_database() {
     if [ "$TYPE" = "sqlite" ]; then
         local SQLITE_PATH
         SQLITE_PATH="$(printf '%s' "$PROBE" | cut -d'|' -f2-)"
-        if [ -n "$SQLITE_PATH" ] && mrm_export_sqlite "$CONT" "$SQLITE_PATH" "$DEST_DIR/db.sqlite3"; then
+        # 1) Host-visible path (official PasarGuard installs put the DB at
+        #    /var/lib/pasarguard/db.sqlite3, which IS on the host volume)
+        if [ -n "$SQLITE_PATH" ] && [ -f "$SQLITE_PATH" ]; then
+            if mrm_sqlite_host_backup "$SQLITE_PATH" "$DEST_DIR/db.sqlite3"; then
+                DB_BACKUP_FILE="$DEST_DIR/db.sqlite3"
+                DB_BACKUP_DESC="SQLite ($(du -h "$DB_BACKUP_FILE" | cut -f1))"
+                log_backup "SUCCESS" "SQLite exported from host path: $SQLITE_PATH"
+                return 0
+            fi
+        fi
+        # 2) Live backup API inside the running container (covers in-container DBs)
+        if [ -n "$SQLITE_PATH" ] && [ -n "$CONT" ] && mrm_export_sqlite "$CONT" "$SQLITE_PATH" "$DEST_DIR/db.sqlite3"; then
             DB_BACKUP_FILE="$DEST_DIR/db.sqlite3"
             DB_BACKUP_DESC="SQLite ($(du -h "$DB_BACKUP_FILE" | cut -f1))"
             return 0
         fi
-        # Fallback: host-side copies (older PasarGuard stored the DB on the volume)
+        # 3) Panel stopped? Cold-copy from the container filesystem
+        local PCONT
+        PCONT="$(mrm_find_panel_container)"
+        if [ -n "$PCONT" ]; then
+            local IN_PATH
+            IN_PATH="$(mrm_sqlite_path_from_container "$PCONT")"
+            if mrm_sqlite_cold_export "$PCONT" "$IN_PATH" "$DEST_DIR/db.sqlite3"; then
+                DB_BACKUP_FILE="$DEST_DIR/db.sqlite3"
+                DB_BACKUP_DESC="SQLite (cold copy $IN_PATH)"
+                log_backup "SUCCESS" "SQLite cold-copied from stopped container: $IN_PATH"
+                return 0
+            fi
+        fi
+        # 4) Last resort: known host paths (older PasarGuard versions)
         local HOST_CAND
         for HOST_CAND in "$DATA_DIR/db.sqlite3" "$PANEL_DIR/db.sqlite3"; do
             if [ -f "$HOST_CAND" ] && [ -s "$HOST_CAND" ]; then
@@ -553,7 +670,7 @@ mrm_backup_database() {
                 return 0
             fi
         done
-        log_backup "ERROR" "SQLite not found (container=$SQLITE_PATH, host=$DATA_DIR|$PANEL_DIR)"
+        log_backup "ERROR" "SQLite not found (probe=$SQLITE_PATH, host=$DATA_DIR|$PANEL_DIR)"
         return 1
     elif [ "$TYPE" = "postgres" ]; then
         local PHOST PPORT PUSER PPASS PDB
@@ -606,8 +723,7 @@ mrm_backup_database() {
     # Assume sqlite, try host paths
     local HOST_CAND
     for HOST_CAND in "$DATA_DIR/db.sqlite3" "$PANEL_DIR/db.sqlite3"; do
-        if [ -f "$HOST_CAND" ] && [ -s "$HOST_CAND" ]; then
-            cp "$HOST_CAND" "$DEST_DIR/db.sqlite3" 2>/dev/null || continue
+        if mrm_sqlite_host_backup "$HOST_CAND" "$DEST_DIR/db.sqlite3"; then
             DB_BACKUP_FILE="$DEST_DIR/db.sqlite3"; DB_BACKUP_DESC="SQLite (host copy)"
             return 0
         fi
@@ -1068,37 +1184,67 @@ do_restore() {
         echo ""
     fi
 
-    # Stop services
-    ui_spinner_start "Stopping services..."
-    local PANEL_COMPOSE_FILE NODE_COMPOSE_FILE
-    PANEL_COMPOSE_FILE="$(get_existing_compose_file panel 2>/dev/null || true)"
-    NODE_COMPOSE_FILE="$(get_existing_compose_file node 2>/dev/null || true)"
-    [ -n "$PANEL_COMPOSE_FILE" ] && run_compose_file "$PANEL_COMPOSE_FILE" down >/dev/null 2>&1 || true
-    [ -n "$NODE_COMPOSE_FILE" ] && run_compose_file "$NODE_COMPOSE_FILE" down >/dev/null 2>&1 || true
-    sleep 2
-    ui_spinner_stop
-    ui_success "Services stopped"
-
-    # Safety backup
-    ui_spinner_start "Creating safety backup..."
+    # =========================================================
+    # 0) SAFETY BACKUP FIRST - while everything is STILL RUNNING.
+    #    Includes a live export of the current database, so a failed
+    #    restore can NEVER destroy the original data.
+    # =========================================================
+    ui_spinner_start "Creating safety backup (with live database)..."
     local SAFETY_BACKUP="$BACKUP_DIR/pre_restore_$(date +%Y%m%d_%H%M%S).tar.gz"
+    local SAFETY_DIR="$TEMP_BASE/safety_$(date +%s)"
+    mkdir -p "$SAFETY_DIR"
+    local SAFETY_DB_OK=false
+    if mrm_backup_database "$SAFETY_DIR" >/dev/null 2>&1; then
+        if [ -n "$DB_BACKUP_FILE" ] && [ -f "$DB_BACKUP_FILE" ]; then
+            mv -f "$DB_BACKUP_FILE" "$SAFETY_DIR/current_db_backup" 2>/dev/null
+            SAFETY_DB_OK=true
+            log_backup "INFO" "Safety backup includes live DB: $DB_BACKUP_DESC"
+        fi
+    else
+        log_backup "WARN" "Could not export live DB for safety backup"
+    fi
     local SAFETY_ITEMS=()
     [ -d "$PANEL_DIR" ] && SAFETY_ITEMS+=("$PANEL_DIR")
     [ -d "$DATA_DIR" ] && SAFETY_ITEMS+=("$DATA_DIR")
     [ -f "$PANEL_ENV" ] && SAFETY_ITEMS+=("$PANEL_ENV")
+    [ -f "$SAFETY_DIR/current_db_backup" ] && SAFETY_ITEMS+=("$SAFETY_DIR/current_db_backup")
     if [ "${#SAFETY_ITEMS[@]}" -gt 0 ]; then
         if tar -czf "$SAFETY_BACKUP" "${SAFETY_ITEMS[@]}" 2>/dev/null; then
             ui_spinner_stop
-            ui_success "Safety backup: $(basename "$SAFETY_BACKUP") ($(du -h "$SAFETY_BACKUP" | cut -f1))"
-            log_backup "INFO" "Safety backup created: $SAFETY_BACKUP"
+            if [ "$SAFETY_DB_OK" = true ]; then
+                ui_success "Safety backup incl. live DB: $(basename "$SAFETY_BACKUP")"
+            else
+                ui_warning "Safety backup created WITHOUT database"
+            fi
+            log_backup "INFO" "Safety backup created: $SAFETY_BACKUP (db=$SAFETY_DB_OK)"
+            rm -rf "$SAFETY_DIR"
         else
             ui_spinner_stop
-            ui_warning "Safety backup failed, continuing anyway..."
+            ui_warning "Safety backup FAILED - keeping raw files for manual recovery:"
+            if [ -f "$SAFETY_DIR/current_db_backup" ]; then
+                local KEEP_DB="$BACKUP_DIR/pre_restore_db_$(date +%Y%m%d_%H%M%S)$(basename "$DB_BACKUP_FILE")"
+                mv -f "$SAFETY_DIR/current_db_backup" "$KEEP_DB" 2>/dev/null
+                echo -e "  ${RED}⚠ Raw DB saved: ${YELLOW}$KEEP_DB${NC}"
+                log_backup "ERROR" "Safety tar failed; raw DB kept at $KEEP_DB"
+            fi
         fi
     else
         ui_spinner_stop
         ui_warning "No existing data for safety backup"
+        rm -rf "$SAFETY_DIR"
     fi
+
+    # Stop services. We use `stop` (NOT `down`) so the container and its
+    # writable layer are preserved - needed to copy the DB in/out safely.
+    ui_spinner_start "Stopping services..."
+    local PANEL_COMPOSE_FILE NODE_COMPOSE_FILE
+    PANEL_COMPOSE_FILE="$(get_existing_compose_file panel 2>/dev/null || true)"
+    NODE_COMPOSE_FILE="$(get_existing_compose_file node 2>/dev/null || true)"
+    [ -n "$PANEL_COMPOSE_FILE" ] && run_compose_file "$PANEL_COMPOSE_FILE" stop >/dev/null 2>&1 || true
+    [ -n "$NODE_COMPOSE_FILE" ] && run_compose_file "$NODE_COMPOSE_FILE" stop >/dev/null 2>&1 || true
+    sleep 2
+    ui_spinner_stop
+    ui_success "Services stopped"
 
     # Restore based on type
     if [ "$IS_FULL" = true ]; then
@@ -1208,23 +1354,10 @@ do_restore() {
     echo -e "${YELLOW}If you need IP updates or firewall fixes, use 'Smart Fix' from the Backup menu.${NC}"
     sleep 1
 
-    # Start services
-    local STARTED_ANY=false START_FAILED=false
-    PANEL_COMPOSE_FILE="$(get_existing_compose_file panel 2>/dev/null || true)"
-    NODE_COMPOSE_FILE="$(get_existing_compose_file node 2>/dev/null || true)"
-
-    ui_spinner_start "Starting services..."
-    if [ -n "$NODE_COMPOSE_FILE" ]; then
-        if run_compose_file "$NODE_COMPOSE_FILE" up -d >/dev/null 2>&1; then STARTED_ANY=true; else START_FAILED=true; fi
-    fi
-    if [ -n "$PANEL_COMPOSE_FILE" ]; then
-        if run_compose_file "$PANEL_COMPOSE_FILE" up -d >/dev/null 2>&1; then STARTED_ANY=true; else START_FAILED=true; fi
-    fi
-    ui_spinner_stop
-
-    if [ "$START_FAILED" = true ]; then ui_error "Failed to start one or more services"; elif [ "$STARTED_ANY" = true ]; then ui_success "Services started"; else ui_warning "No compose services found to start"; fi
-
-    # Restore database - FIXED: sqlite checked BEFORE sql (db.sqlite3 used to match *db.sql*)
+    # =========================================================
+    # DATABASE RESTORE - while the panel is STOPPED (no locks, no
+    # live-write races, no "database is being accessed by other users").
+    # =========================================================
     local DB_RESTORE_PATH=""
     local DB_IS_GZ=false
     local DB_IS_SQLITE=false
@@ -1240,63 +1373,96 @@ do_restore() {
         log_backup "INFO" "Found DB to restore: $DB_RESTORE_PATH (sqlite=$DB_IS_SQLITE gz=$DB_IS_GZ)"
 
         if [ "$DB_IS_SQLITE" = true ]; then
-            # --- SQLite restore: import back into the panel container ---
+            # --- SQLite restore (panel stopped -> plain file copy is safe) ---
             ui_spinner_start "Restoring SQLite database..."
             local DB_IMPORTED=false
-            local PCONT
-            PCONT="$(mrm_panel_container)"
-            if [ -n "$PCONT" ]; then
-                local PROBE SQLITE_PATH
-                PROBE="$(mrm_probe_database "$PCONT")"
-                if [ "$(printf '%s' "$PROBE" | cut -d'|' -f1)" = "sqlite" ]; then
-                    SQLITE_PATH="$(printf '%s' "$PROBE" | cut -d'|' -f2-)"
-                fi
-                [ -z "$SQLITE_PATH" ] && SQLITE_PATH="/code/db.sqlite3"
-                log_backup "INFO" "SQLite target inside container: $SQLITE_PATH"
-                if docker cp "$DB_RESTORE_PATH" "$PCONT:/tmp/mrm_db_restore.sqlite3" >/dev/null 2>&1 \
-                   && docker exec -i "$PCONT" python - "$SQLITE_PATH" <<'PY' 2>/dev/null
-import sqlite3, sys, os
-target = sys.argv[1]
-d = os.path.dirname(target)
-if d:
-    os.makedirs(d, exist_ok=True)
-src = sqlite3.connect("/tmp/mrm_db_restore.sqlite3")
-dst = sqlite3.connect(target)
-src.backup(dst)
-dst.commit(); dst.close(); src.close()
-PY
-                then
-                    docker exec "$PCONT" rm -f /tmp/mrm_db_restore.sqlite3 2>/dev/null || true
+            local TARGET_SQLITE=""
+            # Where does the RESTORED config want the DB? (parse the restored .env)
+            local ENV_URL
+            ENV_URL="$(grep -m1 '^SQLALCHEMY_DATABASE_URL' "$PANEL_ENV" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            if [ -n "$ENV_URL" ]; then
+                TARGET_SQLITE="$(mrm_sqlite_path_from_url "$ENV_URL")"
+                log_backup "INFO" "SQLite target from restored .env: $TARGET_SQLITE"
+            fi
+
+            # 1) Host-visible absolute path (official installs: /var/lib/pasarguard/db.sqlite3)
+            if [ -n "$TARGET_SQLITE" ] && [[ "$TARGET_SQLITE" == /* ]]; then
+                local TARGET_DIR D_OWNER
+                TARGET_DIR="$(dirname "$TARGET_SQLITE")"
+                mkdir -p "$TARGET_DIR" 2>/dev/null
+                if [ -d "$TARGET_DIR" ] && cp -f "$DB_RESTORE_PATH" "$TARGET_SQLITE" 2>/dev/null; then
+                    # Match ownership of the data dir (panel may run as non-root)
+                    D_OWNER="$(stat -c '%u:%g' "$TARGET_DIR" 2>/dev/null)"
+                    [ -n "$D_OWNER" ] && chown "$D_OWNER" "$TARGET_SQLITE" 2>/dev/null || true
+                    chmod 600 "$TARGET_SQLITE" 2>/dev/null || true
                     DB_IMPORTED=true
-                    log_backup "SUCCESS" "SQLite DB imported into container: $SQLITE_PATH"
-                else
-                    log_backup "ERROR" "SQLite import into container failed"
+                    log_backup "SUCCESS" "SQLite restored to host path: $TARGET_SQLITE"
                 fi
             fi
-            # Also drop copies on the host for older installs / manual access
-            [ -d "$DATA_DIR" ] && cp "$DB_RESTORE_PATH" "$DATA_DIR/db.sqlite3" 2>/dev/null
-            [ -d "$PANEL_DIR" ] && cp "$DB_RESTORE_PATH" "$PANEL_DIR/db.sqlite3" 2>/dev/null
+
+            # 2) In-container DB: copy directly into the (stopped) container filesystem
+            if [ "$DB_IMPORTED" = false ]; then
+                local PCONT IN_PATH WD
+                PCONT="$(mrm_find_panel_container)"
+                if [ -n "$PCONT" ]; then
+                    if [ -n "$TARGET_SQLITE" ]; then
+                        if [[ "$TARGET_SQLITE" == /* ]]; then
+                            IN_PATH="$TARGET_SQLITE"
+                        else
+                            WD="$(docker inspect -f '{{.Config.WorkingDir}}' "$PCONT" 2>/dev/null)"
+                            [ -z "$WD" ] && WD="/code"
+                            IN_PATH="${WD%/}/$TARGET_SQLITE"
+                        fi
+                    else
+                        IN_PATH="$(mrm_sqlite_path_from_container "$PCONT")"
+                    fi
+                    if docker cp "$DB_RESTORE_PATH" "$PCONT:$IN_PATH" >/dev/null 2>&1; then
+                        DB_IMPORTED=true
+                        log_backup "SUCCESS" "SQLite restored into container: $IN_PATH"
+                    else
+                        log_backup "ERROR" "docker cp to container failed: $IN_PATH"
+                    fi
+                else
+                    log_backup "ERROR" "No panel container found for SQLite restore"
+                fi
+            fi
+
+            # 3) Last resort: known host paths (older PasarGuard stored DB on volume)
+            if [ "$DB_IMPORTED" = false ]; then
+                local HOST_CAND
+                for HOST_CAND in "$DATA_DIR/db.sqlite3" "$PANEL_DIR/db.sqlite3"; do
+                    if cp -f "$DB_RESTORE_PATH" "$HOST_CAND" 2>/dev/null; then
+                        DB_IMPORTED=true
+                        log_backup "SUCCESS" "SQLite restored to host path: $HOST_CAND"
+                        break
+                    fi
+                done
+            fi
+
             ui_spinner_stop
             if [ "$DB_IMPORTED" = true ]; then
-                ui_success "SQLite database imported into container!"
-                # Restart the panel so it reopens the DB with restored data
-                ui_spinner_start "Restarting panel to load restored DB..."
-                if [ -n "$PANEL_COMPOSE_FILE" ]; then
-                    run_compose_file "$PANEL_COMPOSE_FILE" restart >/dev/null 2>&1 || true
-                fi
-                ui_spinner_stop
-                ui_success "Panel restarted with restored database"
+                ui_success "SQLite database restored!"
             else
                 ui_error "SQLite import failed - check /var/log/mrm-backup.log"
             fi
         else
-            # --- PostgreSQL / MySQL dump restore ---
+            # --- PostgreSQL / MySQL dump restore (panel stopped -> no locks) ---
             local DB_IMPORTED=false
             if grep -qiE "postgresql|postgres" "$PANEL_ENV" 2>/dev/null; then
-                echo -e "${YELLOW}Waiting for database to initialize (30s)...${NC}"
-                sleep 30
                 ui_spinner_start "Importing PostgreSQL database..."
-                local DB_CONT=$(docker ps --format '{{.Names}}' | grep -iE "postgres|timescale|db" | head -1)
+                # Find the DB container even if stopped; start it if needed
+                local DB_CONT
+                DB_CONT=$(docker ps --format '{{.Names}}' | grep -iE "postgres|timescale" | head -1)
+                if [ -z "$DB_CONT" ]; then
+                    DB_CONT=$(docker ps -a --format '{{.Names}}' | grep -iE "postgres|timescale" | head -1)
+                    [ -n "$DB_CONT" ] && docker start "$DB_CONT" >/dev/null 2>&1
+                fi
+                # Wait until it accepts connections (max ~25s)
+                local TRIES=0
+                while [ "$TRIES" -lt 25 ]; do
+                    if [ -n "$DB_CONT" ] && docker exec "$DB_CONT" pg_isready -U postgres >/dev/null 2>&1; then break; fi
+                    sleep 1; TRIES=$((TRIES+1))
+                done
                 if [ -n "$DB_CONT" ]; then
                     parse_db_credentials "$PANEL_ENV"
                     [ -z "$DB_USER" ] && DB_USER="pasarguard"
@@ -1353,7 +1519,13 @@ PY
                 if [ "$DB_IMPORTED" = true ]; then ui_success "PostgreSQL database imported successfully!"; log_backup "SUCCESS" "PostgreSQL DB imported"; else ui_error "PostgreSQL database import failed! Check logs"; log_backup "ERROR" "PostgreSQL DB import failed"; fi
             elif grep -qiE "mysql|mariadb" "$PANEL_ENV" 2>/dev/null; then
                 ui_spinner_start "Importing MySQL/MariaDB database..."
-                local DB_CONT=$(docker ps --format '{{.Names}}' | grep -iE "mysql|mariadb" | head -1)
+                local DB_CONT
+                DB_CONT=$(docker ps --format '{{.Names}}' | grep -iE "mysql|mariadb" | head -1)
+                if [ -z "$DB_CONT" ]; then
+                    DB_CONT=$(docker ps -a --format '{{.Names}}' | grep -iE "mysql|mariadb" | head -1)
+                    [ -n "$DB_CONT" ] && docker start "$DB_CONT" >/dev/null 2>&1
+                    sleep 5
+                fi
                 if [ -n "$DB_CONT" ]; then
                     parse_db_credentials "$PANEL_ENV"
                     [ -z "$DB_USER" ] && DB_USER="pasarguard"
@@ -1377,6 +1549,22 @@ PY
         log_backup "WARNING" "No database file found in backup to restore"
         ui_warning "No database found in backup - only files restored"
     fi
+
+    # Start services (AFTER the DB is restored - panel boots directly on new data)
+    local STARTED_ANY=false START_FAILED=false
+    PANEL_COMPOSE_FILE="$(get_existing_compose_file panel 2>/dev/null || true)"
+    NODE_COMPOSE_FILE="$(get_existing_compose_file node 2>/dev/null || true)"
+
+    ui_spinner_start "Starting services..."
+    if [ -n "$NODE_COMPOSE_FILE" ]; then
+        if run_compose_file "$NODE_COMPOSE_FILE" up -d >/dev/null 2>&1; then STARTED_ANY=true; else START_FAILED=true; fi
+    fi
+    if [ -n "$PANEL_COMPOSE_FILE" ]; then
+        if run_compose_file "$PANEL_COMPOSE_FILE" up -d >/dev/null 2>&1; then STARTED_ANY=true; else START_FAILED=true; fi
+    fi
+    ui_spinner_stop
+
+    if [ "$START_FAILED" = true ]; then ui_error "Failed to start one or more services"; elif [ "$STARTED_ANY" = true ]; then ui_success "Services started"; else ui_warning "No compose services found to start"; fi
 
     # Final cleanup
     rm -rf "$WORK_DIR"
