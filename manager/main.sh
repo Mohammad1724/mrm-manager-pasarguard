@@ -1,15 +1,29 @@
 #!/bin/bash
-# MRM Manager
+# MRM Manager - Main Entry Point
+# Version loaded from single source: versions.conf
 
-if [[ "$1" == "--version" || "$1" == "-v" ]]; then source /opt/mrm-manager/versions.conf 2>/dev/null || true; echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.0.4)}"; exit 0; fi
+set -o pipefail
+
+# CLI shortcuts
+if [[ "$1" == "--version" || "$1" == "-v" ]]; then
+    source /opt/mrm-manager/versions.conf 2>/dev/null || true
+    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.0.5)}"
+    exit 0
+fi
 [[ "$1" == "doctor" ]] && exec bash /opt/mrm-manager/diagnostics.sh doctor
 [[ "$1" == "monitor" ]] && exec bash /opt/mrm-manager/monitor.sh
-[[ "$1" == "fix-node" ]] && exec bash /opt/mrm-manager/backup.sh fix-node
+[[ "$1" == "fix-node" ]] && exec bash /opt/mrm-manager/backup.sh fix-node "$@"
 [[ "$1" == "update" ]] && exec bash -c "$(curl -sL https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main/install.sh)"
 
+# ─── Module Loader ───────────────────────────────────────────────────────────
 bootstrap_error() { echo -e "\033[0;31m[MRM Error]\033[0m $1" >&2; }
-load_required_module() { [ -r "$1" ] || { bootstrap_error "Missing: $1"; return 1; }; source "$1" || return 1; }
 
+load_required_module() {
+    [ -r "$1" ] || { bootstrap_error "Missing: $1"; return 1; }
+    source "$1" || return 1
+}
+
+# Core modules (order matters: utils first, then ui, then features)
 load_required_module "/opt/mrm-manager/utils.sh"
 load_required_module "/opt/mrm-manager/ui.sh"
 load_required_module "/opt/mrm-manager/ssl.sh"
@@ -19,29 +33,52 @@ load_required_module "/opt/mrm-manager/theme.sh"
 load_required_module "/opt/mrm-manager/diagnostics.sh"
 load_required_module "/opt/mrm-manager/offline.sh"
 load_required_module "/opt/mrm-manager/safe_ops.sh"
-load_required_module "/opt/mrm-manager/mirza.sh"
+# NOTE: mirza.sh removed — was unused legacy module (Apache/PHP, not Docker-based)
 load_required_module "/opt/mrm-manager/monitor.sh" || true
+
 [ -r "/opt/mrm-manager/versions.conf" ] && source /opt/mrm-manager/versions.conf
 
 detect_active_panel > /dev/null 2>&1 || true
 
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+
 edit_file() { [ -f "$1" ] && nano "$1" || { echo "File not found: $1"; read -p "Press Enter..."; }; }
 invalid_menu_option() { echo -e "\033[0;31mInvalid option\033[0m"; sleep 1; }
-get_panel_compose_file() { for f in "$PANEL_DIR/docker-compose.yml" "$PANEL_DIR/compose.yml"; do [ -f "$f" ] && { echo "$f"; return 0; }; done; return 1; }
+
+get_panel_compose_file() {
+    for f in "$PANEL_DIR/docker-compose.yml" "$PANEL_DIR/compose.yml"; do
+        [ -f "$f" ] && { echo "$f"; return 0; }
+    done
+    return 1
+}
+
 ensure_panel_compose_ready() { [ -d "$PANEL_DIR" ] || { echo "Panel dir not found"; return 1; }; }
 run_panel_compose() { (cd "$PANEL_DIR" && docker compose "$@" 2>/dev/null); }
 edit_panel_compose_file() { local cf; cf="$(get_panel_compose_file 2>/dev/null)" || return; nano "$cf"; }
 show_panel_logs() { (cd "$PANEL_DIR" && docker compose logs -f 2>/dev/null); }
-remove_mrm_cron_jobs() { crontab -l 2>/dev/null | grep -vE 'mrm-manager|/usr/local/bin/mrm' | crontab - 2>/dev/null || true; }
-uninstall_mrm_manager() { echo "Uninstall? Type UNINSTALL"; read -p ": " c; [[ "$c" != "UNINSTALL" ]] && return; rm -rf /opt/mrm-manager /usr/local/bin/mrm /tmp/mrm* 2>/dev/null; echo "Uninstalled"; exit 0; }
+
+remove_mrm_cron_jobs() {
+    crontab -l 2>/dev/null | grep -vE 'mrm-manager|/usr/local/bin/mrm' | crontab - 2>/dev/null || true
+}
+
+uninstall_mrm_manager() {
+    echo "Uninstall? Type UNINSTALL"
+    read -p ": " c
+    [[ "$c" != "UNINSTALL" ]] && return
+    rm -rf /opt/mrm-manager /usr/local/bin/mrm /tmp/mrm* 2>/dev/null
+    echo "Uninstalled"
+    exit 0
+}
+
 optimize_network() { echo "BBR Enabled (simulated)"; sleep 1; }
 auto_fix() { echo "Auto Fix done"; sleep 1; }
+
+# ─── Dashboard Status Components ─────────────────────────────────────────────
 
 mrm_main_status() {
     local ok_text="$1"
     local bad_text="$2"
     local is_ok="$3"
-
     if [ "$is_ok" = "true" ]; then
         printf '%b' "${GREEN}● ${ok_text}${NC}"
     else
@@ -52,7 +89,6 @@ mrm_main_status() {
 mrm_component_version() {
     local pattern="$1"
     local image
-
     image="$(docker ps --format '{{.Names}}|{{.Image}}' 2>/dev/null | grep -iE "$pattern" | head -n1 | cut -d'|' -f2)"
     if [ -z "$image" ]; then
         echo "Not available"
@@ -96,7 +132,7 @@ mrm_main_dashboard() {
         nginx_status="$(mrm_main_status "Running" "Stopped" false)"
     fi
 
-      ssl_status="$(declare -f mrm_ssl_status_text >/dev/null 2>&1 && mrm_ssl_status_text || echo "Not checked")"
+    ssl_status="$(declare -f mrm_ssl_status_text >/dev/null 2>&1 && mrm_ssl_status_text || echo "Not checked")"
 
     if [ -f "${TG_CONFIG:-/root/.mrm_telegram}" ]; then
         telegram_status="${GREEN}● Configured${NC}"
@@ -105,26 +141,28 @@ mrm_main_dashboard() {
     fi
 
     echo -e "${CYAN}────────────────── System Status ──────────────────${NC}"
-    echo -e "${BLUE}Panel:${NC}    ${CYAN}${panel_name}${NC}  ${panel_status}"
-    echo -e "${BLUE}Node:${NC}     ${node_status}"
-    echo -e "${BLUE}Nginx:${NC}    ${nginx_status}"
-    echo -e "${BLUE}SSL:${NC}      ${ssl_status}"
+    echo -e "${BLUE}Panel:${NC} ${CYAN}${panel_name}${NC} ${panel_status}"
+    echo -e "${BLUE}Node:${NC} ${node_status}"
+    echo -e "${BLUE}Nginx:${NC} ${nginx_status}"
+    echo -e "${BLUE}SSL:${NC} ${ssl_status}"
     echo -e "${BLUE}Telegram:${NC} ${telegram_status}"
     echo -e "${CYAN}───────────────────────────────────────────────────${NC}"
     echo ""
 }
 
+# ─── Menus ───────────────────────────────────────────────────────────────────
+
 panel_menu() {
     while true; do
         clear
-        echo "=== 🎛️  PANEL CONTROL v${MRM_VERSION:-$VER} ==="
+        echo "=== 🎛️ PANEL CONTROL v${MRM_VERSION:-1.0.5} ==="
         echo ""
         echo "1) 🔄 Restart Panel"
-        echo "2) ⏹️  Stop Panel"
-        echo "3) ▶️  Start Panel"
+        echo "2) ⏹️ Stop Panel"
+        echo "3) ▶️ Start Panel"
         echo "4) 📜 View Logs"
         echo ""
-        echo "0) ↩️  Back"
+        echo "0) ↩️ Back"
         read -p "Select: " OPT
         case $OPT in
             1) (cd "$PANEL_DIR" && docker compose down && docker compose up -d); read -p "Press Enter..." ;;
@@ -139,7 +177,7 @@ panel_menu() {
 tools_menu() {
     while true; do
         clear
-        echo "=== 🛠️  TOOLS v${MRM_VERSION:-$VER} ==="
+        echo "=== 🛠️ TOOLS v${MRM_VERSION:-1.0.5} ==="
         echo ""
         echo "1) 🌐 Domain Separator"
         echo "2) 🎨 Theme Manager"
@@ -147,7 +185,7 @@ tools_menu() {
         echo "4) 🇮🇷 Iran Mode"
         echo "5) 📊 Monitor"
         echo ""
-        echo "0) ↩️  Back"
+        echo "0) ↩️ Back"
         read -p "Select: " OPT
         case $OPT in
             1) bash /opt/mrm-manager/domain_separator.sh || echo "Domain Separator could not be started" ;;
@@ -161,27 +199,25 @@ tools_menu() {
 }
 
 main_menu() {
-    # Skip deps if first run to avoid hang
+    # Quick check for deps on first run
     if [ -z "$MRM_FIRST_RUN" ]; then
-        # Quick check, no apt update to avoid hang
         for cmd in docker curl; do command -v $cmd >/dev/null 2>&1 || echo "Missing $cmd"; done
     fi
 
     while true; do
         clear
-        local VER="${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.0.4")}"
+        local VER="${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.0.5")}"
         echo "╔══════════════════════════════════════════════╗"
-        echo "║      MRM Manager v$VER                      ║"
+        echo "║ MRM Manager v$VER                            ║"
         echo "╚══════════════════════════════════════════════╝"
         echo ""
-        # NO heavy docker checks here to avoid hang
         mrm_main_dashboard
         echo "1) 🔐 SSL Certificates"
         echo "2) 💾 Backup & Restore"
-        echo "3) 🎛️  Panel Control"
-        echo "4) 🛠️  Tools"
+        echo "3) 🎛️ Panel Control"
+        echo "4) 🛠️ Tools"
         echo "5) 🔄 Update Script"
-        echo "6) 🗑️  Uninstall"
+        echo "6) 🗑️ Uninstall"
         echo ""
         echo "0) 🚪 Exit"
         echo ""
