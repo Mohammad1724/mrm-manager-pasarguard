@@ -619,15 +619,15 @@ do_restore() {
     #   - Test and start Nginx
     #   - Restart panel with new settings
     # ═══════════════════════════════════════════════════════════════
-    if [ -f "/opt/mrm-manager/post_restore_fix.sh" ]; then
+    if declare -f main >/dev/null 2>&1; then
         echo ""
         echo -e "${CYAN}🔧 Running post-restore auto-fix...${NC}"
-        bash /opt/mrm-manager/post_restore_fix.sh 2>&1 | tee -a /var/log/mrm-post-restore.log
+        main 2>&1 | tee -a /var/log/mrm-post-restore.log
         echo -e "${GREEN}✔ Post-restore auto-fix completed${NC}"
         log_backup "SUCCESS" "Post-restore auto-fix executed"
     else
-        echo -e "${YELLOW}⚠ post_restore_fix.sh not found - skipping auto-fix${NC}"
-        log_backup "WARNING" "post_restore_fix.sh not found"
+        echo -e "${YELLOW}⚠ post_restore module not loaded - skipping auto-fix${NC}"
+        log_backup "WARNING" "post_restore module not loaded"
     fi
 
     # Final cleanup
