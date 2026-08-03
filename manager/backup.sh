@@ -206,12 +206,30 @@ fix_docker_compose() {
     NEW_IP=$(get_server_ip)
     if [ -z "$NEW_IP" ]; then log_backup "WARNING" "Could not detect server IP"; return 1; fi
     log_backup "INFO" "Updating docker-compose with new IP: $NEW_IP"
-    if grep -q "PGADMIN_LISTEN_ADDRESS" "$COMPOSE_FILE"; then
-        sed -i "s/PGADMIN_LISTEN_ADDRESS:.*/PGADMIN_LISTEN_ADDRESS: $NEW_IP/g" "$COMPOSE_FILE"
+
+    # A) First, fix any old hard-coded bind IPs (X.X.X.X:8010 / :7431 / --bind X.X.X.X:)
+    #    -> replace with the current server IP. 127.0.0.1 and 0.0.0.0 are treated
+    #    as safe and left alone.
+    local FOUND_OLD_IP
+    FOUND_OLD_IP="$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' "$COMPOSE_FILE" 2>/dev/null \
+        | grep -vE '^(127\.0\.0\.1|0\.0\.0\.0)$' | grep -v "^$NEW_IP$" | head -1)"
+    if [ -n "$FOUND_OLD_IP" ]; then
+        sed -i -E "s/${FOUND_OLD_IP}:8010/${NEW_IP}:8010/g; s/${FOUND_OLD_IP}:7431/${NEW_IP}:7431/g; s/--bind ${FOUND_OLD_IP}:/--bind ${NEW_IP}:/g" "$COMPOSE_FILE"
+        log_backup "INFO" "Replaced old bind IP $FOUND_OLD_IP with $NEW_IP"
     fi
-    sed -i -E "s/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:8010/${NEW_IP}:8010/g" "$COMPOSE_FILE"
-    sed -i -E "s/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:7431/${NEW_IP}:7431/g" "$COMPOSE_FILE"
-    sed -i -E "s/--bind [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:/--bind ${NEW_IP}:/g" "$COMPOSE_FILE"
+
+    # B) PGADMIN_LISTEN_ADDRESS: use the server's public IP ONLY if it is actually
+    #    assigned to this host; otherwise fall back to the safe 127.0.0.1
+    #    (default in the official template). Prevents "Address not available".
+    local PGADMIN_IP="$NEW_IP"
+    if ! ip -4 addr show 2>/dev/null | grep -qw "$NEW_IP"; then
+        log_backup "WARNING" "IP $NEW_IP not assigned to this host - using 127.0.0.1 for pgadmin"
+        PGADMIN_IP="127.0.0.1"
+    fi
+    if grep -q "PGADMIN_LISTEN_ADDRESS" "$COMPOSE_FILE"; then
+        sed -i "s/^[[:space:]]*PGADMIN_LISTEN_ADDRESS:.*/      PGADMIN_LISTEN_ADDRESS: $PGADMIN_IP/g" "$COMPOSE_FILE"
+        log_backup "INFO" "PGADMIN_LISTEN_ADDRESS set to $PGADMIN_IP"
+    fi
     log_backup "SUCCESS" "Updated compose file with IP: $NEW_IP"
     return 0
 }
@@ -1351,8 +1369,21 @@ do_restore() {
     # restore, which caused DB connection errors after restore.
     # Restored files are used as-is from the backup.
     echo -e "${CYAN}✓ Restored files are used as-is (no auto .env rewrite).${NC}"
-    echo -e "${YELLOW}If you need IP updates or firewall fixes, use 'Smart Fix' from the Backup menu.${NC}"
+    echo -e "${YELLOW}If you need firewall fixes, use 'Smart Fix' from the Backup menu.${NC}"
     sleep 1
+
+    # Fix IPs in docker-compose ONLY (safe: touches the compose file, NEVER .env).
+    # Needed when restoring on a server with a different IP (e.g. pgadmin
+    # "Address not available" because PGADMIN_LISTEN_ADDRESS points to an
+    # IP that no longer exists on this host).
+    ui_spinner_start "Updating IPs in docker-compose..."
+    if fix_docker_compose; then
+        ui_spinner_stop
+        ui_success "Docker compose IPs updated to current server IP"
+    else
+        ui_spinner_stop
+        ui_warning "Compose IP update skipped (compose not found or IP undetectable)"
+    fi
 
     # =========================================================
     # DATABASE RESTORE - while the panel is STOPPED (no locks, no
@@ -1566,6 +1597,16 @@ do_restore() {
 
     if [ "$START_FAILED" = true ]; then ui_error "Failed to start one or more services"; elif [ "$STARTED_ANY" = true ]; then ui_success "Services started"; else ui_warning "No compose services found to start"; fi
 
+    # Re-ensure xray-core binary (excluded from backups to keep them small)
+    ui_spinner_start "Checking xray-core binary..."
+    if mrm_ensure_xray_core; then
+        ui_spinner_stop
+        ui_success "xray-core ready"
+    else
+        ui_spinner_stop
+        ui_warning "xray-core missing - run node update/core-update manually (see log)"
+    fi
+
     # Final cleanup
     rm -rf "$WORK_DIR"
     trap - RETURN
@@ -1587,6 +1628,58 @@ do_restore() {
     echo -e "${CYAN}Note: geoip.dat, xray binary will be re-downloaded automatically on node start${NC}"
     echo ""
     pause
+}
+
+# Download Xray-core binary if missing (backups intentionally exclude the ~25MB
+# binary + geo files; the panel needs them at /var/lib/pg-node/xray-core/xray).
+# Mirrors the official installer's download logic. No-op if already present.
+mrm_ensure_xray_core() {
+    local XRAY_BIN XRAY_DIR ASSETS_DIR
+    XRAY_BIN="${NODE_DEF_CERTS%/certs}/xray-core/xray"
+    [ -n "$NODE_DIR" ] && XRAY_BIN="${NODE_DIR%/}/xray-core/xray"
+    if [ -x "$XRAY_BIN" ]; then
+        log_backup "INFO" "xray-core already present: $XRAY_BIN"
+        return 0
+    fi
+    # Node data dir is usually /var/lib/pg-node
+    local NODE_DATA
+    NODE_DATA="$(dirname "$NODE_DEF_CERTS" 2>/dev/null)"
+    [ -z "$NODE_DATA" ] && NODE_DATA="/var/lib/pg-node"
+    XRAY_DIR="$NODE_DATA/xray-core"
+    ASSETS_DIR="$NODE_DATA/assets"
+    mkdir -p "$XRAY_DIR" "$ASSETS_DIR" 2>/dev/null || return 1
+
+    if ! command -v curl >/dev/null 2>&1; then
+        log_backup "ERROR" "curl not available for xray download"
+        return 1
+    fi
+    local ARCH ZIP_URL
+    case "$(uname -m 2>/dev/null)" in
+        x86_64|amd64)  ARCH="x64" ;;
+        aarch64|arm64) ARCH="arm64" ;;
+        *)             ARCH="x64" ;;
+    esac
+    ZIP_URL="https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-${ARCH}.zip"
+    log_backup "INFO" "Downloading xray-core ($ARCH) from $ZIP_URL"
+    local TMPZ
+    TMPZ="$(mktemp /tmp/xray.XXXXXX.zip)" || return 1
+    if curl -fsSL --connect-timeout 15 "$ZIP_URL" -o "$TMPZ" 2>/dev/null; then
+        if command -v unzip >/dev/null 2>&1 && unzip -o "$TMPZ" -d "$XRAY_DIR" >/dev/null 2>&1; then
+            chmod +x "$XRAY_DIR/xray" 2>/dev/null
+            rm -f "$TMPZ"
+            log_backup "SUCCESS" "xray-core downloaded to $XRAY_DIR"
+            # Re-download geo files too (also excluded from backups)
+            if [ ! -f "$ASSETS_DIR/geoip.dat" ] || [ ! -f "$ASSETS_DIR/geosite.dat" ]; then
+                curl -fsSL --connect-timeout 15 "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" -o "$ASSETS_DIR/geoip.dat" 2>/dev/null || true
+                curl -fsSL --connect-timeout 15 "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" -o "$ASSETS_DIR/geosite.dat" 2>/dev/null || true
+                log_backup "INFO" "Geo files refreshed in $ASSETS_DIR"
+            fi
+            return 0
+        fi
+    fi
+    rm -f "$TMPZ" 2>/dev/null
+    log_backup "ERROR" "xray-core download failed - run node core update manually"
+    return 1
 }
 
 # Pick which DB file to restore from a backup root. Prints "TYPE|PATH"
