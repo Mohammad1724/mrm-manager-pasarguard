@@ -66,8 +66,26 @@ EOF
     fi
 done
 
+echo -e "${BLUE}[3/4] Installing backup modules...${NC}"
+mkdir -p "$INSTALL_DIR/backup"
+
+BACKUP_MODULES=(
+    "init.sh" "telegram.sh" "smart_fix.sh" "database.sh"
+    "backup_core.sh" "restore_core.sh" "xray.sh" "post_restore.sh" "menu.sh"
+)
+
+for MODULE in "${BACKUP_MODULES[@]}"; do
+    URL="$MANAGER_REPO_URL/backup/$MODULE"
+    if curl -sL -f -o "$INSTALL_DIR/backup/$MODULE" "$URL" 2>/dev/null; then
+        chmod +x "$INSTALL_DIR/backup/$MODULE" 2>/dev/null
+        echo -e " ${GREEN}✔${NC} Downloaded: backup/$MODULE"
+    else
+        echo -e " ${RED}✘${NC} Failed: backup/$MODULE"
+    fi
+done
+
 echo ""
-echo -e "${BLUE}[3/4] Installing optional files...${NC}"
+echo -e "${BLUE}[4/4] Installing optional files...${NC}"
 curl -sL -f -o "$INSTALL_DIR/index.html" "$REPO_BASE_URL/templates/subscription/index.html" 2>/dev/null && echo -e " ${GREEN}✔${NC} Downloaded: index.html" || echo -e " ⚠ Skipped: index.html"
 
 rm -f /usr/local/bin/mrm
