@@ -863,31 +863,54 @@ do_backup() {
 
     [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "Panel essentials backed up"
 
-    # 3. Node Essentials - ONLY certs and .env, NOT assets/xray-core
-    if [ -d "$NODE_DIR" ]; then
+    # 3. Node Essentials - certs, .env, compose (+ xray-core & geo assets OPTIONAL).
+    #    Default (MRM_BACKUP_XRAY unset/0): EXCLUDE xray binary & geo files so the
+    #    backup stays small (~3-5MB, Telegram-safe). Restore auto-downloads them.
+    #    Set MRM_BACKUP_XRAY=1 to include them for a fully OFFLINE self-contained
+    #    restore (bigger backup ~40-50MB - may exceed the 50MB Telegram limit).
+    local NODE_DATA_DIR
+    NODE_DATA_DIR="$(dirname "$NODE_DEF_CERTS" 2>/dev/null)"
+    [ -z "$NODE_DATA_DIR" ] && NODE_DATA_DIR="/var/lib/pg-node"
+    if [ -d "$NODE_DIR" ] || [ -d "$NODE_DATA_DIR" ]; then
         [ "$MODE" != "auto" ] && ui_spinner_start "Backing up node essentials..."
         mkdir -p "$B_PATH/node"
-        
+
         # .env
         if [ -f "$NODE_ENV" ]; then
             cp "$NODE_ENV" "$B_PATH/node/.env" 2>/dev/null
         fi
-        
+
         # compose
         local NODE_COMPOSE_FILE
         NODE_COMPOSE_FILE="$(get_existing_compose_file node 2>/dev/null || true)"
         if [ -n "$NODE_COMPOSE_FILE" ] && [ -f "$NODE_COMPOSE_FILE" ]; then
             cp "$NODE_COMPOSE_FILE" "$B_PATH/node/" 2>/dev/null
         fi
-        
-        # certs only - NOT assets, NOT xray-core
+
+        # certs
         if [ -d "$NODE_DEF_CERTS" ] && [ -n "$(ls -A "$NODE_DEF_CERTS" 2>/dev/null)" ]; then
             mkdir -p "$B_PATH/node/certs"
             cp -a "$NODE_DEF_CERTS/." "$B_PATH/node/certs/" 2>/dev/null
             log_backup "INFO" "Copied node certs"
         fi
-        
-        [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "Node essentials backed up (without xray binary & geo data)"
+
+        # xray-core binary + geo assets - only when MRM_BACKUP_XRAY=1 (offline restore)
+        if [ "${MRM_BACKUP_XRAY:-0}" = "1" ]; then
+            if [ -d "$NODE_DATA_DIR/xray-core" ] && [ -n "$(ls -A "$NODE_DATA_DIR/xray-core" 2>/dev/null)" ]; then
+                mkdir -p "$B_PATH/node/xray-core"
+                cp -a "$NODE_DATA_DIR/xray-core/." "$B_PATH/node/xray-core/" 2>/dev/null
+                log_backup "INFO" "Copied node xray-core ($(du -sh "$NODE_DATA_DIR/xray-core" 2>/dev/null | cut -f1))"
+            fi
+            if [ -d "$NODE_DATA_DIR/assets" ] && [ -n "$(ls -A "$NODE_DATA_DIR/assets" 2>/dev/null)" ]; then
+                mkdir -p "$B_PATH/node/assets"
+                cp -a "$NODE_DATA_DIR/assets/." "$B_PATH/node/assets/" 2>/dev/null
+                log_backup "INFO" "Copied node assets/geo ($(du -sh "$NODE_DATA_DIR/assets" 2>/dev/null | cut -f1))"
+            fi
+        else
+            log_backup "INFO" "xray-core/geo excluded (MRM_BACKUP_XRAY=0) - restore will auto-download"
+        fi
+
+        [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "Node essentials backed up"
     fi
 
     # 4. Nginx - ONLY panel_separate.conf, NOT full /etc/nginx
@@ -910,18 +933,21 @@ do_backup() {
     find "$B_PATH" -type f -name "*.tar.gz" -path "*backup*" -delete 2>/dev/null
     find "$B_PATH" -type f -name "MRM_*.tar.gz" -delete 2>/dev/null
 
-    # Remove Xray heavy files (your report)
+    # Remove Xray heavy files from PANEL/data copies (never needed there).
+    # node/xray-core + node/assets are stripped by default (small backup);
+    # kept only when MRM_BACKUP_XRAY=1 (offline self-contained restore).
     rm -rf "$B_PATH/node-data" 2>/dev/null
-    rm -rf "$B_PATH/node/assets" 2>/dev/null
-    rm -rf "$B_PATH/node/xray-core" 2>/dev/null
     rm -rf "$B_PATH/data/assets" 2>/dev/null
     rm -rf "$B_PATH/data/xray-core" 2>/dev/null
     rm -rf "$B_PATH/panel/assets" 2>/dev/null
     rm -rf "$B_PATH/panel/xray-core" 2>/dev/null
-    find "$B_PATH" -type f -name "geoip.dat" -delete 2>/dev/null
-    find "$B_PATH" -type f -name "geosite.dat" -delete 2>/dev/null
-    find "$B_PATH" -type f -name "xray" -delete 2>/dev/null
-    find "$B_PATH" -type f -name "xray-core" -delete 2>/dev/null
+    find "$B_PATH/data" -type f \( -name "geoip.dat" -o -name "geosite.dat" -o -name "xray" \) -delete 2>/dev/null
+    find "$B_PATH/panel" -type f \( -name "geoip.dat" -o -name "geosite.dat" -o -name "xray" \) -delete 2>/dev/null
+    if [ "${MRM_BACKUP_XRAY:-0}" != "1" ]; then
+        rm -rf "$B_PATH/node/assets" 2>/dev/null
+        rm -rf "$B_PATH/node/xray-core" 2>/dev/null
+        find "$B_PATH/node" -type f \( -name "geoip.dat" -o -name "geosite.dat" -o -name "xray" \) -delete 2>/dev/null
+    fi
 
     # Remove logs, cache, tmp
     find "$B_PATH" -type f -name "*.log" -delete 2>/dev/null
@@ -956,13 +982,13 @@ Raw Size Before Compression: $TOTAL_RAW_SIZE
 Version: $MRM_BACKUP_VERSION
 Backup profile: v${BACKUP_VERSION}
 Changes from v7.9:
-- Excluded node-data/assets/geoip.dat, geosite.dat (15MB+)
-- Excluded node-data/xray-core/xray binary (25MB+)
 - Excluded panel/backup/backup.zip recursive loop
 - Excluded /etc/letsencrypt full (20MB) -> only data/certs
 - Excluded /etc/nginx full (5MB) -> only panel_separate.conf
 - Added gzip -9 for DB
-- Result: 31MB -> 2-5MB
+- xray binary + geo files EXCLUDED by default -> small backup (~3-5MB)
+- Restore auto-downloads xray + geo (needs internet on the target server)
+- Set MRM_BACKUP_XRAY=1 to embed them for a fully offline restore (bigger backup)
 EOF
 
     cat > "$B_PATH/file_list.txt" << EOF
@@ -1009,12 +1035,11 @@ src.backup(dst); dst.close(); src.close()"
 6. Restart:
    cd $PANEL_DIR && docker compose up -d
 
-Note: This v${BACKUP_VERSION} backup does NOT contain:
-- geoip.dat, geosite.dat (will be re-downloaded by xray)
-- xray binary (will be re-downloaded with node update)
-- backup.zip loops
-- full letsencrypt/nginx
-So it's small but complete!
+Note: This v${BACKUP_VERSION} backup does NOT contain the node xray binary or
+geo files (kept small for Telegram). On restore, MRM re-downloads them
+automatically - no manual steps, but the target server needs internet.
+(Set MRM_BACKUP_XRAY=1 to embed them for a fully offline restore; backup will
+be ~40-50MB and may exceed the 50MB Telegram upload limit.)
 
 EOF
 
@@ -1029,13 +1054,6 @@ EOF
         --exclude='*backup/*.zip'
         --exclude='*/backup/*'
         --exclude='*backups/*'
-        --exclude='*/assets/*'
-        --exclude='*/xray-core/*'
-        --exclude='*geoip.dat'
-        --exclude='*geosite.dat'
-        --exclude='*geodata*'
-        --exclude='*/xray'
-        --exclude='*xray-core'
         --exclude='*.log'
         --exclude='*.tmp'
         --exclude='*.pid'
@@ -1048,6 +1066,18 @@ EOF
         --exclude='*.sock'
         --exclude='*MRM_*.tar.gz'
     )
+    # Strip xray/geo only when they are excluded from the backup (default).
+    if [ "${MRM_BACKUP_XRAY:-0}" != "1" ]; then
+        EXCLUDE_ARGS+=(
+            --exclude='*/assets/*'
+            --exclude='*/xray-core/*'
+            --exclude='*geoip.dat'
+            --exclude='*geosite.dat'
+            --exclude='*geodata*'
+            --exclude='*/xray'
+            --exclude='*xray-core'
+        )
+    fi
 
     if tar -czf "$ARCHIVE_PATH" "${EXCLUDE_ARGS[@]}" -C "$TEMP_BASE" "$B_NAME" 2>/dev/null; then
         local BACKUP_SIZE=$(du -h "$ARCHIVE_PATH" | cut -f1)
@@ -1105,7 +1135,11 @@ Check: SQLite lives inside the panel container in PasarGuard v5." >/dev/null 2>&
         else
             echo -e "${GREEN}║${NC} Database: ${GREEN}Exported${NC} ($DB_SIZE) [${DB_BACKUP_DESC}]"
         fi
-        echo -e "${GREEN}║${NC} Fixes: ${GREEN}geoip, xray binary, backup.zip loop${NC}"
+        if [ "${MRM_BACKUP_XRAY:-0}" = "1" ]; then
+            echo -e "${GREEN}║${NC} xray/geo: ${GREEN}included (offline restore)${NC}"
+        else
+            echo -e "${GREEN}║${NC} xray/geo: ${YELLOW}excluded - auto-download on restore${NC}"
+        fi
         echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
                 echo ""
         pause
@@ -1341,7 +1375,7 @@ do_restore() {
             cp "$ROOT/nginx/panel_separate.conf" "/etc/nginx/conf.d/" 2>/dev/null
         fi
 
-        # Node essentials - only certs and .env, NOT xray binary
+        # Node essentials - certs, .env, compose + xray-core & geo assets
         if [ -d "$ROOT/node" ]; then
             mkdir -p "$NODE_DIR"
             if [ -f "$ROOT/node/.env" ]; then
@@ -1353,6 +1387,21 @@ do_restore() {
             if [ -d "$ROOT/node/certs" ]; then
                 mkdir -p "$NODE_DEF_CERTS"
                 cp -a "$ROOT/node/certs/." "$NODE_DEF_CERTS/" 2>/dev/null
+            fi
+            # xray-core + geo assets -> restore works OFFLINE, zero manual steps
+            local NODE_DATA_DIR
+            NODE_DATA_DIR="$(dirname "$NODE_DEF_CERTS" 2>/dev/null)"
+            [ -z "$NODE_DATA_DIR" ] && NODE_DATA_DIR="/var/lib/pg-node"
+            if [ -d "$ROOT/node/xray-core" ]; then
+                mkdir -p "$NODE_DATA_DIR/xray-core"
+                cp -a "$ROOT/node/xray-core/." "$NODE_DATA_DIR/xray-core/" 2>/dev/null
+                chmod +x "$NODE_DATA_DIR/xray-core/xray" 2>/dev/null || true
+                log_backup "INFO" "Restored node xray-core -> $NODE_DATA_DIR/xray-core"
+            fi
+            if [ -d "$ROOT/node/assets" ]; then
+                mkdir -p "$NODE_DATA_DIR/assets"
+                cp -a "$ROOT/node/assets/." "$NODE_DATA_DIR/assets/" 2>/dev/null
+                log_backup "INFO" "Restored node assets/geo -> $NODE_DATA_DIR/assets"
             fi
         fi
 
@@ -1597,7 +1646,8 @@ do_restore() {
 
     if [ "$START_FAILED" = true ]; then ui_error "Failed to start one or more services"; elif [ "$STARTED_ANY" = true ]; then ui_success "Services started"; else ui_warning "No compose services found to start"; fi
 
-    # Re-ensure xray-core binary (excluded from backups to keep them small)
+    # Re-ensure xray-core binary (included in backups by default; this is only
+    # a fallback for MRM_BACKUP_XRAY=0 backups or wrong-arch restores)
     ui_spinner_start "Checking xray-core binary..."
     if mrm_ensure_xray_core; then
         ui_spinner_stop
@@ -1625,7 +1675,7 @@ do_restore() {
     echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${YELLOW}Safety backup: $SAFETY_BACKUP${NC}"
-    echo -e "${CYAN}Note: geoip.dat, xray binary will be re-downloaded automatically on node start${NC}"
+    echo -e "${CYAN}Note: xray-core & geo files are included in this backup - no downloads needed${NC}"
     echo ""
     pause
 }
@@ -1634,20 +1684,41 @@ do_restore() {
 # binary + geo files; the panel needs them at /var/lib/pg-node/xray-core/xray).
 # Mirrors the official installer's download logic. No-op if already present.
 mrm_ensure_xray_core() {
-    local XRAY_BIN XRAY_DIR ASSETS_DIR
-    XRAY_BIN="${NODE_DEF_CERTS%/certs}/xray-core/xray"
-    [ -n "$NODE_DIR" ] && XRAY_BIN="${NODE_DIR%/}/xray-core/xray"
-    if [ -x "$XRAY_BIN" ]; then
-        log_backup "INFO" "xray-core already present: $XRAY_BIN"
-        return 0
-    fi
-    # Node data dir is usually /var/lib/pg-node
+    local XRAY_DIR ASSETS_DIR XRAY_BIN
+    # Node data dir is usually /var/lib/pg-node (where the panel execs xray)
     local NODE_DATA
     NODE_DATA="$(dirname "$NODE_DEF_CERTS" 2>/dev/null)"
     [ -z "$NODE_DATA" ] && NODE_DATA="/var/lib/pg-node"
     XRAY_DIR="$NODE_DATA/xray-core"
     ASSETS_DIR="$NODE_DATA/assets"
+    XRAY_BIN="$XRAY_DIR/xray"
+    local XRAY_OK=false
+    if [ -x "$XRAY_BIN" ]; then
+        # Verify it actually RUNS (catches wrong-arch binaries restored from a
+        # different server); if broken we re-download.
+        if "$XRAY_BIN" -version >/dev/null 2>&1; then
+            XRAY_OK=true
+        else
+            log_backup "WARN" "xray-core present but not runnable (wrong arch?) - re-downloading"
+            rm -f "$XRAY_BIN"
+        fi
+    fi
     mkdir -p "$XRAY_DIR" "$ASSETS_DIR" 2>/dev/null || return 1
+
+    # Ensure geo files exist even when the binary is fine (small-backup restores)
+    if [ ! -f "$ASSETS_DIR/geoip.dat" ] || [ ! -f "$ASSETS_DIR/geosite.dat" ]; then
+        if command -v curl >/dev/null 2>&1; then
+            log_backup "INFO" "Downloading geo files to $ASSETS_DIR"
+            curl -fsSL --connect-timeout 15 "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" -o "$ASSETS_DIR/geoip.dat" 2>/dev/null || true
+            curl -fsSL --connect-timeout 15 "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" -o "$ASSETS_DIR/geosite.dat" 2>/dev/null || true
+            [ -s "$ASSETS_DIR/geoip.dat" ] && [ -s "$ASSETS_DIR/geosite.dat" ] && log_backup "SUCCESS" "Geo files downloaded"
+        fi
+    fi
+
+    if [ "$XRAY_OK" = true ]; then
+        log_backup "INFO" "xray-core already present and working: $XRAY_BIN"
+        return 0
+    fi
 
     if ! command -v curl >/dev/null 2>&1; then
         log_backup "ERROR" "curl not available for xray download"
@@ -1668,12 +1739,6 @@ mrm_ensure_xray_core() {
             chmod +x "$XRAY_DIR/xray" 2>/dev/null
             rm -f "$TMPZ"
             log_backup "SUCCESS" "xray-core downloaded to $XRAY_DIR"
-            # Re-download geo files too (also excluded from backups)
-            if [ ! -f "$ASSETS_DIR/geoip.dat" ] || [ ! -f "$ASSETS_DIR/geosite.dat" ]; then
-                curl -fsSL --connect-timeout 15 "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" -o "$ASSETS_DIR/geoip.dat" 2>/dev/null || true
-                curl -fsSL --connect-timeout 15 "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" -o "$ASSETS_DIR/geosite.dat" 2>/dev/null || true
-                log_backup "INFO" "Geo files refreshed in $ASSETS_DIR"
-            fi
             return 0
         fi
     fi
