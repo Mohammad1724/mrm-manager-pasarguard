@@ -1630,7 +1630,43 @@ do_restore() {
         ui_warning "No database found in backup - only files restored"
     fi
 
-    # Start services (AFTER the DB is restored - panel boots directly on new data)
+    # Ensure xray-core binary BEFORE starting services (fixes Error_Node on restore)
+    # xray-core is excluded from small backups (MRM_BACKUP_XRAY=0 by default),
+    # so on a new server the binary is missing. We must download it BEFORE the
+    # node container starts, otherwise the node fails with:
+    #   "fork/exec /var/lib/pg-node/xray-core/xray: no such file or directory"
+    local XRAY_WAS_DOWNLOADED=false
+    local XRAY_BIN_PATH=""
+    XRAY_BIN_PATH="$(dirname "${NODE_DEF_CERTS:-/var/lib/pg-node/certs}" 2>/dev/null)"
+    [ -z "$XRAY_BIN_PATH" ] && XRAY_BIN_PATH="/var/lib/pg-node"
+    XRAY_BIN_PATH="$XRAY_BIN_PATH/xray-core/xray"
+
+    ui_spinner_start "Checking xray-core binary (must exist before node starts)..."
+    if [ -x "$XRAY_BIN_PATH" ] && "$XRAY_BIN_PATH" -version >/dev/null 2>&1; then
+        ui_spinner_stop
+        ui_success "xray-core already present and working"
+        log_backup "INFO" "xray-core already present: $XRAY_BIN_PATH"
+    else
+        ui_spinner_stop
+        log_backup "INFO" "xray-core missing at $XRAY_BIN_PATH - downloading before service start"
+        ui_spinner_start "Downloading xray-core (needed before node starts)..."
+        if mrm_ensure_xray_core; then
+            XRAY_WAS_DOWNLOADED=true
+            ui_spinner_stop
+            ui_success "xray-core downloaded successfully"
+            log_backup "SUCCESS" "xray-core downloaded to $XRAY_BIN_PATH"
+        else
+            ui_spinner_stop
+            ui_error "xray-core download FAILED! Node will not work."
+            echo -e "    ${YELLOW}Possible causes:${NC}"
+            echo -e "    ${YELLOW}- GitHub is blocked on this server (common in Iran)${NC}"
+            echo -e "    ${YELLOW}- No internet connection${NC}"
+            echo -e "    ${YELLOW}- Try: mrm fix-node${NC}"
+            log_backup "ERROR" "xray-core download failed during restore"
+        fi
+    fi
+
+    # Start services (AFTER the DB is restored AND xray-core is ensured)
     local STARTED_ANY=false START_FAILED=false
     PANEL_COMPOSE_FILE="$(get_existing_compose_file panel 2>/dev/null || true)"
     NODE_COMPOSE_FILE="$(get_existing_compose_file node 2>/dev/null || true)"
@@ -1646,15 +1682,18 @@ do_restore() {
 
     if [ "$START_FAILED" = true ]; then ui_error "Failed to start one or more services"; elif [ "$STARTED_ANY" = true ]; then ui_success "Services started"; else ui_warning "No compose services found to start"; fi
 
-    # Re-ensure xray-core binary (included in backups by default; this is only
-    # a fallback for MRM_BACKUP_XRAY=0 backups or wrong-arch restores)
-    ui_spinner_start "Checking xray-core binary..."
-    if mrm_ensure_xray_core; then
-        ui_spinner_stop
-        ui_success "xray-core ready"
-    else
-        ui_spinner_stop
-        ui_warning "xray-core missing - run node update/core-update manually (see log)"
+    # If xray was freshly downloaded, restart the node container to pick it up
+    if [ "$XRAY_WAS_DOWNLOADED" = true ] && [ -n "$NODE_COMPOSE_FILE" ]; then
+        ui_spinner_start "Restarting node to apply new xray-core..."
+        if run_compose_file "$NODE_COMPOSE_FILE" restart >/dev/null 2>&1; then
+            ui_spinner_stop
+            ui_success "Node restarted with new xray-core"
+            log_backup "INFO" "Node restarted after xray-core download"
+        else
+            ui_spinner_stop
+            ui_warning "Node restart failed - try: docker restart \$(docker ps -a --format '{{.Names}}' | grep -i node | head -1)"
+            log_backup "WARNING" "Node restart failed after xray-core download"
+        fi
     fi
 
     # Final cleanup
@@ -1698,7 +1737,7 @@ mrm_ensure_xray_core() {
     local XRAY_DIR ASSETS_DIR XRAY_BIN
     # Node data dir is usually /var/lib/pg-node (where the panel execs xray)
     local NODE_DATA
-    NODE_DATA="$(dirname "$NODE_DEF_CERTS" 2>/dev/null)"
+    NODE_DATA="$(dirname "${NODE_DEF_CERTS:-/var/lib/pg-node/certs}" 2>/dev/null)"
     [ -z "$NODE_DATA" ] && NODE_DATA="/var/lib/pg-node"
     XRAY_DIR="$NODE_DATA/xray-core"
     ASSETS_DIR="$NODE_DATA/assets"
@@ -1720,9 +1759,19 @@ mrm_ensure_xray_core() {
     if [ ! -f "$ASSETS_DIR/geoip.dat" ] || [ ! -f "$ASSETS_DIR/geosite.dat" ]; then
         if command -v curl >/dev/null 2>&1; then
             log_backup "INFO" "Downloading geo files to $ASSETS_DIR"
-            curl -fsSL --connect-timeout 15 "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" -o "$ASSETS_DIR/geoip.dat" 2>/dev/null || true
-            curl -fsSL --connect-timeout 15 "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" -o "$ASSETS_DIR/geosite.dat" 2>/dev/null || true
-            [ -s "$ASSETS_DIR/geoip.dat" ] && [ -s "$ASSETS_DIR/geosite.dat" ] && log_backup "SUCCESS" "Geo files downloaded"
+            # Try primary (GitHub) then fallback mirrors (for restricted networks)
+            local GEO_MIRRORS=(
+                "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
+                "https://gh.api.99988866.xyz/https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
+                "https://ghfast.top/https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
+            )
+            for MIRROR in "${GEO_MIRRORS[@]}"; do
+                [ -f "$ASSETS_DIR/geoip.dat" ] && [ -f "$ASSETS_DIR/geosite.dat" ] && break
+                curl -fsSL --connect-timeout 20 --max-time 120 "$MIRROR/geoip.dat" -o "$ASSETS_DIR/geoip.dat" 2>/dev/null || true
+                curl -fsSL --connect-timeout 20 --max-time 120 "$MIRROR/geosite.dat" -o "$ASSETS_DIR/geosite.dat" 2>/dev/null || true
+                [ -s "$ASSETS_DIR/geoip.dat" ] && [ -s "$ASSETS_DIR/geosite.dat" ] && log_backup "SUCCESS" "Geo files downloaded from $MIRROR" && break
+                rm -f "$ASSETS_DIR/geoip.dat" "$ASSETS_DIR/geosite.dat" 2>/dev/null
+            done
         fi
     fi
 
@@ -1737,20 +1786,48 @@ mrm_ensure_xray_core() {
     fi
     local ARCH ZIP_URL
     ARCH="$(mrm_xray_arch)"
-    ZIP_URL="https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-${ARCH}.zip"
-    log_backup "INFO" "Downloading xray-core ($ARCH) from $ZIP_URL"
+    log_backup "INFO" "xray-core not found, downloading for arch: $ARCH"
+
+    # Try multiple mirrors: direct GitHub first, then GitHub proxy mirrors
+    # (critical for servers in Iran/restricted networks where GitHub is blocked)
+    local XRAY_MIRRORS=(
+        "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-${ARCH}.zip"
+        "https://gh.api.99988866.xyz/https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-${ARCH}.zip"
+        "https://ghfast.top/https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-${ARCH}.zip"
+    )
+
     local TMPZ
     TMPZ="$(mktemp /tmp/xray.XXXXXX.zip)" || return 1
-    if curl -fsSL --connect-timeout 15 "$ZIP_URL" -o "$TMPZ" 2>/dev/null; then
-        if command -v unzip >/dev/null 2>&1 && unzip -o "$TMPZ" -d "$XRAY_DIR" >/dev/null 2>&1; then
-            chmod +x "$XRAY_DIR/xray" 2>/dev/null
-            rm -f "$TMPZ"
-            log_backup "SUCCESS" "xray-core downloaded to $XRAY_DIR"
-            return 0
+    local DOWNLOADED=false
+
+    for MIRROR_URL in "${XRAY_MIRRORS[@]}"; do
+        log_backup "INFO" "Trying xray download from: $MIRROR_URL"
+        if curl -fsSL --connect-timeout 20 --max-time 180 "$MIRROR_URL" -o "$TMPZ" 2>/dev/null; then
+            if [ -s "$TMPZ" ]; then
+                if command -v unzip >/dev/null 2>&1 && unzip -o "$TMPZ" -d "$XRAY_DIR" >/dev/null 2>&1; then
+                    chmod +x "$XRAY_DIR/xray" 2>/dev/null
+                    if "$XRAY_BIN" -version >/dev/null 2>&1; then
+                        DOWNLOADED=true
+                        log_backup "SUCCESS" "xray-core downloaded and verified from: $MIRROR_URL"
+                        break
+                    else
+                        log_backup "WARN" "xray binary from $MIRROR_URL is not runnable (wrong arch?)"
+                        rm -f "$XRAY_BIN" 2>/dev/null
+                    fi
+                fi
+            fi
         fi
-    fi
+        rm -f "$TMPZ" 2>/dev/null
+    done
+
     rm -f "$TMPZ" 2>/dev/null
-    log_backup "ERROR" "xray-core download failed - run node core update manually"
+
+    if [ "$DOWNLOADED" = true ]; then
+        return 0
+    fi
+
+    log_backup "ERROR" "xray-core download failed from all mirrors. Server may not have internet access or GitHub is blocked."
+    log_backup "ERROR" "Manual fix: run 'mrm fix-node' or download xray-core manually to $XRAY_DIR/xray"
     return 1
 }
 
