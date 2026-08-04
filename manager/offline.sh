@@ -179,8 +179,10 @@ offline_restore_backup_dir() {
     if [ -f "$BACKUP_DIR/apt/sources.list" ]; then
         cp "$BACKUP_DIR/apt/sources.list" /etc/apt/sources.list || return 1
     fi
-    # FIXED: backup third party before rm, but for restore we DO want to restore exactly what was backed up
-    # So we rm and then restore
+    # SECURITY: Backup third-party repos before destructive rm
+    local THIRD_PARTY_BACKUP="/tmp/mrm-third-party-backup-$(date +%s)"
+    mkdir -p "$THIRD_PARTY_BACKUP"
+    cp -a /etc/apt/sources.list.d/. "$THIRD_PARTY_BACKUP/" 2>/dev/null || true
     rm -rf /etc/apt/sources.list.d/* 2>/dev/null || true
     if [ -d "$BACKUP_DIR/apt/sources.list.d" ]; then
         cp -a "$BACKUP_DIR/apt/sources.list.d/." /etc/apt/sources.list.d/ 2>/dev/null || true
