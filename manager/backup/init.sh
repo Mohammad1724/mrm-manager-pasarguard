@@ -20,7 +20,7 @@ TG_CONFIG="/root/.mrm_telegram"
 TEMP_BASE="/tmp/mrm_workspace"
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 BACKUP_LOG="/var/log/mrm-backup.log"
-MRM_BACKUP_VERSION="v${BACKUP_VERSION:-1.0.1}"
+MRM_BACKUP_VERSION="v${BACKUP_VERSION:-1.0.5}"
 
 # ==========================================
 # LOGGING
@@ -124,21 +124,6 @@ run_compose_file() {
     fi
 }
 
-build_telegram_proxy_args() {
-    local PROXY="$1"
-    local PROXY_STR AUTH HOSTPORT
-    if [[ "$PROXY" == socks5://* ]]; then
-        PROXY_STR="${PROXY#socks5://}"
-        if [[ "$PROXY_STR" == *"@"* ]]; then
-            AUTH="${PROXY_STR%@*}"
-            HOSTPORT="${PROXY_STR##*@}"
-            printf '%s\n' "--socks5-hostname" "$HOSTPORT" "-U" "$AUTH"
-        else
-            printf '%s\n' "--socks5-hostname" "$PROXY_STR"
-        fi
-    fi
-}
-
 get_server_ip() {
     local IP=""
     IP=$(curl -4 -s --connect-timeout 5 icanhazip.com 2>/dev/null)
@@ -209,11 +194,33 @@ parse_db_credentials() {
     if [ ! -f "$ENV_FILE" ]; then return 1; fi
     local DB_URI=$(grep "^SQLALCHEMY_DATABASE_URL" "$ENV_FILE" 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
     if [ -n "$DB_URI" ]; then
+        # SECURITY: Use Python urllib for proper URL parsing (handles @ in passwords)
+        local PARSED
+        PARSED=$(python3 -c "
+import sys, urllib.parse
+try:
+    u = urllib.parse.urlparse(sys.stdin.read().strip())
+    print('USER=' + urllib.parse.unquote(u.username or ''))
+    print('PASS=' + urllib.parse.unquote(u.password or ''))
+    print('HOST=' + (u.hostname or ''))
+    print('DB=' + (u.path.lstrip('/') or ''))
+except Exception:
+    pass
+" <<< "$DB_URI" 2>/dev/null)
+        if [ -n "$PARSED" ]; then
+            DB_USER=$(echo "$PARSED" | grep "^USER=" | cut -d= -f2-)
+            DB_PASS=$(echo "$PARSED" | grep "^PASS=" | cut -d= -f2-)
+            DB_NAME=$(echo "$PARSED" | grep "^DB=" | cut -d= -f2-)
+            DB_HOST=$(echo "$PARSED" | grep "^HOST=" | cut -d= -f2-)
+            log_backup "INFO" "Parsed from URI - User: $DB_USER, DB: $DB_NAME, Host: $DB_HOST"
+            return 0
+        fi
+        # Fallback to sed (less reliable but works for simple cases)
         DB_USER=$(echo "$DB_URI" | sed -n 's|.*://\([^:]*\):.*|\1|p')
         DB_PASS=$(echo "$DB_URI" | sed -n 's|.*://[^:]*:\([^@]*\)@.*|\1|p')
         DB_NAME=$(echo "$DB_URI" | sed -n 's|.*/\([^?]*\).*|\1|p')
         DB_HOST=$(echo "$DB_URI" | sed -n 's|.*@\([^:/]*\).*|\1|p')
-        log_backup "INFO" "Parsed from URI - User: $DB_USER, DB: $DB_NAME, Host: $DB_HOST"
+        log_backup "INFO" "Parsed from URI (fallback) - User: $DB_USER, DB: $DB_NAME, Host: $DB_HOST"
         return 0
     fi
     DB_USER=$(grep "^POSTGRES_USER" "$ENV_FILE" | cut -d'=' -f2 | tr -d '"' | tr -d "'")
