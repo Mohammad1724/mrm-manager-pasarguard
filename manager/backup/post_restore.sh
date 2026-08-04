@@ -99,6 +99,11 @@ copy_ssl_certs() {
     fi
 
     for DOMAIN in $DOMAINS; do
+        # SECURITY: Validate domain format before use
+        if ! [[ "$DOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$ ]]; then
+            log_msg "${RED}  ⚠️  Skipping invalid domain: $DOMAIN${NC}"
+            continue
+        fi
         local LETS_DIR="/etc/letsencrypt/live/$DOMAIN"
         local PANEL_CERT_DIR="$PANEL_CERTS_DIR/$DOMAIN"
 
@@ -332,4 +337,7 @@ main() {
     log_msg "${CYAN}══════════════════════════════════════════════════════════${NC}"
 }
 
-main "$@"
+# Only run main if executed directly, not sourced
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
