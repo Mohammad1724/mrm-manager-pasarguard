@@ -13,7 +13,27 @@ fi
 [[ "$1" == "doctor" ]] && exec bash /opt/mrm-manager/diagnostics.sh doctor
 [[ "$1" == "monitor" ]] && exec bash /opt/mrm-manager/monitor.sh
 [[ "$1" == "fix-node" ]] && exec bash /opt/mrm-manager/backup.sh fix-node "$@"
-[[ "$1" == "update" ]] && exec bash -c "$(curl -sL https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main/install.sh)"
+[[ "$1" == "update" ]] && {
+    # SECURITY: Download to temp file, verify syntax, then execute
+    _MRM_UPDATE_TMP=$(mktemp /tmp/mrm-update.XXXXXX.sh)
+    if curl -fsSL --connect-timeout 30 --max-time 120 \
+        "https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main/install.sh" \
+        -o "$_MRM_UPDATE_TMP" 2>/dev/null; then
+        # Verify it's a valid bash script
+        if head -1 "$_MRM_UPDATE_TMP" | grep -q '^#!/bin/bash' && \
+           bash -n "$_MRM_UPDATE_TMP" 2>/dev/null; then
+            exec bash "$_MRM_UPDATE_TMP"
+        else
+            echo -e "\033[0;31m[ERROR] Downloaded script failed syntax verification\033[0m" >&2
+            rm -f "$_MRM_UPDATE_TMP"
+            exit 1
+        fi
+    else
+        echo -e "\033[0;31m[ERROR] Failed to download update\033[0m" >&2
+        rm -f "$_MRM_UPDATE_TMP"
+        exit 1
+    fi
+}
 
 # ─── Module Loader ───────────────────────────────────────────────────────────
 bootstrap_error() { echo -e "\033[0;31m[MRM Error]\033[0m $1" >&2; }
@@ -227,7 +247,22 @@ main_menu() {
             2) bash /opt/mrm-manager/backup.sh || { echo "Backup Manager could not be started"; sleep 1; } ;;
             3) panel_menu ;;
             4) tools_menu ;;
-            5) bash -c "$(curl -sL https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main/install.sh)" ;;
+            5) # SECURITY: Download to temp, verify, then execute
+                _MRM_UPDATE_TMP=$(mktemp /tmp/mrm-update.XXXXXX.sh)
+                if curl -fsSL --connect-timeout 30 --max-time 120 \
+                    "https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main/install.sh" \
+                    -o "$_MRM_UPDATE_TMP" 2>/dev/null; then
+                    if head -1 "$_MRM_UPDATE_TMP" | grep -q '^#!/bin/bash' && \
+                       bash -n "$_MRM_UPDATE_TMP" 2>/dev/null; then
+                        bash "$_MRM_UPDATE_TMP"
+                    else
+                        echo -e "\033[0;31m[ERROR] Downloaded script failed syntax verification\033[0m"
+                    fi
+                else
+                    echo -e "\033[0;31m[ERROR] Failed to download update\033[0m"
+                fi
+                rm -f "$_MRM_UPDATE_TMP"
+                ;;
             6) uninstall_mrm_manager ;;
             0) clear; echo "Goodbye!"; exit 0 ;;
             *) echo "Invalid option"; sleep 1 ;;
