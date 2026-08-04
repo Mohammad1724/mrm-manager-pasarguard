@@ -87,7 +87,16 @@ apply_smart_fix() {
         fi
     fi
     local NG_CONF="/etc/nginx/conf.d/panel_separate.conf"
-    if [ -f "$NG_CONF" ]; then ui_spinner_start "Fixing Nginx config..."; sed -i 's|proxy_pass http://127.0.0.1:7431;|proxy_pass https://127.0.0.1:7431;\n        proxy_ssl_verify off;|g' "$NG_CONF"; systemctl restart nginx >/dev/null 2>&1; ui_spinner_stop; ui_success "Nginx configuration repaired"; fi
+    if [ -f "$NG_CONF" ]; then
+        ui_spinner_start "Fixing Nginx config..."
+        # SECURITY: Check if already fixed before modifying (idempotent)
+        if ! grep -q "proxy_ssl_verify" "$NG_CONF" 2>/dev/null; then
+            sed -i 's|proxy_pass http://127.0.0.1:7431;|proxy_pass https://127.0.0.1:7431;\n        proxy_ssl_verify off;|g' "$NG_CONF"
+        fi
+        systemctl restart nginx >/dev/null 2>&1
+        ui_spinner_stop
+        ui_success "Nginx configuration repaired"
+    fi
     log_backup "SUCCESS" "Smart fix completed"
 }
 
