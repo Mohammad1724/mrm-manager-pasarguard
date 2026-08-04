@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    name: Syntax Check & Tests
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: '.'
+          severity: error
+        continue-on-error: true
+
+      - name: Run Test Suite
+        run: |
+          chmod +x tests/run_tests.sh
+          bash tests/run_tests.sh
+
+  version-check:
+    runs-on: ubuntu-latest
+    name: Version Consistency
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Version Consistency
+        run: |
+          VER_FILE=$(cat VERSION | head -1)
+          source versions.conf
+          if [ "$MRM_VERSION" = "$VER_FILE" ]; then
+            echo "✅ Version consistent: $MRM_VERSION"
+          else
+            echo "❌ Version mismatch: VERSION=$VER_FILE, versions.conf=$MRM_VERSION"
+            exit 1
+          fi
+
+  file-integrity:
+    runs-on: ubuntu-latest
+    name: File Integrity Check
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Required Files
+        run: |
+          REQUIRED=(
+            "install.sh"
+            "manager/main.sh"
+            "manager/backup.sh"
+            "manager/utils.sh"
+            "manager/backup/init.sh"
+            "manager/backup/database.sh"
+            "manager/backup/backup_core.sh"
+            "manager/backup/restore_core.sh"
+            "manager/backup/telegram.sh"
+            "manager/backup/smart_fix.sh"
+            "manager/backup/xray.sh"
+            "manager/backup/post_restore.sh"
+            "manager/backup/menu.sh"
+            "tests/run_tests.sh"
+          )
+          
+          MISSING=0
+          for f in "${REQUIRED[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "❌ Missing: $f"
+              MISSING=$((MISSING + 1))
+            else
+              echo "✅ Found: $f"
+            fi
+          done
+          
+          if [ "$MISSING" -gt 0 ]; then
+            echo "❌ $MISSING required files missing"
+            exit 1
+          fi
+
+      - name: Check for Hardcoded Credentials
+        run: |
+          if grep -rn "17240304" manager/ 2>/dev/null; then
+            echo "❌ Hardcoded credential found!"
+            exit 1
+          else
+            echo "✅ No hardcoded credentials found"
+          fi
