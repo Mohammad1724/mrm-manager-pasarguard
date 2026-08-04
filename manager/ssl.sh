@@ -25,6 +25,10 @@ set -o pipefail
 
 # Version
 
+# Guard against double-source (prevents "readonly: variable is read only" error)
+if [[ -z "${_SSL_MODULE_INITIALIZED:-}" ]]; then
+_SSL_MODULE_INITIALIZED=1
+
 # Colors
 readonly RED='\033[0;31m'
 readonly GREEN='\033[0;32m'
@@ -59,6 +63,8 @@ readonly DNS_TIMEOUT=5
 # Ports
 readonly HTTP_PORT=80
 readonly HTTPS_PORT=443
+
+fi # end _SSL_MODULE_INITIALIZED guard
 
 # ═══════════════════════════════════════════════════════════════════════════
 # GLOBAL STATE
