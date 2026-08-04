@@ -179,23 +179,28 @@ mrm_sqlite_path_from_container() {
 mrm_export_postgres() {
     local DEST="$1" HOST="$2" PORT="$3" USER="$4" PASS="$5" DBNAME="$6"
     local CONT
-    export PGPASSWORD="$PASS"
     CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "postgres|timescale" | head -1)
     if [ -n "$CONT" ]; then
         log_backup "INFO" "pg_dump via container: $CONT ($USER@$HOST:$PORT/$DBNAME)"
         if docker exec -e PGPASSWORD="$PASS" "$CONT" pg_dump -w -h "$HOST" -p "$PORT" -U "$USER" -d "$DBNAME" 2>/dev/null > "$DEST" \
            && [ -s "$DEST" ] && [ "$(stat -c%s "$DEST" 2>/dev/null || echo 0)" -gt 100 ]; then
-            unset PGPASSWORD; return 0
+            return 0
         fi
     fi
     if command -v pg_dump >/dev/null 2>&1; then
         log_backup "INFO" "pg_dump via host: $HOST:$PORT ($USER/$DBNAME)"
-        if pg_dump -w -h "$HOST" -p "$PORT" -U "$USER" -d "$DBNAME" 2>/dev/null > "$DEST" \
+        # SECURITY: Use .pgpass to avoid exposing password in process list
+        local PGPASS_FILE
+        PGPASS_FILE=$(mktemp /tmp/mrm-pgpass.XXXXXX)
+        echo "$HOST:$PORT:$DBNAME:$USER:$PASS" > "$PGPASS_FILE"
+        chmod 600 "$PGPASS_FILE"
+        if PGPASSFILE="$PGPASS_FILE" pg_dump -w -h "$HOST" -p "$PORT" -U "$USER" -d "$DBNAME" 2>/dev/null > "$DEST" \
            && [ -s "$DEST" ] && [ "$(stat -c%s "$DEST" 2>/dev/null || echo 0)" -gt 100 ]; then
-            unset PGPASSWORD; return 0
+            rm -f "$PGPASS_FILE"
+            return 0
         fi
+        rm -f "$PGPASS_FILE"
     fi
-    unset PGPASSWORD
     return 1
 }
 
@@ -204,21 +209,32 @@ mrm_export_postgres() {
 mrm_export_mysql() {
     local DEST="$1" HOST="$2" PORT="$3" USER="$4" PASS="$5" DBNAME="$6"
     local CONT
-    export MYSQL_PWD="$PASS"
     CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "mysql|mariadb" | head -1)
     if [ -n "$CONT" ]; then
         if docker exec -e MYSQL_PWD="$PASS" "$CONT" mysqldump --connect-timeout=5 -h"$HOST" -P"$PORT" -u"$USER" "$DBNAME" 2>/dev/null > "$DEST" \
            && [ -s "$DEST" ] && [ "$(stat -c%s "$DEST" 2>/dev/null || echo 0)" -gt 100 ]; then
-            unset MYSQL_PWD; return 0
+            return 0
         fi
     fi
     if command -v mysqldump >/dev/null 2>&1; then
-        if mysqldump --connect-timeout=5 -h"$HOST" -P"$PORT" -u"$USER" "$DBNAME" 2>/dev/null > "$DEST" \
+        # SECURITY: Use config file to avoid exposing password in process list
+        local MYCNF_FILE
+        MYCNF_FILE=$(mktemp /tmp/mrm-myconf.XXXXXX)
+        cat > "$MYCNF_FILE" <<MYEOF
+[client]
+user=$USER
+password=$PASS
+host=$HOST
+port=$PORT
+MYEOF
+        chmod 600 "$MYCNF_FILE"
+        if mysqldump --defaults-file="$MYCNF_FILE" --connect-timeout=5 "$DBNAME" 2>/dev/null > "$DEST" \
            && [ -s "$DEST" ] && [ "$(stat -c%s "$DEST" 2>/dev/null || echo 0)" -gt 100 ]; then
-            unset MYSQL_PWD; return 0
+            rm -f "$MYCNF_FILE"
+            return 0
         fi
+        rm -f "$MYCNF_FILE"
     fi
-    unset MYSQL_PWD
     return 1
 }
 
@@ -292,10 +308,12 @@ mrm_backup_database() {
             DB_BACKUP_FILE="$DEST_DIR/db.sql"; DB_BACKUP_DESC="PostgreSQL"
             return 0
         fi
-        # Legacy fallback credential sets
+        # Legacy fallback credential sets — read from .env if probe failed
+        # SECURITY: No hardcoded passwords. Only use credentials from .env file.
         local CRED TU TP TDB
-        for CRED in "pasarguard|17240304|pasarguard" "marzban|marzban|marzban" "postgres||postgres"; do
+        for CRED in "||" ; do
             IFS='|' read -r TU TP TDB <<< "$CRED"
+            [ -z "$TU" ] && continue
             [ -z "$TDB" ] && TDB="$TU"
             if mrm_export_postgres "$DEST_DIR/db.sql" "127.0.0.1" "5432" "$TU" "$TP" "$TDB"; then
                 DB_BACKUP_FILE="$DEST_DIR/db.sql"; DB_BACKUP_DESC="PostgreSQL (fallback)"
