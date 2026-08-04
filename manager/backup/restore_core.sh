@@ -47,8 +47,8 @@ do_restore() {
     local WORK_DIR="$TEMP_BASE/restore_$(date +%s)"
     mkdir -p "$WORK_DIR"
     
-    # Cleanup trap
-    trap 'rm -rf "$WORK_DIR"; trap - RETURN' RETURN
+    # Cleanup trap with safety guard
+    trap '[[ -n "${WORK_DIR:-}" && -d "${WORK_DIR:-}" && "$WORK_DIR" != "/" ]] && rm -rf "$WORK_DIR"; trap - RETURN' RETURN
 
     ui_spinner_start "Extracting backup..."
     if ! tar -xzf "$SELECTED" -C "$WORK_DIR" 2>/dev/null; then
@@ -457,12 +457,12 @@ do_restore() {
                     fi
 
                     if [ -n "$DB_PASS" ]; then
-                        if docker exec -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -U "$DB_USER" -d "$DB_NAME" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1 && \
+                        if docker exec -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -U "$DB_USER" -d "$DB_NAME" -c "BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public; COMMIT;" >/dev/null 2>&1 && \
                            cat "$SQL_FILE" | docker exec -i -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
                             DB_IMPORTED=true
                         fi
                     else
-                        if docker exec "$DB_CONT" psql -U "$DB_USER" -d "$DB_NAME" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1 && \
+                        if docker exec "$DB_CONT" psql -U "$DB_USER" -d "$DB_NAME" -c "BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public; COMMIT;" >/dev/null 2>&1 && \
                            cat "$SQL_FILE" | docker exec -i "$DB_CONT" psql -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
                             DB_IMPORTED=true
                         fi
@@ -481,7 +481,7 @@ do_restore() {
                         [ -z "$DB_USER" ] && DB_USER="pasarguard"
                         [ -z "$DB_NAME" ] && DB_NAME="$DB_USER"
                         export PGPASSWORD="$DB_PASS"
-                        if psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null 2>&1 && \
+                        if psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" -c "BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public; COMMIT;" >/dev/null 2>&1 && \
                            psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" -f "$SQL_FILE2" >/dev/null 2>&1; then
                             DB_IMPORTED=true
                         fi
