@@ -372,6 +372,7 @@ EOF
     if [ -f "$TG_CONFIG" ]; then
         [ "$MODE" != "auto" ] && ui_spinner_start "Sending v${BACKUP_VERSION} backup to Telegram ($FINAL_SIZE)..."
         if send_to_telegram "$ARCHIVE_PATH"; then
+        send_to_telegram "$ARCHIVE_PATH" || log_backup "WARNING" "Auto Telegram send failed"
             [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "v${BACKUP_VERSION} backup sent to Telegram! ($FINAL_SIZE)"
         else
             [ "$MODE" != "auto" ] && ui_spinner_stop && ui_warning "Telegram send failed - check log. Size: $FINAL_SIZE"
