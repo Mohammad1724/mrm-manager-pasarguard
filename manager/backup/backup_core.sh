@@ -376,9 +376,9 @@ EOF
     if [ -f "$TG_CONFIG" ]; then
         [ "$MODE" != "auto" ] && ui_spinner_start "Sending v${BACKUP_VERSION} backup to Telegram ($FINAL_SIZE)..."
         if send_to_telegram "$ARCHIVE_PATH"; then
-        send_to_telegram "$ARCHIVE_PATH" || log_backup "WARNING" "Auto Telegram send failed"
             [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "v${BACKUP_VERSION} backup sent to Telegram! ($FINAL_SIZE)"
         else
+            log_backup "WARNING" "Telegram send failed (mode=$MODE) for $(basename "$ARCHIVE_PATH")"
             [ "$MODE" != "auto" ] && ui_spinner_stop && ui_warning "Telegram send failed - check log. Size: $FINAL_SIZE"
         fi
         # Loud warning when the DB is missing (how the 39KB backups happened)
