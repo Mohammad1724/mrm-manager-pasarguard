@@ -18,6 +18,7 @@ if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r "/opt/mrm-manag
 BACKUP_DIR="/root/mrm-backups"
 TG_CONFIG="/root/.mrm_telegram"
 TEMP_BASE="/tmp/mrm_workspace"
+trap '[ -n "${TEMP_BASE}" ] && rm -rf "$TEMP_BASE"' EXIT
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 BACKUP_LOG="/var/log/mrm-backup.log"
 MRM_BACKUP_VERSION="v${BACKUP_VERSION:-1.0.5}"
