@@ -29,6 +29,7 @@ do_backup() {
     ARCHIVE_BASE="MRM-${TS/_/-}"
 
     # Always clean temp first (avoid leftovers)
+        [[ -n "$TEMP_BASE" && -d "$TEMP_BASE" ]] && rm -rf "$TEMP_BASE"
     rm -rf "$TEMP_BASE"
     mkdir -p "$B_PATH/database" "$B_PATH/panel" "$B_PATH/data" "$B_PATH/node"
     mkdir -p "$BACKUP_DIR"
@@ -72,6 +73,7 @@ do_backup() {
         echo -e "${YELLOW}You can still restore panel files but users will be lost.${NC}\n"
         read -p "Continue anyway? (y/N): " CONT
         if [[ ! "$CONT" =~ ^[Yy]$ ]]; then
+        [[ -n "$TEMP_BASE" && -d "$TEMP_BASE" ]] && rm -rf "$TEMP_BASE"
             rm -rf "$TEMP_BASE"
             return
         fi
@@ -360,11 +362,13 @@ EOF
     else
         [ "$MODE" != "auto" ] && ui_spinner_stop && ui_error "Failed to create archive!"
         log_backup "ERROR" "Failed to create tar.gz"
+        [[ -n "$TEMP_BASE" && -d "$TEMP_BASE" ]] && rm -rf "$TEMP_BASE"
         rm -rf "$TEMP_BASE"
         return 1
     fi
 
     # 8. Cleanup temp
+        [[ -n "$TEMP_BASE" && -d "$TEMP_BASE" ]] && rm -rf "$TEMP_BASE"
     rm -rf "$TEMP_BASE"
 
     # 9. Send to Telegram - Now small and fast
