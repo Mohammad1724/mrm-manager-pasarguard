@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Backup - Database Module
+# MRM Backup - Database Module v1.1.7
 # SQLite/PostgreSQL/MySQL backup and restore
 # Includes live-safe export, cold copy, and probe detection
 
@@ -15,6 +15,10 @@
 # a precise name/image match (must NOT match node containers like "pasarguard-node").
 mrm_panel_container() {
     local COMPOSE_FILE CID
+    # FIX: prefer the container running the pasarguard/panel image — `compose ps`
+    # order is not guaranteed and may return a DB/helper container first (MRM-045)
+    CID="$(docker ps --format '{{.ID}}|{{.Image}}' 2>/dev/null | awk -F'|' '$2 ~ /^pasarguard\/panel(:|$)/ {print $1; exit}')"
+    [ -n "$CID" ] && { printf '%s\n' "$CID"; return 0; }
     COMPOSE_FILE="$(get_existing_compose_file panel 2>/dev/null || true)"
     if [ -n "$COMPOSE_FILE" ] && [ -f "$COMPOSE_FILE" ]; then
         CID="$(docker compose -f "$COMPOSE_FILE" ps -q 2>/dev/null | head -1)"
@@ -31,6 +35,9 @@ mrm_panel_container() {
 # while the panel is down). Same precise matching, using `docker ps -a`.
 mrm_find_panel_container() {
     local COMPOSE_FILE CID
+    # FIX: prefer the pasarguard/panel image first (MRM-045)
+    CID="$(docker ps -a --format '{{.ID}}|{{.Image}}' 2>/dev/null | awk -F'|' '$2 ~ /^pasarguard\/panel(:|$)/ {print $1; exit}')"
+    [ -n "$CID" ] && { printf '%s\n' "$CID"; return 0; }
     COMPOSE_FILE="$(get_existing_compose_file panel 2>/dev/null || true)"
     if [ -n "$COMPOSE_FILE" ] && [ -f "$COMPOSE_FILE" ]; then
         CID="$(docker compose -f "$COMPOSE_FILE" ps -a -q 2>/dev/null | head -1)"
@@ -124,19 +131,22 @@ mrm_sqlite_host_backup() {
 # Export SQLite safely (live-safe backup API) from inside the panel container
 mrm_export_sqlite() {
     local CONT="$1" SRC="$2" DEST="$3"
+    # FIX: unique temp name inside the shared container — a concurrent run
+    # (cron + manual) would otherwise overwrite the same path (MRM-052)
+    local TMP_IN="/tmp/mrm_db_backup.$$.sqlite3"
     log_backup "INFO" "SQLite export: container=$CONT src=$SRC -> $DEST"
-    docker exec -i "$CONT" python - "$SRC" <<'PY' 2>/dev/null || return 1
+    docker exec -i "$CONT" python - "$SRC" "$TMP_IN" <<'PY' 2>/dev/null || return 1
 import sqlite3, sys, os
-src_path = sys.argv[1]
+src_path, dst_path = sys.argv[1], sys.argv[2]
 if not src_path or not os.path.exists(src_path):
     raise SystemExit("MISSING")
 src = sqlite3.connect(src_path)
-dst = sqlite3.connect("/tmp/mrm_db_backup.sqlite3")
+dst = sqlite3.connect(dst_path)
 src.backup(dst)
 src.close(); dst.close()
 PY
-    docker cp "$CONT:/tmp/mrm_db_backup.sqlite3" "$DEST" >/dev/null 2>&1 || return 1
-    docker exec "$CONT" rm -f /tmp/mrm_db_backup.sqlite3 2>/dev/null || true
+    docker cp "$CONT:$TMP_IN" "$DEST" >/dev/null 2>&1 || return 1
+    docker exec "$CONT" rm -f "$TMP_IN" 2>/dev/null || true
     mrm_is_sqlite_file "$DEST" || return 1
     log_backup "SUCCESS" "SQLite exported via container ($(du -h "$DEST" | cut -f1))"
     return 0
@@ -178,11 +188,18 @@ mrm_sqlite_path_from_container() {
 # for a password interactively (would hang the menu / cron job).
 mrm_export_postgres() {
     local DEST="$1" HOST="$2" PORT="$3" USER="$4" PASS="$5" DBNAME="$6"
-    local CONT
-    CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "postgres|timescale" | head -1)
+    local CONT INNER_PORT
+    # FIX: match official compose service names first (pasarguard-postgresql-1…),
+    # not any container whose name merely contains "postgres" (MRM-049)
+    CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(pasarguard-)?(postgresql|timescaledb|postgres|timescale)[-_]?[0-9]*$' | head -1)
+    [ -z "$CONT" ] && CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "postgres|timescale" | head -1)
     if [ -n "$CONT" ]; then
-        log_backup "INFO" "pg_dump via container: $CONT ($USER@$HOST:$PORT/$DBNAME)"
-        if docker exec -e PGPASSWORD="$PASS" "$CONT" pg_dump -w -h "$HOST" -p "$PORT" -U "$USER" -d "$DBNAME" 2>/dev/null > "$DEST" \
+        # FIX: the panel connects through pgbouncer (6432) but inside the postgres
+        # container the server itself listens on 5432 — dump the server directly (MRM-046)
+        INNER_PORT="$PORT"
+        [ "$INNER_PORT" = "6432" ] && INNER_PORT=5432
+        log_backup "INFO" "pg_dump via container: $CONT ($USER@$HOST:$INNER_PORT/$DBNAME)"
+        if docker exec -e PGPASSWORD="$PASS" "$CONT" pg_dump -w -h "$HOST" -p "$INNER_PORT" -U "$USER" -d "$DBNAME" 2>/dev/null > "$DEST" \
            && [ -s "$DEST" ] && [ "$(stat -c%s "$DEST" 2>/dev/null || echo 0)" -gt 100 ]; then
             return 0
         fi
@@ -209,7 +226,9 @@ mrm_export_postgres() {
 mrm_export_mysql() {
     local DEST="$1" HOST="$2" PORT="$3" USER="$4" PASS="$5" DBNAME="$6"
     local CONT
-    CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "mysql|mariadb" | head -1)
+    # FIX: match official compose service names, not any "mysql/mariadb" container (MRM-049)
+    CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(pasarguard-)?(mysql|mariadb)[-_]?[0-9]*$' | head -1)
+    [ -z "$CONT" ] && CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "mysql|mariadb" | head -1)
     if [ -n "$CONT" ]; then
         if docker exec -e MYSQL_PWD="$PASS" "$CONT" mysqldump --connect-timeout=5 -h"$HOST" -P"$PORT" -u"$USER" "$DBNAME" 2>/dev/null > "$DEST" \
            && [ -s "$DEST" ] && [ "$(stat -c%s "$DEST" 2>/dev/null || echo 0)" -gt 100 ]; then
@@ -289,6 +308,11 @@ mrm_backup_database() {
         for HOST_CAND in "$DATA_DIR/db.sqlite3" "$PANEL_DIR/db.sqlite3"; do
             if [ -f "$HOST_CAND" ] && [ -s "$HOST_CAND" ]; then
                 cp "$HOST_CAND" "$DEST_DIR/db.sqlite3" 2>/dev/null || continue
+                # FIX: validate the copied file before trusting it (MRM-051)
+                if ! mrm_is_sqlite_file "$DEST_DIR/db.sqlite3"; then
+                    log_backup "WARN" "Copied file is not a valid SQLite db: $HOST_CAND"
+                    continue
+                fi
                 DB_BACKUP_FILE="$DEST_DIR/db.sqlite3"
                 DB_BACKUP_DESC="SQLite (host copy)"
                 log_backup "SUCCESS" "SQLite exported from host path: $HOST_CAND"
@@ -308,18 +332,17 @@ mrm_backup_database() {
             DB_BACKUP_FILE="$DEST_DIR/db.sql"; DB_BACKUP_DESC="PostgreSQL"
             return 0
         fi
-        # Legacy fallback credential sets — read from .env if probe failed
-        # SECURITY: No hardcoded passwords. Only use credentials from .env file.
-        local CRED TU TP TDB
-        for CRED in "||" ; do
-            IFS='|' read -r TU TP TDB <<< "$CRED"
-            [ -z "$TU" ] && continue
-            [ -z "$TDB" ] && TDB="$TU"
-            if mrm_export_postgres "$DEST_DIR/db.sql" "127.0.0.1" "5432" "$TU" "$TP" "$TDB"; then
+        # FIX: real .env retry straight to the server port — the old loop
+        # iterated a single empty tuple and never retried anything (MRM-047)
+        # SECURITY: no hardcoded passwords — only credentials from .env file
+        if [ -n "$PANEL_ENV" ] && [ -f "$PANEL_ENV" ]; then
+            parse_db_credentials "$PANEL_ENV"
+            if [ -n "$DB_USER" ] && [ -n "$DB_NAME" ] && \
+               mrm_export_postgres "$DEST_DIR/db.sql" "${DB_HOST:-127.0.0.1}" "5432" "$DB_USER" "$DB_PASS" "$DB_NAME"; then
                 DB_BACKUP_FILE="$DEST_DIR/db.sql"; DB_BACKUP_DESC="PostgreSQL (fallback)"
                 return 0
             fi
-        done
+        fi
         log_backup "ERROR" "PostgreSQL export failed ($PDB@$PHOST:$PPORT)"
         return 1
     elif [ "$TYPE" = "mysql" ]; then
@@ -343,6 +366,17 @@ mrm_backup_database() {
         parse_db_credentials "$PANEL_ENV"
         if mrm_export_postgres "$DEST_DIR/db.sql" "${DB_HOST:-127.0.0.1}" "5432" "${DB_USER:-pasarguard}" "$DB_PASS" "${DB_NAME:-pasarguard}"; then
             DB_BACKUP_FILE="$DEST_DIR/db.sql"; DB_BACKUP_DESC="PostgreSQL"
+            return 0
+        fi
+        return 1
+    fi
+    # FIX: MySQL/MariaDB .env fallback (MRM-050) — previously this went straight
+    # to sqlite and reported "No database found" for MySQL installs
+    if grep -qiE "mysql|mariadb" "$PANEL_ENV" 2>/dev/null; then
+        parse_db_credentials "$PANEL_ENV"
+        if [ -n "$DB_USER" ] && [ -n "$DB_NAME" ] && \
+           mrm_export_mysql "$DEST_DIR/db.sql" "${DB_HOST:-127.0.0.1}" "${DB_PORT:-3306}" "$DB_USER" "$DB_PASS" "$DB_NAME"; then
+            DB_BACKUP_FILE="$DEST_DIR/db.sql"; DB_BACKUP_DESC="MySQL/MariaDB"
             return 0
         fi
         return 1
