@@ -1,8 +1,8 @@
 #!/bin/bash
-# MRM Manager v${SSL_VERSION}
+# MRM Manager ssl.sh v1.1.5
 
 # ═══════════════════════════════════════════════════════════════════════════
-# SSL MANAGEMENT MODULE v${SSL_VERSION}
+# SSL MANAGEMENT MODULE v1.1.5
 # ═══════════════════════════════════════════════════════════════════════════
 # Author: MRM Manager Team
 # License: MIT
@@ -29,16 +29,16 @@ set -o pipefail
 if [[ -z "${_SSL_MODULE_INITIALIZED:-}" ]]; then
 _SSL_MODULE_INITIALIZED=1
 
-# Colors
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[0;34m'
-readonly PURPLE='\033[0;35m'
-readonly CYAN='\033[0;36m'
-readonly ORANGE='\033[0;33m'
-readonly NC='\033[0m'
-readonly BOLD='\033[1m'
+# Colors (not readonly: utils.sh exports the same names when both are sourced — MRM-036)
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+ORANGE='\033[0;33m'
+NC='\033[0m'
+BOLD='\033[1m'
 
 # Paths (can be overridden via environment)
 readonly SSL_LOG_DIR="${SSL_LOG_DIR:-/var/log/ssl-manager}"
@@ -124,7 +124,10 @@ if ! declare -f ui_header >/dev/null 2>&1; then
         padding=$(( (width - ${#title}) / 2 ))
         [ "$padding" -lt 1 ] && padding=1
 
-        clear
+        # FIX: only clear on a real terminal (MRM-034)
+        if [ -t 1 ]; then
+            clear
+        fi
         echo -e "${CYAN}╔${line}╗${NC}"
         printf '%b║%*s%b%s%b%*s%b║%b\n' \
             "$CYAN" "$padding" '' "$BOLD" "$title" "$NC" \
@@ -501,6 +504,37 @@ restart_panel_services() {
     fi
 }
 
+# Recreate a compose service so env_file changes take effect — `restart` reuses
+# the existing container config, but env_file/environment is applied when the
+# container is created (MRM-031)
+recreate_service() {
+    local service_type="$1"
+    local target_dir="" compose_file="" service_name=""
+
+    case "$service_type" in
+        panel)
+            target_dir="$PANEL_DIR"
+            service_name="pasarguard"
+            ;;
+        node)
+            target_dir="$NODE_DIR"
+            service_name="node"
+            ;;
+        *) return 1 ;;
+    esac
+
+    [[ -d "$target_dir" ]] || return 1
+
+    compose_file=$(get_compose_file_for_dir "$target_dir" 2>/dev/null) || true
+    if [[ -n "$compose_file" ]]; then
+        (cd "$target_dir" && docker compose up -d "$service_name" 2>/dev/null) || \
+        (cd "$target_dir" && docker-compose up -d "$service_name" 2>/dev/null)
+    else
+        # systemd-managed fallback (e.g. node-serviced)
+        systemctl restart "$(basename "$target_dir")" 2>/dev/null
+    fi
+}
+
 # ═══════════════════════════════════════════════════════════════════════════
 # PORT CHECKING
 # ═══════════════════════════════════════════════════════════════════════════
@@ -828,6 +862,27 @@ discover_all_certificates() {
             results+=("node|$domain|$cert_path|$days|$status")
         done
     fi
+
+    # 4. Default/flat certificates at the certs root — the official node layout
+    # uses ssl_cert.pem/ssl_key.pem directly, not per-domain subdirs (MRM-033)
+    if [[ -d "$PANEL_DEF_CERTS" ]]; then
+        for flat in fullchain.pem ssl_cert.pem; do
+            [[ -f "$PANEL_DEF_CERTS/$flat" ]] || continue
+            local flat_days flat_status
+            flat_days=$(get_cert_days_remaining "$PANEL_DEF_CERTS/$flat")
+            flat_status=$(get_cert_status "$flat_days")
+            results+=("panel|default|$PANEL_DEF_CERTS/$flat|$flat_days|$flat_status")
+        done
+    fi
+    if [[ -d "$NODE_DEF_CERTS" && "$NODE_DEF_CERTS" != "$PANEL_DEF_CERTS" ]]; then
+        for flat in ssl_cert.pem fullchain.pem; do
+            [[ -f "$NODE_DEF_CERTS/$flat" ]] || continue
+            local flat_days flat_status
+            flat_days=$(get_cert_days_remaining "$NODE_DEF_CERTS/$flat")
+            flat_status=$(get_cert_status "$flat_days")
+            results+=("node|default|$NODE_DEF_CERTS/$flat|$flat_days|$flat_status")
+        done
+    fi
     
     printf '%s\n' "${results[@]}"
 }
@@ -946,6 +1001,8 @@ renew_expiring_certificates() {
     
     # Categorize certificates
     while IFS='|' read -r source domain cert_path days status; do
+        # Flat/default entries have no real domain to renew (MRM-033)
+        [[ "$source" != "le" && "$domain" == "default" ]] && continue
         if [[ "$days" -le "$EXPIRY_WARNING_DAYS" ]]; then
             domain_info["$domain"]="$days|$status"
             
@@ -1218,6 +1275,7 @@ renew_specific_certificate() {
     local idx=1
     
     while IFS='|' read -r source domain cert_path days status; do
+        [[ "$domain" == "default" ]] && continue   # flat/default certs: not renewable (MRM-033)
         cert_list+=("$source|$domain|$cert_path|$days|$status")
         
         local color src_label
@@ -1506,7 +1564,9 @@ _process_panel() {
             echo "UVICORN_SSL_KEYFILE = \"$target_dir/privkey.pem\"" >> "$PANEL_ENV"
         fi
         
-        restart_panel_services "panel"
+        # FIX: recreate the container — env_file changes only apply on
+        # container creation; `restart` reuses the old config (MRM-031)
+        recreate_service "panel"
         
         ui_success "Panel SSL configured!"
         echo -e "  Cert: ${CYAN}$target_dir/fullchain.pem${NC}"
@@ -1561,7 +1621,8 @@ _process_node() {
             sed -i '/SSL_KEY_FILE/d' "$NODE_ENV"
             echo "SSL_CERT_FILE = \"$target_dir/fullchain.pem\"" >> "$NODE_ENV"
             echo "SSL_KEY_FILE = \"$target_dir/privkey.pem\"" >> "$NODE_ENV"
-            restart_panel_services "node"
+            # FIX: recreate the container — env_file changes need a new container (MRM-031)
+            recreate_service "node"
         else
             ui_warning "Node .env not found - manual config needed"
         fi
@@ -2164,6 +2225,10 @@ show_detailed_paths() {
     else
         echo "  No certificates."
     fi
+    # Flat/default certs at the certs root (MRM-033)
+    for flat in fullchain.pem ssl_cert.pem; do
+        [[ -f "$PANEL_DEF_CERTS/$flat" ]] && echo -e "  ${YELLOW}default (flat)${NC} ${CYAN}$PANEL_DEF_CERTS/$flat${NC}"
+    done
     
     echo -e "\n${PURPLE}--- Node Certificates ($NODE_DEF_CERTS) ---${NC}"
     if [[ -d "$NODE_DEF_CERTS" && "$NODE_DEF_CERTS" != "$PANEL_DEF_CERTS" ]]; then
@@ -2178,6 +2243,10 @@ show_detailed_paths() {
     else
         echo "  No certificates."
     fi
+    # Flat/default certs at the certs root (MRM-033)
+    for flat in ssl_cert.pem fullchain.pem; do
+        [[ -f "$NODE_DEF_CERTS/$flat" ]] && echo -e "  ${YELLOW}default (flat)${NC} ${CYAN}$NODE_DEF_CERTS/$flat${NC}"
+    done
     
     pause
 }
@@ -2221,7 +2290,10 @@ ssl_menu() {
     init_logging
     
     while true; do
-        clear
+        # FIX: only clear on a real terminal (MRM-034)
+        if [ -t 1 ]; then
+            clear
+        fi
         ui_header "🔐 SSL MANAGEMENT v${SSL_VERSION}"
         detect_active_panel > /dev/null
         
