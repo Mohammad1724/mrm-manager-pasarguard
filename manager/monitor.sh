@@ -314,17 +314,29 @@ setup_cron() {
         0) return ;;
         *) ui_error "Invalid selection"; pause; return ;;
     esac
-    # Remove old monitor cron and add new
-    (crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH" | grep -v "mrm-monitor"
-     [ -n "$CRON_TIME" ] && echo "$CRON_TIME /bin/bash $SCRIPT_PATH check >> $MONITOR_LOG 2>&1"
-    ) | crontab -
+    # Build the new crontab in a temp file — works even when no crontab
+    # exists yet (crontab -l fails there and the old pipe version could
+    # abort under set -e / pipefail before writing the new line).
+    local TMP_CRON
+    TMP_CRON="$(mktemp)"
+    crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH" | grep -v "mrm-monitor" > "$TMP_CRON" || true
     if [ -n "$CRON_TIME" ]; then
-        ui_success "Monitor enabled: $CRON_TIME - Checks every $(echo $CRON_TIME | cut -d' ' -f1)"
-        log_monitor "INFO" "Monitor cron scheduled: $CRON_TIME"
-        setup_monitor_config
+        echo "$CRON_TIME /bin/bash $SCRIPT_PATH check >> $MONITOR_LOG 2>&1" >> "$TMP_CRON"
+    fi
+    if crontab "$TMP_CRON"; then
+        rm -f "$TMP_CRON"
+        if [ -n "$CRON_TIME" ]; then
+            ui_success "Monitor enabled: $CRON_TIME - Checks every $(echo $CRON_TIME | cut -d' ' -f1)"
+            log_monitor "INFO" "Monitor cron scheduled: $CRON_TIME"
+            setup_monitor_config
+        else
+            ui_success "Monitor disabled"
+            log_monitor "INFO" "Monitor cron disabled"
+        fi
     else
-        ui_success "Monitor disabled"
-        log_monitor "INFO" "Monitor cron disabled"
+        rm -f "$TMP_CRON"
+        ui_error "Failed to install crontab"
+        log_monitor "ERROR" "Failed to install crontab"
     fi
     pause
 }

@@ -10,7 +10,8 @@ setup_cron() {
     ui_header "BACKUP SCHEDULER - v${BACKUP_VERSION}"
     echo "Current cron status:"
     if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH"; then
-        local CURRENT=$(crontab -l | grep "$SCRIPT_PATH")
+        local CURRENT
+        CURRENT="$(crontab -l 2>/dev/null | grep "$SCRIPT_PATH")"
         echo -e "${GREEN}Active:${NC} $CURRENT"
     else
         echo -e "${YELLOW}No scheduled backup${NC}"
@@ -35,10 +36,32 @@ setup_cron() {
         0) return ;;
         *) ui_error "Invalid selection"; pause; return ;;
     esac
-    (crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH" | grep -v "/opt/mrm-manager/main.sh auto" | grep -v "/opt/mrm-manager/backup.sh auto"
-     [ -n "$CRON_TIME" ] && echo "$CRON_TIME /bin/bash $SCRIPT_PATH auto >> $BACKUP_LOG 2>&1"
-    ) | crontab -
-    if [ -n "$CRON_TIME" ]; then ui_success "Scheduled v${BACKUP_VERSION} backup enabled: $CRON_TIME"; log_backup "INFO" "Cron scheduled: $CRON_TIME"; else ui_success "Scheduled backup disabled"; log_backup "INFO" "Cron disabled"; fi
+    # Build the new crontab in a temp file. The old pipe-based version broke
+    # on servers with no existing crontab: `crontab -l` fails there, and under
+    # `set -e` (leaked by sourced post_restore.sh) the subshell aborted before
+    # the new line was written, leaving an empty crontab behind.
+    local TMP_CRON
+    TMP_CRON="$(mktemp)"
+    crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH" | grep -v "/opt/mrm-manager/main.sh auto" | grep -v "/opt/mrm-manager/backup.sh auto" > "$TMP_CRON" || true
+    if [ -n "$CRON_TIME" ]; then
+        echo "$CRON_TIME /bin/bash $SCRIPT_PATH auto >> $BACKUP_LOG 2>&1" >> "$TMP_CRON"
+    fi
+    if crontab "$TMP_CRON"; then
+        rm -f "$TMP_CRON"
+        if [ -n "$CRON_TIME" ]; then
+            ui_success "Scheduled v${BACKUP_VERSION} backup enabled: $CRON_TIME"
+            log_backup "INFO" "Cron scheduled: $CRON_TIME"
+        else
+            ui_success "Scheduled backup disabled"
+            log_backup "INFO" "Cron disabled"
+        fi
+    else
+        rm -f "$TMP_CRON"
+        ui_error "Failed to install crontab"
+        log_backup "ERROR" "Failed to install crontab"
+        pause
+        return 1
+    fi
     pause
 }
 
