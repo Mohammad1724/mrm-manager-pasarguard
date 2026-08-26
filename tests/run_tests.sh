@@ -287,6 +287,67 @@ fi
 
 echo ""
 
+echo ""
+
+# ─── Test Group 10: Install Manifest Consistency ─────────────────────────────
+echo "📋 Group 10: Install Manifest Consistency"
+echo ""
+
+# 10.1: every core file listed in install.sh FILES must exist in the repo
+MISSING=0
+while IFS= read -r F; do
+    [ -z "$F" ] && continue
+    case "$F" in
+        VERSION|versions.conf)
+            [ -f "$PROJECT_DIR/$F" ] || { fail "install.sh lists $F but it is missing"; MISSING=1; } ;;
+        *)
+            [ -f "$PROJECT_DIR/manager/$F" ] || { fail "install.sh lists $F but manager/$F is missing"; MISSING=1; } ;;
+    esac
+done < <(sed -n '/^FILES=(/,/^)/p' "$PROJECT_DIR/install.sh" | grep -oE '"[^"]+"' | tr -d '"')
+[ "$MISSING" -eq 0 ] && pass "install.sh FILES list matches repo"
+
+# 10.2: every backup module listed in install.sh must exist in the repo
+MISSING=0
+while IFS= read -r F; do
+    [ -z "$F" ] && continue
+    [ -f "$PROJECT_DIR/manager/backup/$F" ] || { fail "install.sh lists backup/$F but it is missing"; MISSING=1; }
+done < <(sed -n '/^BACKUP_MODULES=(/,/^)/p' "$PROJECT_DIR/install.sh" | grep -oE '"[^"]+"' | tr -d '"')
+[ "$MISSING" -eq 0 ] && pass "install.sh BACKUP_MODULES list matches repo"
+
+# 10.3: checksums.txt exists and every entry points to a real file
+if [ -f "$PROJECT_DIR/checksums.txt" ]; then
+    MISSING=0
+    while read -r HASH REL; do
+        [ -z "$REL" ] && continue
+        [ -f "$PROJECT_DIR/$REL" ] || { fail "checksums.txt entry points to missing file: $REL"; MISSING=1; }
+    done < "$PROJECT_DIR/checksums.txt"
+    [ "$MISSING" -eq 0 ] && pass "checksums.txt entries all exist"
+else
+    fail "checksums.txt missing from repo"
+fi
+
+# 10.4: every file install.sh downloads must be covered by checksums.txt
+MISSING=0
+while read -r REL; do
+    [ -z "$REL" ] && continue
+    if ! grep -qE "^[0-9a-f]{64}  $REL$" "$PROJECT_DIR/checksums.txt" 2>/dev/null; then
+        fail "no checksum entry for $REL"
+        MISSING=1
+    fi
+done < <({
+    sed -n '/^FILES=(/,/^)/p' "$PROJECT_DIR/install.sh" | grep -oE '"[^"]+"' | tr -d '"' | while read -r F; do
+        case "$F" in
+            VERSION|versions.conf) echo "$F" ;;
+            *) echo "manager/$F" ;;
+        esac
+    done
+    sed -n '/^BACKUP_MODULES=(/,/^)/p' "$PROJECT_DIR/install.sh" | grep -oE '"[^"]+"' | tr -d '"' | sed 's#^#manager/backup/#'
+    echo "templates/subscription/index.html"
+})
+[ "$MISSING" -eq 0 ] && pass "all install.sh downloads are covered by checksums.txt"
+
+echo ""
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 echo "═══════════════════════════════════════════════════════════"
 echo "  Test Results"
