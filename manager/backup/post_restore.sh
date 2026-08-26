@@ -140,10 +140,10 @@ copy_ssl_certs() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STEP 3: Set XRAY_SUBSCRIPTION_URL_PREFIX in .env
+# STEP 3: Update the subscription URL prefix in the panel DB (settings.subscription.url_prefix)
 # ═══════════════════════════════════════════════════════════════════════════════
 set_subscription_url_prefix() {
-    log_msg "${CYAN}🔗 Setting XRAY_SUBSCRIPTION_URL_PREFIX...${NC}"
+    log_msg "${CYAN}🔗 Updating subscription URL prefix in panel DB...${NC}"
 
     if [ ! -f "$PANEL_ENV" ]; then
         log_msg "${RED}❌ Panel .env not found at $PANEL_ENV${NC}"
@@ -221,22 +221,73 @@ set_subscription_url_prefix() {
         log_msg "${YELLOW}⚠️  Using server IP as fallback${NC}"
     fi
 
-    # Update .env
-    if grep -q "^XRAY_SUBSCRIPTION_URL_PREFIX=" "$PANEL_ENV" 2>/dev/null; then
-        # Update existing value
-        sed -i "s|^XRAY_SUBSCRIPTION_URL_PREFIX=.*|XRAY_SUBSCRIPTION_URL_PREFIX=\"$SUB_URL\"|" "$PANEL_ENV"
-        log_msg "${GREEN}✅ Updated XRAY_SUBSCRIPTION_URL_PREFIX=$SUB_URL${NC}"
-    elif grep -q "^# *XRAY_SUBSCRIPTION_URL_PREFIX" "$PANEL_ENV" 2>/dev/null; then
-        # Uncomment and set
-        sed -i "s|^# *XRAY_SUBSCRIPTION_URL_PREFIX.*|XRAY_SUBSCRIPTION_URL_PREFIX=\"$SUB_URL\"|" "$PANEL_ENV"
-        log_msg "${GREEN}✅ Enabled XRAY_SUBSCRIPTION_URL_PREFIX=$SUB_URL${NC}"
+    # PasarGuard reads XRAY_SUBSCRIPTION_URL_PREFIX from .env ONLY during the
+    # first-time DB migration. At runtime the subscription URL prefix is read
+    # from the panel DB (settings.subscription -> url_prefix) — writing .env
+    # here would be a no-op, so we update the panel DB instead.
+    if _apply_subscription_url_db "$SUB_URL"; then
+        log_msg "${GREEN}✅ Subscription URL prefix updated in panel DB: $SUB_URL${NC}"
     else
-        # Add new line
-        echo "XRAY_SUBSCRIPTION_URL_PREFIX=\"$SUB_URL\"" >> "$PANEL_ENV"
-        log_msg "${GREEN}✅ Added XRAY_SUBSCRIPTION_URL_PREFIX=$SUB_URL${NC}"
+        log_msg "${YELLOW}⚠️  Could not update the panel DB automatically.${NC}"
+        log_msg "${YELLOW}    Set it manually: Dashboard → Settings → Subscription → URL prefix = $SUB_URL${NC}"
     fi
 
     return 0
+}
+
+# Apply the subscription URL prefix straight into the panel DB (settings table,
+# subscription JSON -> url_prefix). Returns 0 on success.
+_apply_subscription_url_db() {
+    local SUB_URL="$1"
+    local MOD_PATH PROBE TYPE CONT
+    MOD_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if ! declare -f mrm_probe_database >/dev/null 2>&1; then
+        [ -r "$MOD_PATH/database.sh" ] && source "$MOD_PATH/database.sh" 2>/dev/null || true
+    fi
+    command -v docker >/dev/null 2>&1 || return 1
+    CONT="$(mrm_find_panel_container 2>/dev/null || true)"
+    [ -z "$CONT" ] && return 1
+    PROBE="$(mrm_probe_database "$CONT" 2>/dev/null || true)"
+    TYPE="${PROBE%%|*}"
+    case "$TYPE" in
+        postgres)
+            local HOST PORT USER PASS DB PGC SQL
+            IFS='|' read -r _ HOST PORT USER PASS DB <<< "$PROBE"
+            PASS="$(mrm_b64dec "$PASS" 2>/dev/null)"
+            PGC="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE 'postgres|timescale' | head -1)"
+            [ -z "$PGC" ] && return 1
+            SQL="UPDATE settings SET subscription = (jsonb_set(subscription::jsonb, '{url_prefix}', to_jsonb(:'url_prefix'::text), true))::json WHERE id = (SELECT id FROM settings ORDER BY id LIMIT 1);"
+            # Attempt 1: exactly where the panel connects (may be a pooler like pgbouncer)
+            if docker exec -e PGPASSWORD="$PASS" "$PGC" psql -w -v ON_ERROR_STOP=1 -h "$HOST" -p "$PORT" -U "$USER" -d "$DB" -v url_prefix="$SUB_URL" -c "$SQL" >/dev/null 2>&1; then
+                return 0
+            fi
+            # Attempt 2: direct local postgres inside the container
+            if [ "$HOST" != "127.0.0.1" ] || [ "$PORT" != "5432" ]; then
+                docker exec -e PGPASSWORD="$PASS" "$PGC" psql -w -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U "$USER" -d "$DB" -v url_prefix="$SUB_URL" -c "$SQL" >/dev/null 2>&1 && return 0
+            fi
+            return 1
+            ;;
+        mysql|mariadb)
+            local HOST PORT USER PASS DB MYSQLC ESC
+            IFS='|' read -r _ HOST PORT USER PASS DB <<< "$PROBE"
+            PASS="$(mrm_b64dec "$PASS" 2>/dev/null)"
+            MYSQLC="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE 'mysql|mariadb' | head -1)"
+            [ -z "$MYSQLC" ] && return 1
+            ESC="${SUB_URL//\'/\'\'}"
+            # MySQL forbids selecting the same table in a subquery — nest it.
+            docker exec -e MYSQL_PWD="$PASS" "$MYSQLC" mysql -h"$HOST" -P"$PORT" -u"$USER" "$DB" \
+                -e "UPDATE settings SET subscription = JSON_SET(subscription, '\$.url_prefix', '$ESC') WHERE id = (SELECT id FROM (SELECT id FROM settings ORDER BY id LIMIT 1) t);" >/dev/null 2>&1
+            ;;
+        sqlite)
+            local DBFILE ESC
+            DBFILE="${PROBE#sqlite|}"
+            [ -z "$DBFILE" ] && return 1
+            command -v sqlite3 >/dev/null 2>&1 || return 1
+            ESC="${SUB_URL//\'/\'\'}"
+            sqlite3 "$DBFILE" "UPDATE settings SET subscription = json_set(subscription, '\$.url_prefix', '$ESC') WHERE id = (SELECT id FROM settings LIMIT 1);" >/dev/null 2>&1
+            ;;
+        *) return 1 ;;
+    esac
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -315,7 +366,7 @@ main() {
 
     # Step 3: Set XRAY_SUBSCRIPTION_URL_PREFIX
     STEP=$((STEP + 1))
-    log_msg "${BLUE}[$STEP/$TOTAL] Setting subscription URL prefix...${NC}"
+    log_msg "${BLUE}[$STEP/$TOTAL] Updating subscription URL prefix in panel DB...${NC}"
     set_subscription_url_prefix || FAILED=$((FAILED + 1))
     log_msg ""
 

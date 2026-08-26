@@ -90,7 +90,7 @@ get_panel_status() {
             echo "down"
         fi
     else
-        if docker ps --format '{{.Names}}' 2>/dev/null | grep -qiE "pasarguard|marzban|rebecca"; then
+        if docker ps --format '{{.Names}}' 2>/dev/null | grep -qiE "pasarguard"; then
             echo "up"
         else
             echo "down"

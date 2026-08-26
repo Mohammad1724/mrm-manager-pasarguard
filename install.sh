@@ -16,7 +16,7 @@ rm -f "$VERSION_REGISTRY_FILE"
 
 # Fallback only if registry fetch failed
 if [ -z "$MRM_VERSION" ]; then
-    MRM_VERSION="1.0.5"
+    MRM_VERSION="1.1.0"
 fi
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'
@@ -35,7 +35,7 @@ mkdir -p "$INSTALL_DIR"
 FILES=(
     "utils.sh" "ui.sh" "ssl.sh" "backup.sh" "domain_separator.sh"
     "theme.sh" "diagnostics.sh" "offline.sh"
-    "safe_ops.sh" "monitor.sh" "main.sh" "VERSION" "versions.conf"
+    "safe_ops.sh" "monitor.sh" "pg_health.sh" "main.sh" "VERSION" "versions.conf"
 )
 
 # Remove deprecated/unused files

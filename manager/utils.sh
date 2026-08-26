@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager utils.sh v1.0.5
+# MRM Manager utils.sh v1.1.0
 
 export RED='\033[0;31m'
 export GREEN='\033[0;32m'
@@ -13,7 +13,7 @@ export NC='\033[0m'
 CONFIG_FILE="/opt/mrm-manager/panel.conf"
 MRM_VERSION_FILE="/opt/mrm-manager/VERSION"
 # FIX: Default version matches current release (was "1.0.3")
-MRM_DEFAULT_VERSION="1.0.5"
+MRM_DEFAULT_VERSION="1.1.0"
 
 ensure_mrm_config_dir() {
     mkdir -p "$(dirname "$CONFIG_FILE")"
@@ -28,8 +28,6 @@ save_panel_config() {
 get_installed_panels() {
     local PANELS=()
     [ -d "/opt/pasarguard" ] && PANELS+=("pasarguard")
-    [ -d "/opt/marzban" ] && PANELS+=("marzban")
-    [ -d "/opt/rebecca" ] && PANELS+=("rebecca")
     printf '%s\n' "${PANELS[@]}"
 }
 
@@ -57,26 +55,6 @@ apply_panel_config() {
             export NODE_DIR="/opt/pg-node"
             export NODE_ENV="/opt/pg-node/.env"
             export NODE_DEF_CERTS="/var/lib/pg-node/certs"
-            return 0
-            ;;
-        marzban)
-            export PANEL_DIR="/opt/marzban"
-            export PANEL_ENV="/opt/marzban/.env"
-            export PANEL_DEF_CERTS="/var/lib/marzban/certs"
-            export DATA_DIR="/var/lib/marzban"
-            export NODE_DIR="/opt/marzban-node"
-            export NODE_ENV="/opt/marzban-node/.env"
-            export NODE_DEF_CERTS="/var/lib/marzban-node/certs"
-            return 0
-            ;;
-        rebecca)
-            export PANEL_DIR="/opt/rebecca"
-            export PANEL_ENV="/opt/rebecca/.env"
-            export PANEL_DEF_CERTS="/var/lib/rebecca/certs"
-            export DATA_DIR="/var/lib/rebecca"
-            export NODE_DIR="/opt/rebecca-node"
-            export NODE_ENV="/opt/rebecca-node/.env"
-            export NODE_DEF_CERTS="/var/lib/rebecca-node/certs"
             return 0
             ;;
     esac
@@ -197,6 +175,11 @@ restart_service() {
         [ -z "$COMPOSE_FILE" ] && { echo -e "${RED}No compose file found${NC}"; return 1; }
         (cd "$PANEL_DIR" && docker compose down && docker compose up -d) && echo -e "${GREEN}Done.${NC}" || { echo -e "${RED}Failed${NC}"; return 1; }
     elif [ "$SERVICE" == "node" ]; then
+        # PasarGuard nodes usually run on their own server and connect to the
+        # panel over gRPC/rest. This only works when the node docker-compose
+        # lives on THIS server — otherwise restart it on the node server.
+        echo -e "${YELLOW}Note: this restarts the node only if it runs on this server (${NODE_DIR}).${NC}"
+        echo -e "${YELLOW}If the node is on another server, restart it there (systemctl/docker).${NC}"
         [ ! -d "$NODE_DIR" ] && { echo -e "${RED}Node not found${NC}"; return 1; }
         COMPOSE_FILE="$(get_node_compose_file 2>/dev/null)"
         [ -z "$COMPOSE_FILE" ] && { echo -e "${RED}No compose file${NC}"; return 1; }

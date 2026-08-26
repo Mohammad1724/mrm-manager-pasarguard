@@ -64,20 +64,6 @@ setup_env() {
             NODE_DIR="/opt/pg-node"
             NODE_ENV="/opt/pg-node/.env"
             NODE_DEF_CERTS="/var/lib/pg-node/certs"
-        elif [ -d "/opt/marzban" ]; then
-            PANEL_DIR="/opt/marzban"
-            PANEL_ENV="/opt/marzban/.env"
-            DATA_DIR="/var/lib/marzban"
-            NODE_DIR="/opt/marzban-node"
-            NODE_ENV="/opt/marzban-node/.env"
-            NODE_DEF_CERTS="/var/lib/marzban-node/certs"
-        elif [ -d "/opt/rebecca" ]; then
-            PANEL_DIR="/opt/rebecca"
-            PANEL_ENV="/opt/rebecca/.env"
-            DATA_DIR="/var/lib/rebecca"
-            NODE_DIR="/opt/rebecca-node"
-            NODE_ENV="/opt/rebecca-node/.env"
-            NODE_DEF_CERTS="/var/lib/rebecca-node/certs"
         fi
     fi
     log_backup "INFO" "Env: PANEL_DIR=$PANEL_DIR DATA_DIR=$DATA_DIR PANEL_ENV=$PANEL_ENV"

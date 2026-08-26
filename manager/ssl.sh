@@ -342,11 +342,7 @@ detect_active_panel() {
     fi
 
     local -A panels=(
-        ["marzban"]="/opt/marzban:/var/lib/marzban/certs:/opt/marzban/.env:/opt/marzban-node:/var/lib/marzban-node/certs:/opt/marzban-node/.env"
-        ["x-ui"]="/opt/x-ui:/var/lib/x-ui/certs:/opt/x-ui/x-ui.db:/opt/x-ui:/var/lib/x-ui/certs:/opt/x-ui/.env"
-        ["hiddify"]="/opt/hiddify:/opt/hiddify/certs:/opt/hiddify/.env:/opt/hiddify:/opt/hiddify/certs:/opt/hiddify/.env"
         ["pasarguard"]="/opt/pasarguard:/var/lib/pasarguard/certs:/opt/pasarguard/.env:/opt/pg-node:/var/lib/pg-node/certs:/opt/pg-node/.env"
-        ["rebecca"]="/opt/rebecca:/var/lib/rebecca/certs:/opt/rebecca/.env:/opt/rebecca-node:/var/lib/rebecca-node/certs:/opt/rebecca-node/.env"
     )
 
     for panel in "${!panels[@]}"; do
@@ -363,15 +359,15 @@ detect_active_panel() {
         fi
     done
 
-    # Default fallback
-    PANEL_DIR="/opt/panel"
-    PANEL_DEF_CERTS="/var/lib/panel/certs"
-    PANEL_ENV="/opt/panel/.env"
-    NODE_DIR="/opt/node"
-    NODE_DEF_CERTS="/var/lib/node/certs"
-    NODE_ENV="/opt/node/.env"
-    echo "unknown"
-    return 1
+    # Default fallback (project is scoped to PasarGuard)
+    PANEL_DIR="/opt/pasarguard"
+    PANEL_DEF_CERTS="/var/lib/pasarguard/certs"
+    PANEL_ENV="/opt/pasarguard/.env"
+    NODE_DIR="/opt/pg-node"
+    NODE_DEF_CERTS="/var/lib/pg-node/certs"
+    NODE_ENV="/opt/pg-node/.env"
+    echo "pasarguard"
+    return 0
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1767,19 +1763,13 @@ _add_server() {
     user="${user:-root}"
     
     echo -e "\nPanel type:"
-    echo "1) Marzban"
-    echo "2) Pasarguard"
-    echo "3) Rebecca"
-    echo "4) X-UI"
-    echo "5) Custom"
+    echo "1) Pasarguard"
+    echo "2) Custom"
     read -r -p "Select: " panel_type
     
     case "$panel_type" in
-        1) panel_name="marzban"; path="/var/lib/marzban/certs" ;;
-        2) panel_name="pasarguard"; path="/var/lib/pasarguard/certs" ;;
-        3) panel_name="rebecca"; path="/var/lib/rebecca/certs" ;;
-        4) panel_name="x-ui"; path="/var/lib/x-ui/certs" ;;
-        5) 
+        1) panel_name="pasarguard"; path="/var/lib/pasarguard/certs" ;;
+        2) 
             panel_name="custom"
             read -r -p "Remote cert path: " path
             path=$(sanitize_input "$path")

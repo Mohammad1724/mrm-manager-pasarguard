@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==========================================
-# DIAGNOSTICS & DOCTOR v1.0.5
+# DIAGNOSTICS & DOCTOR v1.1.0
 # Full system check: Docker, Disk, RAM, Logs, Panel, Node, Nginx
 # ==========================================
 
@@ -28,7 +28,7 @@ mrm_panel_running() {
     if [ -n "$COMPOSE_FILE" ]; then
         docker compose -f "$COMPOSE_FILE" ps 2>/dev/null | grep -q "Up"
     else
-        docker ps --format '{{.Names}}' | grep -qiE "pasarguard|marzban|rebecca"
+        docker ps --format '{{.Names}}' | grep -qiE "pasarguard"
     fi
 }
 
@@ -38,7 +38,7 @@ mrm_node_running() {
     if [ -n "$COMPOSE_FILE" ]; then
         docker compose -f "$COMPOSE_FILE" ps 2>/dev/null | grep -q "Up"
     else
-        docker ps --format '{{.Names}}' | grep -qiE "pg-node|marzban-node|rebecca-node"
+        docker ps --format '{{.Names}}' | grep -qiE "pg-node"
     fi
 }
 
@@ -170,7 +170,7 @@ mrm_render_home_dashboard() {
     if mrm_telegram_enabled; then TG_STATUS="$(mrm_colored_state "Configured" "Not Configured" ok)"; else TG_STATUS="$(mrm_colored_state "Configured" "Not Configured" bad)"; fi
     if [ -n "$(mrm_latest_backup_file)" ]; then BACKUP_STATUS="$(mrm_colored_state "Ready" "Missing" ok)"; else BACKUP_STATUS="$(mrm_colored_state "Ready" "Missing" bad)"; fi
 
-    ui_section "HOME DASHBOARD - $(get_mrm_version 2>/dev/null || echo v1.0.5)"
+    ui_section "HOME DASHBOARD - $(get_mrm_version 2>/dev/null || echo v1.1.0)"
     ui_kv "Active Panel" "$ACTIVE_PANEL"
     ui_kv "Panel Directory" "${PANEL_DIR:-unknown}"
     echo -e "${UI_DIM:-}\033[2mServices:\033[0m${NC:-} Panel ${PANEL_STATUS} Node ${NODE_STATUS} Nginx ${NGINX_STATUS}"
@@ -208,7 +208,7 @@ run_full_diagnostics() {
     local PANEL_COMPOSE NODE_COMPOSE CERT_COUNT DISK_INFO DISK_USAGE DISK_FREE RAM_INFO RAM_USED RAM_TOTAL RAM_PERCENT CPU_INFO CPU_USED LOAD DOCKER_INFO
     clear
     detect_active_panel > /dev/null
-    ui_header "DOCTOR - FULL SYSTEM DIAGNOSTICS v1.0.5"
+    ui_header "DOCTOR - FULL SYSTEM DIAGNOSTICS v1.1.0"
 
     PANEL_COMPOSE="$(get_panel_compose_file 2>/dev/null || true)"
     NODE_COMPOSE="$(get_node_compose_file 2>/dev/null || true)"
@@ -344,9 +344,9 @@ run_full_diagnostics() {
 run_doctor_cli() {
     local MODE="${1:-full}"
     detect_active_panel > /dev/null
-    echo "=== MRM DOCTOR v1.0.5"
+    echo "=== MRM DOCTOR v1.1.0"
     echo "Date: $(date)"
-    echo "Version: $(get_mrm_version 2>/dev/null || echo v1.0.5)"
+    echo "Version: $(get_mrm_version 2>/dev/null || echo v1.1.0)"
     echo "Panel: $(cat "$CONFIG_FILE" 2>/dev/null || echo unknown) - $PANEL_DIR"
     echo ""
 
@@ -402,6 +402,10 @@ diagnostics_restart_panel() {
 }
 
 diagnostics_restart_node() {
+    # PasarGuard nodes normally run on their OWN server and connect to the
+    # panel via gRPC/rest — docker restart here only works for a co-located node.
+    ui_info "This restarts the node only if it runs on this server ($NODE_DIR)."
+    ui_info "Remote node? Restart it on the node server instead."
     if [ -d "$NODE_DIR" ]; then
         if restart_service "node"; then
             ui_success "Node restart completed"
@@ -417,12 +421,12 @@ diagnostics_restart_node() {
 diagnostics_menu() {
     while true; do
         clear
-        ui_header "DIAGNOSTICS & DOCTOR v1.0.5"
+        ui_header "DIAGNOSTICS & DOCTOR v1.1.0"
         mrm_render_home_dashboard
 
         echo "1) 🩺 Run Full Doctor Diagnostics"
         echo "2) 🔄 Restart Panel"
-        echo "3) 🔄 Restart Node"
+        echo "3) 🔄 Restart Node (only if node runs on THIS server)"
         echo "4) 🌐 Test Nginx Config"
         echo "5) 🌐 Restart Nginx"
         echo "6) 📊 Quick Doctor (CLI mode)"

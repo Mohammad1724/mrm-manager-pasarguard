@@ -7,12 +7,14 @@ set -o pipefail
 # CLI shortcuts
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then
     source /opt/mrm-manager/versions.conf 2>/dev/null || true
-    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.0.5)}"
+    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.1.0)}"
     exit 0
 fi
 [[ "$1" == "doctor" ]] && exec bash /opt/mrm-manager/diagnostics.sh doctor
 [[ "$1" == "monitor" ]] && exec bash /opt/mrm-manager/monitor.sh
 [[ "$1" == "fix-node" ]] && exec bash /opt/mrm-manager/backup.sh fix-node "$@"
+[[ "$1" == "health" ]] && exec bash /opt/mrm-manager/pg_health.sh
+[[ "$1" == "temp-key" ]] && exec bash /opt/mrm-manager/pg_health.sh temp-key
 [[ "$1" == "update" ]] && {
     # SECURITY: Download to temp file, verify syntax, then execute
     _MRM_UPDATE_TMP=$(mktemp /tmp/mrm-update.XXXXXX.sh)
@@ -140,7 +142,7 @@ mrm_main_dashboard() {
 panel_menu() {
     while true; do
         clear
-        echo "=== 🎛️ PANEL CONTROL v${MRM_VERSION:-1.0.5} ==="
+        echo "=== 🎛️ PANEL CONTROL v${MRM_VERSION:-1.1.0} ==="
         echo ""
         echo "1) 🔄 Restart Panel"
         echo "2) ⏹️ Stop Panel"
@@ -162,13 +164,14 @@ panel_menu() {
 tools_menu() {
     while true; do
         clear
-        echo "=== 🛠️ TOOLS v${MRM_VERSION:-1.0.5} ==="
+        echo "=== 🛠️ TOOLS v${MRM_VERSION:-1.1.0} ==="
         echo ""
         echo "1) 🌐 Domain Separator"
         echo "2) 🎨 Theme Manager"
         echo "3) 🩺 System Diagnostics"
         echo "4) 🇮🇷 Iran Mode"
         echo "5) 📊 Monitor"
+        echo "6) ❤️  PasarGuard Health (nodes / TLS / jobs)"
         echo ""
         echo "0) ↩️ Back"
         read -p "Select: " OPT
@@ -178,6 +181,7 @@ tools_menu() {
             3) bash /opt/mrm-manager/diagnostics.sh ;;
             4) bash /opt/mrm-manager/offline.sh ;;
             5) bash /opt/mrm-manager/monitor.sh menu ;;
+            6) bash /opt/mrm-manager/pg_health.sh ;;
             0) return ;;
         esac
     done
@@ -191,7 +195,7 @@ main_menu() {
 
     while true; do
         clear
-        local VER="${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.0.5")}"
+        local VER="${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.1.0")}"
         echo "╔══════════════════════════════════════════════╗"
         echo "║ MRM Manager v$VER                            ║"
         echo "╚══════════════════════════════════════════════╝"

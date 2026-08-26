@@ -30,6 +30,8 @@ mrm
 - 🩺 بررسی سلامت سرویس‌ها و منابع سرور
 - 📊 Monitor و هشدار Telegram
 - 🇮🇷 ابزارهای Iran / Offline Mode
+- ❤️ PasarGuard Health (`mrm health`): چک `/health` پنل، گواهی/CA_TYPE، وضعیت نودها (keep_alive / خطاها / زمان‌ها) و فاصله‌های JOB_* در برابر پیش‌فرض رسمی پنل
+- 🔑 کلید موقت Owner (`mrm temp-key`): معادل `pasarguard-cli generate-temp-key` برای بازنشانی ادمین
 
 ## منوی اصلی
 
