@@ -141,13 +141,15 @@ echo ""
 echo "🧩 Group 5: Module Integrity"
 echo ""
 
-# Check that backup.sh sources all modules
+# Check that backup.sh sources all modules (direct source lines OR the
+# fail-fast loop introduced in MRM-043)
 MODULES=("init.sh" "telegram.sh" "smart_fix.sh" "database.sh" "backup_core.sh" "restore_core.sh" "xray.sh" "post_restore.sh" "menu.sh")
 for mod in "${MODULES[@]}"; do
-    if grep -q "source.*$mod" "$PROJECT_DIR/manager/backup.sh"; then
-        pass "backup.sh sources $mod"
+    if grep -q "source.*$mod" "$PROJECT_DIR/manager/backup.sh" || \
+       { grep -q "for MODULE in " "$PROJECT_DIR/manager/backup.sh" && grep -qw "$mod" "$PROJECT_DIR/manager/backup.sh"; }; then
+        pass "backup.sh loads $mod"
     else
-        fail "backup.sh missing source for $mod"
+        fail "backup.sh missing load for $mod"
     fi
 done
 

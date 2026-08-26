@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager Backup v${BACKUP_VERSION}
+# MRM Manager Backup v1.1.6
 # Modular structure: each feature in its own file for easier maintenance
 
 # ==========================================
@@ -8,15 +8,17 @@
 
 BACKUP_MODULE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/backup" && pwd)"
 
-source "$BACKUP_MODULE_DIR/init.sh"
-source "$BACKUP_MODULE_DIR/telegram.sh"
-source "$BACKUP_MODULE_DIR/smart_fix.sh"
-source "$BACKUP_MODULE_DIR/database.sh"
-source "$BACKUP_MODULE_DIR/backup_core.sh"
-source "$BACKUP_MODULE_DIR/restore_core.sh"
-source "$BACKUP_MODULE_DIR/xray.sh"
-source "$BACKUP_MODULE_DIR/post_restore.sh"
-source "$BACKUP_MODULE_DIR/menu.sh"
+# FIX: fail fast with a clear message if a module is missing (MRM-043)
+for MODULE in init.sh telegram.sh smart_fix.sh database.sh backup_core.sh restore_core.sh xray.sh post_restore.sh menu.sh; do
+    if [ -f "$BACKUP_MODULE_DIR/$MODULE" ] && [ -r "$BACKUP_MODULE_DIR/$MODULE" ]; then
+        # shellcheck source=/dev/null
+        source "$BACKUP_MODULE_DIR/$MODULE"
+    else
+        echo -e "\033[0;31m✘ Backup module missing or unreadable: $BACKUP_MODULE_DIR/$MODULE\033[0m" >&2
+        echo -e "\033[0;31m  Reinstall MRM Manager or restore backup/modules/\033[0m" >&2
+        exit 1
+    fi
+done
 
 # ==========================================
 # ENTRY POINT
@@ -50,10 +52,25 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         if mrm_ensure_xray_core; then
             echo ""
             echo -e "${GREEN}✔ xray-core ready: $NODE_DATA_DIR/xray-core/xray${NC}"
-            "$NODE_DATA_DIR/xray-core/xray" -version 2>/dev/null | head -1 && true
+            "$NODE_DATA_DIR/xray-core/xray" -version 2>/dev/null | head -1 || true
+
+            # FIX: the node binary is picked from XRAY_EXECUTABLE_PATH; without it
+            # the node falls back to /usr/local/bin/xray inside the image and the
+            # repair would do nothing. Align .env like the official installer (MRM-040)
+            if [ -n "${NODE_ENV:-}" ] && [ -f "$NODE_ENV" ]; then
+                if ! grep -q '^XRAY_EXECUTABLE_PATH' "$NODE_ENV"; then
+                    NODE_CONT_PATH="$NODE_DATA_DIR/xray-core/xray"
+                    [ -n "$DATA_DIR" ] && NODE_CONT_PATH="$DATA_DIR/xray-core/xray"
+                    echo "XRAY_EXECUTABLE_PATH = \"$NODE_CONT_PATH\"" >> "$NODE_ENV"
+                    echo -e "${CYAN}→ Added XRAY_EXECUTABLE_PATH = \"$NODE_CONT_PATH\" to $NODE_ENV${NC}"
+                fi
+            fi
             echo ""
             echo -e "${YELLOW}Restarting node container...${NC}"
-            NODE_CNAME="$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -i node | head -1)"
+            # FIX: match the official pasarguard/node image — "grep -i node" could
+            # hit unrelated containers (node-exporter, node-red…) (MRM-039)
+            NODE_CNAME="$(docker ps -a --format '{{.Names}} {{.Image}}' 2>/dev/null | awk '$2 ~ /^pasarguard\/node(:|$)/ {print $1; exit}')"
+            [ -z "$NODE_CNAME" ] && NODE_CNAME="$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -x 'node' | head -1)"
             if [ -n "$NODE_CNAME" ]; then
                 if docker restart "$NODE_CNAME" >/dev/null 2>&1; then
                     echo -e "${GREEN}✔ Node restarted: $NODE_CNAME${NC}"

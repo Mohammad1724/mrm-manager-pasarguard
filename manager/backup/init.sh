@@ -1,8 +1,8 @@
 #!/bin/bash
-# MRM Manager Backup v${BACKUP_VERSION}
+# MRM Manager Backup v1.1.6
 
 # ==========================================
-# MRM Backup & Restore v${BACKUP_VERSION}
+# MRM Backup & Restore v1.1.6
 # ==========================================
 
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
@@ -17,7 +17,9 @@ if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r "/opt/mrm-manag
 # Configuration
 BACKUP_DIR="/root/mrm-backups"
 TG_CONFIG="/root/.mrm_telegram"
-TEMP_BASE="/tmp/mrm_workspace"
+# FIX: unique per-run workspace — a shared /tmp/mrm_workspace could be
+# wiped by a concurrent run (cron + manual) and corrupt that backup (MRM-041)
+TEMP_BASE="$(mktemp -d /tmp/mrm_workspace.XXXXXX 2>/dev/null || echo /tmp/mrm_workspace)"
 trap '[ -n "${TEMP_BASE}" ] && rm -rf "$TEMP_BASE"' EXIT
 # FIX: BASH_SOURCE[0] inside a sourced init.sh points at init.sh, which made
 # cron run init.sh directly (it only defines functions, never calls do_backup).
@@ -209,6 +211,12 @@ except Exception:
             DB_PASS=$(echo "$PARSED" | grep "^PASS=" | cut -d= -f2-)
             DB_NAME=$(echo "$PARSED" | grep "^DB=" | cut -d= -f2-)
             DB_HOST=$(echo "$PARSED" | grep "^HOST=" | cut -d= -f2-)
+            # FIX: a URI without credentials (e.g. sqlite) parses fine but yields
+            # empty user/name — treat as failure like the plain vars branch (MRM-042)
+            if [ -z "$DB_USER" ] || [ -z "$DB_NAME" ]; then
+                log_backup "WARNING" "URI parsed but no DB user/name (sqlite URI?)"
+                return 1
+            fi
             log_backup "INFO" "Parsed from URI - User: $DB_USER, DB: $DB_NAME, Host: $DB_HOST"
             return 0
         fi
