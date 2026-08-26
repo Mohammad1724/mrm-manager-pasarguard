@@ -49,7 +49,7 @@ readonly SSL_BACKUP_DIR="${SSL_BACKUP_DIR:-/opt/mrm-manager/ssl-backups}"
 readonly CONFIG_DIR="${CONFIG_DIR:-/opt/mrm-manager}"
 
 [ -r "$CONFIG_DIR/versions.conf" ] && source "$CONFIG_DIR/versions.conf"
-SSL_VERSION="${SSL_VERSION:-1.0.1}"
+SSL_VERSION="${SSL_VERSION:-1.0.3}"
 
 # Thresholds
 readonly EXPIRY_WARNING_DAYS=14

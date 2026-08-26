@@ -6,7 +6,7 @@ INSTALL_DIR="/opt/mrm-manager"
 # verified against checksums.txt (integrity). install.sh itself is bootstrapped
 # via the README curl command and therefore cannot self-verify.
 REPO_BASE_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard"
-REPO_REF="v1.1.0"
+REPO_REF="v1.1.1"
 MANAGER_REPO_URL="$REPO_BASE_URL/$REPO_REF"
 VERSION_REGISTRY_URL="$MANAGER_REPO_URL/versions.conf"
 CHECKSUMS_URL="$MANAGER_REPO_URL/checksums.txt"
@@ -38,7 +38,7 @@ rm -f "$VERSION_REGISTRY_FILE"
 
 # Fallback only if registry fetch failed
 if [ -z "$MRM_VERSION" ]; then
-    MRM_VERSION="1.1.0"
+    MRM_VERSION="1.1.1"
 fi
 
 echo -e "${CYAN}╔══════════════════════════════════════════════╗${NC}"
@@ -182,7 +182,7 @@ cat > /usr/local/bin/mrm << 'EOF'
 #!/bin/bash
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then
     [ -r /opt/mrm-manager/versions.conf ] && source /opt/mrm-manager/versions.conf
-    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.1.0")}"
+    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.1.1")}"
     exit 0
 fi
 exec bash /opt/mrm-manager/main.sh "$@"

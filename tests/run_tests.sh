@@ -348,6 +348,75 @@ done < <({
 
 echo ""
 
+# ─── Test Group 11: Version Fallback Consistency ─────────────────────────────
+# MRM-009/MRM-011: the registry (versions.conf) is the single source of truth;
+# every hardcoded fallback in the repo must match it, otherwise releases drift.
+echo "🔄 Group 11: Version Fallback Consistency"
+echo ""
+
+# Load registry (safe: local repo file)
+source "$PROJECT_DIR/versions.conf" 2>/dev/null || { fail "versions.conf could not be sourced"; exit 1; }
+
+# 11.1: REPO_REF in install.sh must match VERSION (release ref pinning)
+if grep -q "REPO_REF=\"v${MRM_VERSION}\"" "$PROJECT_DIR/install.sh"; then
+    pass "install.sh REPO_REF=v${MRM_VERSION} matches VERSION"
+else
+    fail "install.sh REPO_REF does not match VERSION (${MRM_VERSION})"
+fi
+
+# 11.2: install.sh local fallback literals must match the registry
+if grep -q "MRM_VERSION=\"${MRM_VERSION}\"" "$PROJECT_DIR/install.sh"; then
+    pass "install.sh MRM_VERSION fallback matches registry"
+else
+    fail "install.sh MRM_VERSION fallback != ${MRM_VERSION}"
+fi
+if grep -q "SSL_VERSION=\"${SSL_VERSION}\"" "$PROJECT_DIR/install.sh"; then
+    pass "install.sh SSL_VERSION fallback matches registry"
+else
+    fail "install.sh SSL_VERSION fallback != ${SSL_VERSION}"
+fi
+if grep -q "BACKUP_VERSION=\"${BACKUP_VERSION}\"" "$PROJECT_DIR/install.sh"; then
+    pass "install.sh BACKUP_VERSION fallback matches registry"
+else
+    fail "install.sh BACKUP_VERSION fallback != ${BACKUP_VERSION}"
+fi
+if grep -q "THEME_VERSION=\"${THEME_VERSION}\"" "$PROJECT_DIR/install.sh"; then
+    pass "install.sh THEME_VERSION fallback matches registry"
+else
+    fail "install.sh THEME_VERSION fallback != ${THEME_VERSION}"
+fi
+
+# 11.3: module-level fallbacks must match the registry
+if grep -q "MRM_DEFAULT_VERSION=\"${MRM_VERSION}\"" "$PROJECT_DIR/manager/utils.sh"; then
+    pass "utils.sh MRM_DEFAULT_VERSION matches registry"
+else
+    fail "utils.sh MRM_DEFAULT_VERSION != ${MRM_VERSION}"
+fi
+if grep -q "SSL_VERSION:-${SSL_VERSION}" "$PROJECT_DIR/manager/ssl.sh"; then
+    pass "ssl.sh SSL_VERSION fallback matches registry"
+else
+    fail "ssl.sh SSL_VERSION fallback != ${SSL_VERSION}"
+fi
+if grep -q "BACKUP_VERSION:-${BACKUP_VERSION}" "$PROJECT_DIR/manager/backup/init.sh"; then
+    pass "backup/init.sh BACKUP_VERSION fallback matches registry"
+else
+    fail "backup/init.sh BACKUP_VERSION fallback != ${BACKUP_VERSION}"
+fi
+if grep -q "THEME_VERSION:-${THEME_VERSION}" "$PROJECT_DIR/manager/theme.sh"; then
+    pass "theme.sh THEME_VERSION fallback matches registry"
+else
+    fail "theme.sh THEME_VERSION fallback != ${THEME_VERSION}"
+fi
+
+# 11.4: monitor.sh must display the version via get_mrm_version (no stale literal)
+if grep -q "get_mrm_version" "$PROJECT_DIR/manager/monitor.sh"; then
+    pass "monitor.sh uses get_mrm_version for Version display"
+else
+    fail "monitor.sh still has a stale hardcoded version display"
+fi
+
+echo ""
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 echo "═══════════════════════════════════════════════════════════"
 echo "  Test Results"
