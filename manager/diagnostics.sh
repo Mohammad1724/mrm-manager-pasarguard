@@ -421,29 +421,20 @@ diagnostics_menu() {
         mrm_render_home_dashboard
 
         echo "1) 🩺 Run Full Doctor Diagnostics"
-        echo "2) 🔧 Run Auto Fix"
-        echo "3) 🔄 Restart Panel"
-        echo "4) 🔄 Restart Node"
-        echo "5) 🌐 Test Nginx Config"
-        echo "6) 🌐 Restart Nginx"
-        echo "7) 📊 Quick Doctor (CLI mode)"
-        echo "8) 🤖 Setup Monitor Alerts (Telegram)"
+        echo "2) 🔄 Restart Panel"
+        echo "3) 🔄 Restart Node"
+        echo "4) 🌐 Test Nginx Config"
+        echo "5) 🌐 Restart Nginx"
+        echo "6) 📊 Quick Doctor (CLI mode)"
+        echo "7) 🤖 Setup Monitor Alerts (Telegram)"
         echo "0) ↩️ Back"
         echo ""
         read -p "Select: " OPT
         case "$OPT" in
             1) run_full_diagnostics ;;
-            2)
-                if declare -f auto_fix >/dev/null 2>&1; then
-                    auto_fix
-                else
-                    ui_error "Auto Fix not available"
-                    pause
-                fi
-                ;;
-            3) diagnostics_restart_panel ;;
-            4) diagnostics_restart_node ;;
-            5)
+            2) diagnostics_restart_panel ;;
+            3) diagnostics_restart_node ;;
+            4)
                 if nginx -t; then
                     ui_success "Nginx configuration is valid"
                 else
@@ -451,9 +442,9 @@ diagnostics_menu() {
                 fi
                 pause
                 ;;
-            6) diagnostics_restart_nginx ;;
-            7) clear; run_doctor_cli; echo ""; pause ;;
-            8)
+            5) diagnostics_restart_nginx ;;
+            6) clear; run_doctor_cli; echo ""; pause ;;
+            7)
                 if [ -f "/opt/mrm-manager/monitor.sh" ]; then
                     bash /opt/mrm-manager/monitor.sh menu
                 else

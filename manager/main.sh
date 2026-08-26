@@ -71,8 +71,6 @@ uninstall_mrm_manager() {
     exit 0
 }
 
-auto_fix() { echo "Auto Fix done"; sleep 1; }
-
 # ─── Dashboard Status Components ─────────────────────────────────────────────
 
 mrm_main_status() {

@@ -409,49 +409,33 @@ monitor_menu() {
 
         echo -e "Panel: ${PANEL_STATUS} | Disk: ${DISK_USAGE}% (${DISK_FREE} free) | CPU: ${CPU_USAGE}% | RAM: ${RAM_PERCENT}%"
         echo -e "Telegram: $TG_STATUS | Monitor: $CRON_STATUS"
+        if [ ! -f "$TG_CONFIG" ]; then
+            echo -e "${YELLOW}Tip: configure Telegram in Backup & Restore -> Setup Telegram Bot${NC}"
+        fi
         echo ""
-        echo "1)  🤖 Setup Telegram Bot (if not configured)"
-        echo "2)  ⏰ Setup Monitor Schedule (Every 2/5/10/30 min)"
-        echo "3)  🧪 Send Test Alert to Telegram"
-        echo "4)  🔍 Run Check Now (Manual)"
-        echo "5)  📋 View Monitor Logs"
-        echo "6)  🧹 Clear Alert States (Reset cooldown)"
-        echo "7)  📦 View Current Config"
+        echo "1)  ⏰ Setup Monitor Schedule (Every 2/5/10/30 min)"
+        echo "2)  🧪 Send Test Alert to Telegram"
+        echo "3)  🔍 Run Check Now (Manual)"
+        echo "4)  📋 View Monitor Logs"
+        echo "5)  🧹 Clear Alert States (Reset cooldown)"
+        echo "6)  📦 View Current Config"
         echo ""
         echo "0)  ↩️  Back"
         echo ""
         read -p "Select: " opt
         case $opt in
-            1)
-                if [ -f "/opt/mrm-manager/backup.sh" ]; then
-                    bash /opt/mrm-manager/backup.sh 2>/dev/null
-                    # Calls setup_telegram inside backup menu - but we have separate
-                    # For simplicity, call telegram setup from backup module if exists
-                fi
-                # Fallback: setup here
-                clear
-                ui_header "SETUP TELEGRAM FOR MONITOR"
-                echo "Telegram config is same as backup: /root/.mrm_telegram"
-                if [ -f "$TG_CONFIG" ]; then
-                    echo -e "${GREEN}Already configured!${NC}"
-                    cat "$TG_CONFIG" | sed 's/TG_TOKEN=.*/TG_TOKEN=***hidden***/'
-                else
-                    echo -e "${YELLOW}Not configured - Go to Backup & Restore -> Setup Telegram${NC}"
-                fi
-                pause
-                ;;
-            2) setup_cron ;;
-            3) test_alerts ;;
-            4)
+            1) setup_cron ;;
+            2) test_alerts ;;
+            3)
                 echo -e "${BLUE}Running check now...${NC}"
                 check_and_alert
                 echo -e "${GREEN}Check completed - See logs${NC}"
                 log_monitor "INFO" "Manual check executed"
                 pause
                 ;;
-            5) view_logs ;;
-            6) clear_states ;;
-            7)
+            4) view_logs ;;
+            5) clear_states ;;
+            6)
                 clear
                 ui_header "MONITOR CONFIG"
                 cat "$MONITOR_CONFIG" 2>/dev/null || echo "No config found"
