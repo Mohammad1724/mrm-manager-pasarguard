@@ -7,19 +7,33 @@ set -o pipefail
 # CLI shortcuts
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then
     source /opt/mrm-manager/versions.conf 2>/dev/null || true
-    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.1.1)}"
+    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.1.2)}"
     exit 0
 fi
-[[ "$1" == "doctor" ]] && exec bash /opt/mrm-manager/diagnostics.sh doctor
+[[ "$1" == "doctor" ]] && exec bash /opt/mrm-manager/diagnostics.sh doctor "${@:2}"
 [[ "$1" == "monitor" ]] && exec bash /opt/mrm-manager/monitor.sh
-[[ "$1" == "fix-node" ]] && exec bash /opt/mrm-manager/backup.sh fix-node "$@"
+[[ "$1" == "fix-node" ]] && exec bash /opt/mrm-manager/backup.sh fix-node "${@:2}"
 [[ "$1" == "health" ]] && exec bash /opt/mrm-manager/pg_health.sh
 [[ "$1" == "temp-key" ]] && exec bash /opt/mrm-manager/pg_health.sh temp-key
 [[ "$1" == "update" ]] && {
-    # SECURITY: Download to temp file, verify syntax, then execute
+    # SECURITY: pinned-release update (MRM-001/MRM-012). Resolve the release
+    # ref from versions.conf on main (parsed, never sourced), then download
+    # install.sh from that exact ref — never from a mutable branch.
     _MRM_UPDATE_TMP=$(mktemp /tmp/mrm-update.XXXXXX.sh)
+    _MRM_VERSION_FILE=$(mktemp /tmp/mrm-version.XXXXXX)
+    if curl -fsSL --connect-timeout 10 --max-time 60 \
+        "https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main/versions.conf" \
+        -o "$_MRM_VERSION_FILE" 2>/dev/null; then
+        _MRM_TARGET_REF="v$(grep -E '^MRM_VERSION=' "$_MRM_VERSION_FILE" 2>/dev/null | head -1 | cut -d'"' -f2)"
+    fi
+    rm -f "$_MRM_VERSION_FILE"
+    if [ -z "${_MRM_TARGET_REF:-}" ]; then
+        echo -e "\033[0;31m[ERROR] Could not resolve release version for update\033[0m" >&2
+        rm -f "$_MRM_UPDATE_TMP"
+        exit 1
+    fi
     if curl -fsSL --connect-timeout 30 --max-time 120 \
-        "https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main/install.sh" \
+        "https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/${_MRM_TARGET_REF}/install.sh" \
         -o "$_MRM_UPDATE_TMP" 2>/dev/null; then
         # Verify it's a valid bash script
         if head -1 "$_MRM_UPDATE_TMP" | grep -q '^#!/bin/bash' && \
@@ -31,7 +45,7 @@ fi
             exit 1
         fi
     else
-        echo -e "\033[0;31m[ERROR] Failed to download update\033[0m" >&2
+        echo -e "\033[0;31m[ERROR] Failed to download update (ref ${_MRM_TARGET_REF})\033[0m" >&2
         rm -f "$_MRM_UPDATE_TMP"
         exit 1
     fi
@@ -46,8 +60,15 @@ load_required_module() {
 }
 
 # Core modules (order matters: utils first, then ui, then features)
-load_required_module "/opt/mrm-manager/utils.sh"
-load_required_module "/opt/mrm-manager/ui.sh"
+# utils/ui are mandatory — without them the whole app is broken (MRM-018)
+load_required_module "/opt/mrm-manager/utils.sh" || {
+    bootstrap_error "utils.sh missing — reinstall with: mrm update"
+    exit 1
+}
+load_required_module "/opt/mrm-manager/ui.sh" || {
+    bootstrap_error "ui.sh missing — reinstall with: mrm update"
+    exit 1
+}
 load_required_module "/opt/mrm-manager/ssl.sh"
 load_required_module "/opt/mrm-manager/backup.sh"
 load_required_module "/opt/mrm-manager/domain_separator.sh"
@@ -68,6 +89,9 @@ uninstall_mrm_manager() {
     echo "Uninstall? Type UNINSTALL"
     read -p ": " c
     [[ "$c" != "UNINSTALL" ]] && return
+    # Remove MRM cron jobs (backup schedule + monitor) BEFORE removing files,
+    # otherwise they keep logging "No such file" forever (MRM-014).
+    crontab -l 2>/dev/null | grep -v -E "mrm-manager|/usr/local/bin/mrm" | crontab - 2>/dev/null || true
     rm -rf /opt/mrm-manager /usr/local/bin/mrm /tmp/mrm* 2>/dev/null
     echo "Uninstalled"
     exit 0
@@ -142,7 +166,7 @@ mrm_main_dashboard() {
 panel_menu() {
     while true; do
         clear
-        echo "=== 🎛️ PANEL CONTROL v${MRM_VERSION:-1.1.1} ==="
+        echo "=== 🎛️ PANEL CONTROL v${MRM_VERSION:-1.1.2} ==="
         echo ""
         echo "1) 🔄 Restart Panel"
         echo "2) ⏹️ Stop Panel"
@@ -152,10 +176,10 @@ panel_menu() {
         echo "0) ↩️ Back"
         read -p "Select: " OPT
         case $OPT in
-            1) (cd "$PANEL_DIR" && docker compose down && docker compose up -d); read -p "Press Enter..." ;;
-            2) (cd "$PANEL_DIR" && docker compose down); read -p "Press Enter..." ;;
-            3) (cd "$PANEL_DIR" && docker compose up -d); read -p "Press Enter..." ;;
-            4) (cd "$PANEL_DIR" && docker compose logs -f) ;;
+            1) (cd "$PANEL_DIR" 2>/dev/null && docker compose down && docker compose up -d) || echo -e "\033[0;31mFailed to restart panel (check: $PANEL_DIR exists, docker-compose.yml present)\033[0m"; read -p "Press Enter..." ;;
+            2) (cd "$PANEL_DIR" 2>/dev/null && docker compose down) || echo -e "\033[0;31mFailed to stop panel (check: $PANEL_DIR exists)\033[0m"; read -p "Press Enter..." ;;
+            3) (cd "$PANEL_DIR" 2>/dev/null && docker compose up -d) || echo -e "\033[0;31mFailed to start panel (check: $PANEL_DIR exists)\033[0m"; read -p "Press Enter..." ;;
+            4) (cd "$PANEL_DIR" 2>/dev/null || exit 1) && docker compose logs -f || echo -e "\033[0;31mPanel dir not found: $PANEL_DIR\033[0m" ;;
             0) return ;;
         esac
     done
@@ -164,7 +188,7 @@ panel_menu() {
 tools_menu() {
     while true; do
         clear
-        echo "=== 🛠️ TOOLS v${MRM_VERSION:-1.1.1} ==="
+        echo "=== 🛠️ TOOLS v${MRM_VERSION:-1.1.2} ==="
         echo ""
         echo "1) 🌐 Domain Separator"
         echo "2) 🎨 Theme Manager"
@@ -216,21 +240,8 @@ main_menu() {
             2) bash /opt/mrm-manager/backup.sh || { echo "Backup Manager could not be started"; sleep 1; } ;;
             3) panel_menu ;;
             4) tools_menu ;;
-            5) # SECURITY: Download to temp, verify, then execute
-                _MRM_UPDATE_TMP=$(mktemp /tmp/mrm-update.XXXXXX.sh)
-                if curl -fsSL --connect-timeout 30 --max-time 120 \
-                    "https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main/install.sh" \
-                    -o "$_MRM_UPDATE_TMP" 2>/dev/null; then
-                    if head -1 "$_MRM_UPDATE_TMP" | grep -q '^#!/bin/bash' && \
-                       bash -n "$_MRM_UPDATE_TMP" 2>/dev/null; then
-                        bash "$_MRM_UPDATE_TMP"
-                    else
-                        echo -e "\033[0;31m[ERROR] Downloaded script failed syntax verification\033[0m"
-                    fi
-                else
-                    echo -e "\033[0;31m[ERROR] Failed to download update\033[0m"
-                fi
-                rm -f "$_MRM_UPDATE_TMP"
+            5) # single update path — fixes apply in one place (MRM-015)
+                bash /opt/mrm-manager/main.sh update
                 ;;
             6) uninstall_mrm_manager ;;
             0) clear; echo "Goodbye!"; exit 0 ;;

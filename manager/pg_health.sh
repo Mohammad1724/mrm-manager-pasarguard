@@ -233,7 +233,7 @@ ph_temp_key() {
 # ─── Full report ────────────────────────────────────────────────────────────
 ph_diagnose() {
     clear
-    ui_header "PASARGUARD HEALTH v${MRM_VERSION:-1.1.1}"
+    ui_header "PASARGUARD HEALTH v${MRM_VERSION:-1.1.2}"
     detect_active_panel > /dev/null 2>&1 || true
     echo -e "  ${BLUE}Panel:${NC} $(basename "$PANEL_DIR" 2>/dev/null) | Env: $PANEL_ENV"
     echo ""
