@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager v1.0.0
+# MRM Manager ui.sh v1.1.4
 
 # ============================================
 # INTERACTIVE UI LIBRARY
@@ -27,31 +27,66 @@ UI_V="║"
 # HEADER & BOX FUNCTIONS
 # ============================================
 
+# Approximate terminal display width (East Asian Width): emoji/CJK/Hangul count
+# as 2 columns — ${#VAR} counts characters, not terminal columns (MRM-030)
+ui_text_width() {
+    local STR="$1" C CODE W=0 i
+    local LC_ALL=C.UTF-8
+    for ((i=0; i<${#STR}; i++)); do
+        C="${STR:$i:1}"
+        CODE=$(printf '%d' "'${C}" 2>/dev/null || echo 0)
+        CODE="${CODE:-0}"
+        if { [ "$CODE" -ge 4352 ] && [ "$CODE" -le 4447 ]; } ||
+           { [ "$CODE" -ge 9184 ] && [ "$CODE" -le 9215 ]; } ||
+           { [ "$CODE" -ge 11904 ] && [ "$CODE" -le 42191 ]; } ||
+           { [ "$CODE" -ge 44032 ] && [ "$CODE" -le 55203 ]; } ||
+           { [ "$CODE" -ge 63744 ] && [ "$CODE" -le 64255 ]; } ||
+           { [ "$CODE" -ge 65072 ] && [ "$CODE" -le 65103 ]; } ||
+           { [ "$CODE" -ge 65280 ] && [ "$CODE" -le 65376 ]; } ||
+           { [ "$CODE" -ge 65504 ] && [ "$CODE" -le 65510 ]; } ||
+           { [ "$CODE" -ge 10128 ] && [ "$CODE" -le 10175 ]; } ||
+           { [ "$CODE" -ge 126976 ] && [ "$CODE" -le 130303 ]; } ||
+           { [ "$CODE" -ge 131072 ] && [ "$CODE" -le 262141 ]; }
+        then
+            W=$(( W + 2 ))
+        else
+            W=$(( W + 1 ))
+        fi
+    done
+    echo "$W"
+}
+
 ui_header() {
     local TITLE="$1"
     local WIDTH="${2:-50}"
     local MIN_WIDTH
     local PADDING
+    local WIDTH_TITLE
     local i
 
-    MIN_WIDTH=$(( ${#TITLE} + 6 ))
+    WIDTH_TITLE="$(ui_text_width "$TITLE")"
+    MIN_WIDTH=$(( WIDTH_TITLE + 6 ))
     [ "$WIDTH" -lt "$MIN_WIDTH" ] && WIDTH="$MIN_WIDTH"
     [ "$WIDTH" -lt 40 ] && WIDTH=40
 
-    clear
+    # FIX: only clear on a real terminal — avoids polluting logs/pipes in
+    # non-TTY runs and avoids aborting set -e callers when clear is missing
+    if [ -t 1 ]; then
+        clear
+    fi
 
     # Top border
     echo -ne "${UI_CYAN}${UI_TL}"
     for ((i=0; i<WIDTH-2; i++)); do echo -ne "${UI_H}"; done
     echo -e "${UI_TR}${UI_NC}"
 
-    # Title
-    PADDING=$(( (WIDTH - 2 - ${#TITLE}) / 2 ))
+    # Title (padded to the display width so the right border stays aligned)
+    PADDING=$(( (WIDTH - 2 - WIDTH_TITLE) / 2 ))
     [ "$PADDING" -lt 0 ] && PADDING=0
     echo -ne "${UI_CYAN}${UI_V}${UI_NC}"
     for ((i=0; i<PADDING; i++)); do echo -ne " "; done
     echo -ne "${UI_YELLOW}${UI_BOLD}${TITLE}${UI_NC}"
-    for ((i=0; i<WIDTH-2-PADDING-${#TITLE}; i++)); do echo -ne " "; done
+    for ((i=0; i<WIDTH-2-PADDING-WIDTH_TITLE; i++)); do echo -ne " "; done
     echo -e "${UI_CYAN}${UI_V}${UI_NC}"
 
     # Bottom border
@@ -92,10 +127,12 @@ ui_spinner_start() {
 
     ui_spinner_stop
     (
-        local SPIN='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+        # FIX: array elements are locale-independent (${SPIN:$i:1} sliced bytes
+        # under LANG=C and printed broken UTF-8)
+        local SPIN=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
         local i=0
         while true; do
-            echo -ne "\r${UI_CYAN}${SPIN:$i:1}${UI_NC} $MESSAGE"
+            echo -ne "\r${UI_CYAN}${SPIN[$i]}${UI_NC} $MESSAGE"
             i=$(( (i + 1) % 10 ))
             sleep 0.1
         done
