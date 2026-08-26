@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager utils.sh v1.1.0
+# MRM Manager utils.sh v1.1.3
 
 export RED='\033[0;31m'
 export GREEN='\033[0;32m'
@@ -13,7 +13,7 @@ export NC='\033[0m'
 CONFIG_FILE="/opt/mrm-manager/panel.conf"
 MRM_VERSION_FILE="/opt/mrm-manager/VERSION"
 # FIX: Default version matches current release (was "1.0.3")
-MRM_DEFAULT_VERSION="1.1.2"
+MRM_DEFAULT_VERSION="1.1.3"
 
 ensure_mrm_config_dir() {
     mkdir -p "$(dirname "$CONFIG_FILE")"
@@ -88,7 +88,11 @@ get_node_compose_file() {
 }
 
 get_panel_container_id() {
-    local COMPOSE_FILE
+    local CID COMPOSE_FILE
+    # FIX: prefer the container running the pasarguard/panel image — compose ps order
+    # is not guaranteed and could return a DB/helper container first
+    CID="$(docker ps --format '{{.ID}} {{.Image}}' 2>/dev/null | awk '$2 ~ /^pasarguard\/panel(:|$)/ {print $1; exit}')"
+    [ -n "$CID" ] && { printf '%s\n' "$CID"; return 0; }
     COMPOSE_FILE="$(get_panel_compose_file 2>/dev/null)" || return 1
     docker compose -f "$COMPOSE_FILE" ps -q 2>/dev/null | head -1
 }
@@ -148,15 +152,16 @@ detect_active_panel() {
 }
 
 get_mrm_version() {
-    if [ -f "$MRM_VERSION_FILE" ]; then
+    # FIX: -s (non-empty) instead of -f — an empty VERSION file must not print ""
+    if [ -s "$MRM_VERSION_FILE" ]; then
         cat "$MRM_VERSION_FILE" 2>/dev/null | head -1
     else
         echo "$MRM_DEFAULT_VERSION"
     fi
 }
 
-export THEME_HTML_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main/templates/subscription/index.html"
-export MRM_REPO_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main"
+# FIX: pin to the installed release tag — mutable "main" could serve untrusted content
+export THEME_HTML_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v$(get_mrm_version)/templates/subscription/index.html"
 
 # Initialize - NON-BLOCKING, no prompt
 load_panel_config >/dev/null 2>&1 || apply_panel_config "pasarguard" >/dev/null 2>&1 || true
@@ -173,7 +178,8 @@ restart_service() {
         [ ! -d "$PANEL_DIR" ] && { echo -e "${RED}Panel not found at $PANEL_DIR${NC}"; return 1; }
         COMPOSE_FILE="$(get_panel_compose_file 2>/dev/null)"
         [ -z "$COMPOSE_FILE" ] && { echo -e "${RED}No compose file found${NC}"; return 1; }
-        (cd "$PANEL_DIR" && docker compose down && docker compose up -d) && echo -e "${GREEN}Done.${NC}" || { echo -e "${RED}Failed${NC}"; return 1; }
+        # FIX: restart only the panel service — down/up would also stop DB/helpers
+        (cd "$PANEL_DIR" && docker compose restart pasarguard) && echo -e "${GREEN}Done.${NC}" || { echo -e "${RED}Failed${NC}"; return 1; }
     elif [ "$SERVICE" == "node" ]; then
         # PasarGuard nodes usually run on their own server and connect to the
         # panel over gRPC/rest. This only works when the node docker-compose
@@ -184,5 +190,8 @@ restart_service() {
         COMPOSE_FILE="$(get_node_compose_file 2>/dev/null)"
         [ -z "$COMPOSE_FILE" ] && { echo -e "${RED}No compose file${NC}"; return 1; }
         (cd "$NODE_DIR" && docker compose restart) && echo -e "${GREEN}Done.${NC}" || { echo -e "${RED}Failed${NC}"; return 1; }
+    else
+        echo -e "${RED}Unknown service: $SERVICE${NC}" >&2
+        return 1
     fi
 }

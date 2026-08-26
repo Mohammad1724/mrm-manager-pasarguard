@@ -7,7 +7,7 @@ set -o pipefail
 # CLI shortcuts
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then
     source /opt/mrm-manager/versions.conf 2>/dev/null || true
-    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.1.2)}"
+    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.1.3)}"
     exit 0
 fi
 [[ "$1" == "doctor" ]] && exec bash /opt/mrm-manager/diagnostics.sh doctor "${@:2}"
@@ -166,7 +166,7 @@ mrm_main_dashboard() {
 panel_menu() {
     while true; do
         clear
-        echo "=== 🎛️ PANEL CONTROL v${MRM_VERSION:-1.1.2} ==="
+        echo "=== 🎛️ PANEL CONTROL v${MRM_VERSION:-1.1.3} ==="
         echo ""
         echo "1) 🔄 Restart Panel"
         echo "2) ⏹️ Stop Panel"
@@ -188,7 +188,7 @@ panel_menu() {
 tools_menu() {
     while true; do
         clear
-        echo "=== 🛠️ TOOLS v${MRM_VERSION:-1.1.2} ==="
+        echo "=== 🛠️ TOOLS v${MRM_VERSION:-1.1.3} ==="
         echo ""
         echo "1) 🌐 Domain Separator"
         echo "2) 🎨 Theme Manager"
