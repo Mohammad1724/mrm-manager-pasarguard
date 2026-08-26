@@ -52,8 +52,6 @@ load_required_module "/opt/mrm-manager/domain_separator.sh"
 load_required_module "/opt/mrm-manager/theme.sh"
 load_required_module "/opt/mrm-manager/diagnostics.sh"
 load_required_module "/opt/mrm-manager/offline.sh"
-load_required_module "/opt/mrm-manager/safe_ops.sh"
-# NOTE: mirza.sh removed — was unused legacy module (Apache/PHP, not Docker-based)
 load_required_module "/opt/mrm-manager/monitor.sh" || true
 
 [ -r "/opt/mrm-manager/versions.conf" ] && source /opt/mrm-manager/versions.conf
@@ -62,24 +60,7 @@ detect_active_panel > /dev/null 2>&1 || true
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
-edit_file() { [ -f "$1" ] && nano "$1" || { echo "File not found: $1"; read -p "Press Enter..."; }; }
 invalid_menu_option() { echo -e "\033[0;31mInvalid option\033[0m"; sleep 1; }
-
-get_panel_compose_file() {
-    for f in "$PANEL_DIR/docker-compose.yml" "$PANEL_DIR/compose.yml"; do
-        [ -f "$f" ] && { echo "$f"; return 0; }
-    done
-    return 1
-}
-
-ensure_panel_compose_ready() { [ -d "$PANEL_DIR" ] || { echo "Panel dir not found"; return 1; }; }
-run_panel_compose() { (cd "$PANEL_DIR" && docker compose "$@" 2>/dev/null); }
-edit_panel_compose_file() { local cf; cf="$(get_panel_compose_file 2>/dev/null)" || return; nano "$cf"; }
-show_panel_logs() { (cd "$PANEL_DIR" && docker compose logs -f 2>/dev/null); }
-
-remove_mrm_cron_jobs() {
-    crontab -l 2>/dev/null | grep -vE 'mrm-manager|/usr/local/bin/mrm' | crontab - 2>/dev/null || true
-}
 
 uninstall_mrm_manager() {
     echo "Uninstall? Type UNINSTALL"
@@ -90,7 +71,6 @@ uninstall_mrm_manager() {
     exit 0
 }
 
-optimize_network() { echo "BBR Enabled (simulated)"; sleep 1; }
 auto_fix() { echo "Auto Fix done"; sleep 1; }
 
 # ─── Dashboard Status Components ─────────────────────────────────────────────
@@ -103,19 +83,6 @@ mrm_main_status() {
         printf '%b' "${GREEN}● ${ok_text}${NC}"
     else
         printf '%b' "${RED}● ${bad_text}${NC}"
-    fi
-}
-
-mrm_component_version() {
-    local pattern="$1"
-    local image
-    image="$(docker ps --format '{{.Names}}|{{.Image}}' 2>/dev/null | grep -iE "$pattern" | head -n1 | cut -d'|' -f2)"
-    if [ -z "$image" ]; then
-        echo "Not available"
-    elif [[ "$image" == *":"* ]]; then
-        echo "${image##*:}"
-    else
-        echo "$image"
     fi
 }
 

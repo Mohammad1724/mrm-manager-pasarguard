@@ -345,3 +345,7 @@ domain_menu() {
         esac
     done
 }
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    domain_menu
+fi

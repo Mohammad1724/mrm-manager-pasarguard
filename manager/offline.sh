@@ -751,3 +751,7 @@ offline_menu() {
         esac
     done
 }
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    offline_menu
+fi

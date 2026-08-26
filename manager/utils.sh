@@ -115,28 +115,6 @@ get_panel_container_id() {
     docker compose -f "$COMPOSE_FILE" ps -q 2>/dev/null | head -1
 }
 
-select_panel() {
-    echo ""
-    echo -e "${CYAN}══════════════════════════════════════${NC}"
-    echo -e "${CYAN} SELECT YOUR PANEL TYPE ${NC}"
-    echo -e "${CYAN}══════════════════════════════════════${NC}"
-    echo ""
-    echo "1) Pasarguard"
-    echo "2) Marzban"
-    echo "3) Rebecca"
-    echo ""
-    read -p "Select [1-3]: " PANEL_CHOICE
-    case $PANEL_CHOICE in
-        1) save_panel_config "pasarguard" ;;
-        2) save_panel_config "marzban" ;;
-        3) save_panel_config "rebecca" ;;
-        *) echo -e "${RED}Invalid selection. Defaulting to Pasarguard.${NC}"; save_panel_config "pasarguard" ;;
-    esac
-    load_panel_config
-    echo -e "${GREEN}✔ Panel set to: $(cat "$CONFIG_FILE" 2>/dev/null)${NC}"
-    echo ""
-}
-
 # FIXED: Non-interactive version - never prompts on source
 load_panel_config() {
     # If config file exists, try to use it
@@ -191,11 +169,6 @@ detect_active_panel() {
     cat "$CONFIG_FILE" 2>/dev/null || echo "pasarguard"
 }
 
-change_panel() {
-    echo -e "${YELLOW}Current Panel: $(cat "$CONFIG_FILE" 2>/dev/null)${NC}"
-    select_panel
-}
-
 get_mrm_version() {
     if [ -f "$MRM_VERSION_FILE" ]; then
         cat "$MRM_VERSION_FILE" 2>/dev/null | head -1
@@ -210,49 +183,9 @@ export MRM_REPO_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-
 # Initialize - NON-BLOCKING, no prompt
 load_panel_config >/dev/null 2>&1 || apply_panel_config "pasarguard" >/dev/null 2>&1 || true
 
-check_root() {
-    if [ "$EUID" -ne 0 ]; then
-        echo -e "${RED}Error: Please run as root (sudo).${NC}"
-        exit 1
-    fi
-}
-
-install_deps() {
-    if [ -n "$MRM_SKIP_DEPS" ] || [ -n "$MRM_FIRST_RUN" ]; then
-        return 0
-    fi
-    local NEED_INSTALL=false
-    for CMD in certbot nginx python3 sqlite3 docker jq lsof curl nano socat tar unzip; do
-        command -v "$CMD" >/dev/null 2>&1 || NEED_INSTALL=true
-    done
-    if [ "$NEED_INSTALL" = true ]; then
-        if fuser /var/lib/dpkg/lock >/dev/null 2>&1 || fuser /var/lib/apt/lists/lock >/dev/null 2>&1; then
-            echo -e "${YELLOW}apt is locked, skipping dependency install${NC}"
-            sleep 1
-            return 0
-        fi
-        echo -e "${BLUE}[INFO] Installing dependencies...${NC}"
-        timeout 60 apt-get update -qq >/dev/null 2>&1 || echo -e "${YELLOW}apt update timeout, continuing...${NC}"
-        timeout 120 apt-get install -y certbot lsof curl nano socat tar python3 nginx unzip jq sqlite3 -qq >/dev/null 2>&1 || true
-        if ! command -v docker >/dev/null 2>&1; then
-            timeout 120 curl -fsSL https://get.docker.com | sh >/dev/null 2>&1 || true
-        fi
-    fi
-}
-
 pause() {
     echo ""
     read -p "Press Enter to continue..."
-}
-
-get_panel_cli() {
-    local panel=$(cat "$CONFIG_FILE" 2>/dev/null)
-    case "$panel" in
-        rebecca) echo "rebecca-cli" ;;
-        pasarguard) echo "pasarguard-cli" ;;
-        marzban) echo "marzban-cli" ;;
-        *) echo "pasarguard-cli" ;;
-    esac
 }
 
 restart_service() {
@@ -269,26 +202,4 @@ restart_service() {
         [ -z "$COMPOSE_FILE" ] && { echo -e "${RED}No compose file${NC}"; return 1; }
         (cd "$NODE_DIR" && docker compose restart) && echo -e "${GREEN}Done.${NC}" || { echo -e "${RED}Failed${NC}"; return 1; }
     fi
-}
-
-admin_create() {
-    local cli=$(get_panel_cli) cid=$(get_panel_container_id)
-    [ -z "$cid" ] && { echo -e "${RED}Panel not running${NC}"; return; }
-    echo -e "${CYAN}Creating Admin for $(cat "$CONFIG_FILE" 2>/dev/null)${NC}"
-    echo "1) Super Admin (Sudo)"; echo "2) Regular Admin"; read -p "Select: " type
-    if [ "$type" == "1" ]; then docker exec -it "$cid" $cli admin create --sudo; else docker exec -it "$cid" $cli admin create; fi
-}
-
-admin_reset() {
-    local cli=$(get_panel_cli) cid=$(get_panel_container_id)
-    [ -z "$cid" ] && { echo -e "${RED}Panel not running${NC}"; return; }
-    read -p "Username to reset password: " user
-    [ -n "$user" ] && docker exec -it "$cid" $cli admin update --username "$user" --password
-}
-
-admin_delete() {
-    local cli=$(get_panel_cli) cid=$(get_panel_container_id)
-    [ -z "$cid" ] && { echo -e "${RED}Panel not running${NC}"; return; }
-    read -p "Username to delete: " user
-    [ -n "$user" ] && docker exec -it "$cid" $cli admin delete --username "$user"
 }
