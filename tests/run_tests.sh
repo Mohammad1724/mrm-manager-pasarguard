@@ -339,6 +339,34 @@ else
     fail "menu.sh does not label pre_restore_* as SAFETY"
 fi
 
+# Check telegram.sh writes TG_CONFIG verbatim via printf (MRM-071)
+if grep -qF "printf 'TG_TOKEN=" "$PROJECT_DIR/manager/backup/telegram.sh"; then
+    pass "telegram.sh writes config verbatim (no unquoted heredoc)"
+else
+    fail "telegram.sh uses expansion-prone heredoc for config"
+fi
+
+# Check telegram.sh anchors TG_* greps (MRM-072)
+if grep -qF 'grep "^TG_TOKEN="' "$PROJECT_DIR/manager/backup/telegram.sh"; then
+    pass "telegram.sh anchors TG_TOKEN grep"
+else
+    fail "telegram.sh TG_TOKEN grep is unanchored"
+fi
+
+# Check telegram.sh uses --data-urlencode for messages (MRM-073)
+if grep -qF -- '--data-urlencode "text=' "$PROJECT_DIR/manager/backup/telegram.sh"; then
+    pass "telegram.sh URL-encodes message text"
+else
+    fail "telegram.sh sends raw -d text (breaks on & + #)"
+fi
+
+# Check telegram.sh supports http(s) proxies (MRM-074)
+if grep -qF -- '--proxy" "$PROXY"' "$PROJECT_DIR/manager/backup/telegram.sh"; then
+    pass "telegram.sh supports http(s) proxies via --proxy"
+else
+    fail "telegram.sh silently ignores http(s) proxies"
+fi
+
 # Check post_restore.sh validates domains
 if grep -q "Skipping invalid domain" "$PROJECT_DIR/manager/backup/post_restore.sh"; then
     pass "post_restore.sh validates domain names"

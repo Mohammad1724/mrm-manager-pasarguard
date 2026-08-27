@@ -14,6 +14,10 @@ build_telegram_proxy_args() {
         else
             printf '%s\n' "--socks5-hostname" "$PROXY_STR"
         fi
+    elif [[ "$PROXY" == http://* || "$PROXY" == https://* ]]; then
+        # FIX: previously http(s):// proxies produced NO curl args and the
+        # request silently went DIRECT (no proxy) — confusing failures in Iran (MRM-074)
+        printf '%s\n' "--proxy" "$PROXY"
     fi
 }
 
@@ -27,9 +31,11 @@ send_to_telegram() {
     local TK CH PROXY RESULT
     local -a CURL_PROXY_ARGS=()
     if [ ! -f "$TG_CONFIG" ]; then log_backup "WARNING" "Telegram not configured"; return 1; fi
-    TK=$(grep "TG_TOKEN" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
-    CH=$(grep "TG_CHAT" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
-    PROXY=$(grep "TG_PROXY" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
+    # FIX: anchor the keys so comments or similarly-named keys can never
+    # shadow the real token/chat/proxy values (MRM-072)
+    TK=$(grep "^TG_TOKEN=" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
+    CH=$(grep "^TG_CHAT=" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
+    PROXY=$(grep "^TG_PROXY=" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
     mapfile -t CURL_PROXY_ARGS < <(build_telegram_proxy_args "$PROXY")
     if [ -z "$TK" ] || [ -z "$CH" ]; then log_backup "ERROR" "Invalid Telegram config"; return 1; fi
     if [ -n "$FILE" ] && [ -f "$FILE" ]; then
@@ -55,7 +61,7 @@ send_to_telegram() {
         log_backup "DEBUG" "Telegram response: $RESULT"
         if echo "$RESULT" | grep -q '"ok":true'; then log_backup "SUCCESS" "File sent to Telegram: $(basename "$FILE") $FILE_SIZE"; return 0; else log_backup "ERROR" "Failed to send to Telegram: $RESULT"; return 1; fi
     elif [ -n "$MESSAGE" ]; then
-        curl -4 -s "${CURL_PROXY_ARGS[@]}" -X POST "https://api.telegram.org/bot$TK/sendMessage" -d chat_id="$CH" -d text="$MESSAGE" > /dev/null
+        curl -4 -s "${CURL_PROXY_ARGS[@]}" -X POST "https://api.telegram.org/bot$TK/sendMessage" -d chat_id="$CH" --data-urlencode "text=$MESSAGE" > /dev/null
         return $?
     fi
     return 1
@@ -66,11 +72,11 @@ test_telegram() {
     local -a CURL_PROXY_ARGS=()
     if [ ! -f "$TG_CONFIG" ]; then ui_error "Telegram not configured!"; return 1; fi
     ui_spinner_start "Testing Telegram connection..."
-    TK=$(grep "TG_TOKEN" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
-    CH=$(grep "TG_CHAT" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
-    PROXY=$(grep "TG_PROXY" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
+    TK=$(grep "^TG_TOKEN=" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
+    CH=$(grep "^TG_CHAT=" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
+    PROXY=$(grep "^TG_PROXY=" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
     mapfile -t CURL_PROXY_ARGS < <(build_telegram_proxy_args "$PROXY")
-    RESULT=$(curl -4 -s "${CURL_PROXY_ARGS[@]}" -X POST "https://api.telegram.org/bot$TK/sendMessage" -d chat_id="$CH" -d text="🧪 MRM Backup test - $(date '+%Y-%m-%d %H:%M')" 2>&1)
+    RESULT=$(curl -4 -s "${CURL_PROXY_ARGS[@]}" -X POST "https://api.telegram.org/bot$TK/sendMessage" -d chat_id="$CH" --data-urlencode "text=🧪 MRM Backup test - $(date '+%Y-%m-%d %H:%M')" 2>&1)
     ui_spinner_stop
     if echo "$RESULT" | grep -q '"ok":true'; then ui_success "Telegram connection successful!"; return 0; else ui_error "Telegram connection failed!"; echo -e "${YELLOW}Error: $RESULT${NC}"; return 1; fi
 }
@@ -98,11 +104,10 @@ setup_telegram() {
         RESTORE_POINT_ID="$(mrm_create_restore_point "telegram-settings" "none" "$TG_CONFIG")"
         [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point created: $RESTORE_POINT_ID${NC}"
     fi
-    cat > "$TG_CONFIG" << EOF
-TG_TOKEN="$TK"
-TG_CHAT="$CI"
-TG_PROXY="$PROXY_URL"
-EOF
+    # FIX: values written verbatim — unquoted heredoc would expand $VAR,
+    # backticks and $(...) inside the token/chat/proxy (MRM-071, same class
+    # as MRM-005). printf keeps the shared KEY="value" format (monitor.sh reads it).
+    printf 'TG_TOKEN="%s"\nTG_CHAT="%s"\nTG_PROXY="%s"\n' "$TK" "$CI" "$PROXY_URL" > "$TG_CONFIG"
     chmod 600 "$TG_CONFIG"
     ui_success "Telegram configured!"
     log_backup "INFO" "Telegram bot configured"
