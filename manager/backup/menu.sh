@@ -87,6 +87,9 @@ list_backups() {
         [[ "$NAME" == *"Full"* ]] && TYPE="FULL-OLD"
         [[ "$NAME" == *"Lite"* ]] && TYPE="LITE-OLD"
         [[ "$NAME" == *"V1"* ]] && TYPE="v${BACKUP_VERSION}"
+        # FIX: pre_restore_* safety backups are not restorable (MRM-062);
+        # label them as SAFETY so they are not mistaken for regular backups (MRM-070)
+        [[ "$NAME" == pre_restore_* ]] && TYPE="SAFETY"
         printf "%-2s │ %-10s │ %-39s │ %-6s │ %s\n" "$((i+1))" "$TYPE" "$NAME" "$SIZE" "$DATE"
     done
     echo ""
@@ -111,6 +114,9 @@ delete_backup() {
     echo ""
     read -p "Select (0 to cancel): " SEL
     [ "$SEL" == "0" ] && return
+    # FIX: validate numeric input — otherwise $((SEL-1)) treats non-numeric
+    # input as empty var -> -1 -> FILES[-1] wraps to the LAST backup (MRM-069)
+    if ! [[ "$SEL" =~ ^[0-9]+$ ]]; then ui_error "Invalid selection"; pause; return; fi
     local SELECTED="${FILES[$((SEL-1))]}"
     if [ -z "$SELECTED" ]; then ui_error "Invalid selection"; pause; return; fi
     echo ""
@@ -233,92 +239,3 @@ backup_menu() {
     done
 }
 
-# ==========================================
-# ENTRY POINT
-# ==========================================
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    if [ "$1" == "auto" ]; then
-        do_backup "auto"
-    elif [ "$1" == "fix-node" ]; then
-        # mrm fix-node [--verbose] : repair xray-core + geo files
-        setup_env
-        init_backup_logging
-
-        FIX_VERBOSE=false
-        [[ "$2" == "--verbose" ]] || [[ "$2" == "-v" ]] && FIX_VERBOSE=true
-        export MRM_XRAY_VERBOSE="$FIX_VERBOSE"
-
-        NODE_DATA_DIR="$(dirname "${NODE_DEF_CERTS:-/var/lib/pg-node/certs}" 2>/dev/null)"
-        [ -z "$NODE_DATA_DIR" ] && NODE_DATA_DIR="/var/lib/pg-node"
-
-        echo -e "${CYAN}╔══════════════════════════════════════════╗${NC}"
-        echo -e "${CYAN}║  🔧 Node xray-core Repair Tool          ║${NC}"
-        echo -e "${CYAN}╚══════════════════════════════════════════╝${NC}"
-        echo ""
-        echo -e "  ${CYAN}Node data dir:${NC} $NODE_DATA_DIR"
-        echo -e "  ${CYAN}Expected path:${NC} $NODE_DATA_DIR/xray-core/xray"
-        echo -e "  ${CYAN}System arch:${NC}   $(uname -m)"
-        echo -e "  ${CYAN}Verbose:${NC}       $FIX_VERBOSE"
-        echo ""
-
-        # Pre-flight checks
-        echo -e "${YELLOW}Pre-flight checks:${NC}"
-        if command -v curl >/dev/null 2>&1; then
-            echo -e "  ${GREEN}✔${NC} curl: $(curl --version | head -1)"
-        else
-            echo -e "  ${RED}✘${NC} curl: NOT INSTALLED"
-        fi
-        if command -v unzip >/dev/null 2>&1; then
-            echo -e "  ${GREEN}✔${NC} unzip: installed"
-        else
-            echo -e "  ${RED}✘${NC} unzip: NOT INSTALLED"
-        fi
-        if [ -x "$NODE_DATA_DIR/xray-core/xray" ]; then
-            echo -e "  ${YELLOW}⚠${NC} xray binary exists but may be broken"
-        else
-            echo -e "  ${RED}✘${NC} xray binary: MISSING"
-        fi
-        echo ""
-
-        echo -e "${YELLOW}Downloading/repairing xray-core...${NC}"
-        if mrm_ensure_xray_core; then
-            echo ""
-            echo -e "${GREEN}✔ xray-core ready: $NODE_DATA_DIR/xray-core/xray${NC}"
-            "$NODE_DATA_DIR/xray-core/xray" -version 2>/dev/null | head -1 && true
-            echo ""
-            echo -e "${YELLOW}Restarting node container...${NC}"
-            NODE_CNAME="$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -i node | head -1)"
-            if [ -n "$NODE_CNAME" ]; then
-                if docker restart "$NODE_CNAME" >/dev/null 2>&1; then
-                    echo -e "${GREEN}✔ Node restarted: $NODE_CNAME${NC}"
-                else
-                    echo -e "${RED}✘ Node restart failed: $NODE_CNAME${NC}"
-                fi
-            else
-                echo -e "${YELLOW}⚠ No node container found (is the node docker-compose running?)${NC}"
-            fi
-            exit 0
-        else
-            echo ""
-            echo -e "${RED}╔══════════════════════════════════════════╗${NC}"
-            echo -e "${RED}║  ✘ REPAIR FAILED                        ║${NC}"
-            echo -e "${RED}╚══════════════════════════════════════════╝${NC}"
-            echo ""
-            echo -e "${YELLOW}Try these steps:${NC}"
-            echo -e "  1. ${CYAN}mrm fix-node --verbose${NC}  (see detailed errors)"
-            echo -e "  2. ${CYAN}apt install -y curl unzip${NC}  (ensure tools exist)"
-            echo -e "  3. ${CYAN}curl -v https://github.com 2>&1 | head -5${NC}  (test internet)"
-            echo -e "  4. Manual download:"
-            echo -e "     ${CYAN}ARCH=$( [ "$(uname -m)" = "aarch64" ] && echo arm64-v8a || echo 64 )${NC}"
-            echo -e "     ${CYAN}curl -L "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-\$ARCH.zip" -o /tmp/xray.zip${NC}"
-            echo -e "     ${CYAN}unzip -o /tmp/xray.zip -d $NODE_DATA_DIR/xray-core/${NC}"
-            echo -e "     ${CYAN}chmod +x $NODE_DATA_DIR/xray-core/xray${NC}"
-            echo -e "     ${CYAN}docker restart \$(docker ps -a --format '{{.Names}}' | grep -i node | head -1)${NC}"
-            echo ""
-            echo -e "${YELLOW}Full log: $BACKUP_LOG${NC}"
-            exit 1
-        fi
-    else
-        backup_menu
-    fi
-fi

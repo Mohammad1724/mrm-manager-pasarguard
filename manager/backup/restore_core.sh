@@ -38,6 +38,9 @@ do_restore() {
     echo ""
     read -p "Select (0 to cancel): " SEL
     [ "$SEL" == "0" ] && return
+    # FIX: validate numeric input — otherwise $((SEL-1)) treats non-numeric
+    # input as empty var -> -1 -> FILES[-1] wraps to the LAST backup (MRM-069)
+    if ! [[ "$SEL" =~ ^[0-9]+$ ]]; then ui_error "Invalid selection"; pause; return 1; fi
     local SELECTED="${FILES[$((SEL-1))]}"
     if [ -z "$SELECTED" ] || [ ! -f "$SELECTED" ]; then ui_error "Invalid selection"; pause; return 1; fi
 

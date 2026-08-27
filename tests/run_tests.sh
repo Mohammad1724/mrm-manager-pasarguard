@@ -311,6 +311,34 @@ else
     pass "restore_core.sh calls main without tee -a (no duplicate log)"
 fi
 
+# Check menu.sh has no dead ENTRY POINT duplicate (MRM-068)
+if grep -q "ENTRY POINT" "$PROJECT_DIR/manager/backup/menu.sh"; then
+    fail "menu.sh still contains dead ENTRY POINT block"
+else
+    pass "menu.sh has no duplicate ENTRY POINT block"
+fi
+
+# Check delete_backup validates numeric selection (MRM-069)
+if grep -qF 'SEL" =~ ^[0-9]+$' "$PROJECT_DIR/manager/backup/menu.sh" 2>/dev/null || grep -qF 'SEL =~ ^[0-9]+$' "$PROJECT_DIR/manager/backup/menu.sh"; then
+    pass "menu.sh validates numeric backup selection"
+else
+    fail "menu.sh missing numeric selection validation"
+fi
+
+# Check do_restore validates numeric selection (MRM-069)
+if grep -qF 'SEL" =~ ^[0-9]+$' "$PROJECT_DIR/manager/backup/restore_core.sh" 2>/dev/null || grep -qF 'SEL =~ ^[0-9]+$' "$PROJECT_DIR/manager/backup/restore_core.sh"; then
+    pass "restore_core.sh validates numeric backup selection"
+else
+    fail "restore_core.sh missing numeric selection validation"
+fi
+
+# Check pre_restore backups are labelled SAFETY in list (MRM-070)
+if grep -qF 'pre_restore_* ]] && TYPE="SAFETY"' "$PROJECT_DIR/manager/backup/menu.sh"; then
+    pass "menu.sh labels pre_restore_* as SAFETY"
+else
+    fail "menu.sh does not label pre_restore_* as SAFETY"
+fi
+
 # Check post_restore.sh validates domains
 if grep -q "Skipping invalid domain" "$PROJECT_DIR/manager/backup/post_restore.sh"; then
     pass "post_restore.sh validates domain names"
