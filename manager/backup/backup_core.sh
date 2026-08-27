@@ -3,14 +3,14 @@
 # Main backup logic: export DB, backup files, create archive, send to Telegram
 
 # ==========================================
-# Backup v${BACKUP_VERSION}
+# Backup v1.1.8
 # ==========================================
 do_backup() {
     local MODE="${1:-manual}"
     setup_env
     init_backup_logging
 
-    [ "$MODE" != "auto" ] && clear
+    # ui_header clears only on a real TTY — no extra clear here (MRM-054)
     [ "$MODE" != "auto" ] && ui_header "BACKUP v${BACKUP_VERSION}"
 
     log_backup "INFO" "========== Starting backup $MRM_BACKUP_VERSION mode: $MODE =========="
@@ -29,8 +29,7 @@ do_backup() {
     ARCHIVE_BASE="MRM-${TS/_/-}"
 
     # Always clean temp first (avoid leftovers)
-        [[ -n "$TEMP_BASE" && -d "$TEMP_BASE" ]] && rm -rf "$TEMP_BASE"
-    rm -rf "$TEMP_BASE"
+    [[ -n "$TEMP_BASE" ]] && rm -rf "$TEMP_BASE" 2>/dev/null
     mkdir -p "$B_PATH/database" "$B_PATH/panel" "$B_PATH/data" "$B_PATH/node"
     mkdir -p "$BACKUP_DIR"
 
@@ -73,8 +72,7 @@ do_backup() {
         echo -e "${YELLOW}You can still restore panel files but users will be lost.${NC}\n"
         read -p "Continue anyway? (y/N): " CONT
         if [[ ! "$CONT" =~ ^[Yy]$ ]]; then
-        [[ -n "$TEMP_BASE" && -d "$TEMP_BASE" ]] && rm -rf "$TEMP_BASE"
-            rm -rf "$TEMP_BASE"
+            [[ -n "$TEMP_BASE" ]] && rm -rf "$TEMP_BASE" 2>/dev/null
             return
         fi
     fi
@@ -253,7 +251,7 @@ Database Type: ${DB_BACKUP_DESC:-N/A}
 Raw Size Before Compression: $TOTAL_RAW_SIZE
 Version: $MRM_BACKUP_VERSION
 Backup profile: v${BACKUP_VERSION}
-Changes from v7.9:
+Changes included in this backup profile:
 - Excluded panel/backup/backup.zip recursive loop
 - Excluded /etc/letsencrypt full (20MB) -> only data/certs
 - Excluded /etc/nginx full (5MB) -> only panel_separate.conf
@@ -296,10 +294,14 @@ Manual Restore (if needed):
    cp /tmp/MRM_V1_*/node/.env $NODE_DIR/.env
    cp -a /tmp/MRM_V1_*/node/certs/* /var/lib/pg-node/certs/
 5. Database PostgreSQL:
-   gunzip -c /tmp/MRM_V1_*/database/db.sql.gz | docker exec -i \$(docker ps --format '{{.Names}}' | grep -iE "postgres|timescale" | head -1) psql -U pasarguard -d pasarguard
+   DB_CONTAINER=\$(docker ps --format '{{.Names}}' | grep -xE 'pasarguard-(postgresql|timescaledb)-[0-9]+' | head -1)
+   [ -z "\$DB_CONTAINER" ] && DB_CONTAINER=\$(docker ps --format '{{.Names}}' | grep -iE "postgres|timescale" | head -1)
+   gunzip -c /tmp/MRM_V1_*/database/db.sql.gz | docker exec -i "\$DB_CONTAINER" psql -U "\${DB_USER:-pasarguard}" -d "\${DB_NAME:-pasarguard}"
+   (Use DB_USER/DB_NAME from /opt/pasarguard/.env — installs may use non-default names.)
    Or SQLite (PasarGuard v5 keeps it INSIDE the panel container at /code/db.sqlite3):
-   docker cp /tmp/MRM_V1_*/database/db.sqlite3 \$(docker ps -q -f name=pasarguard | head -1):/tmp/restore.sqlite3
-   docker exec -i \$(docker ps -q -f name=pasarguard | head -1) python -c "
+   PANEL_CONT=\$(docker ps --format '{{.ID}}|{{.Image}}' | awk -F'|' '\$2 ~ /^pasarguard\/panel(:|\$)/ {print \$1; exit}')
+   docker cp /tmp/MRM_V1_*/database/db.sqlite3 "\${PANEL_CONT}:/tmp/restore.sqlite3"
+   docker exec -i "\${PANEL_CONT}" python -c "
 import sqlite3
 src=sqlite3.connect('/tmp/restore.sqlite3')
 dst=sqlite3.connect('/code/db.sqlite3')
@@ -362,14 +364,12 @@ EOF
     else
         [ "$MODE" != "auto" ] && ui_spinner_stop && ui_error "Failed to create archive!"
         log_backup "ERROR" "Failed to create tar.gz"
-        [[ -n "$TEMP_BASE" && -d "$TEMP_BASE" ]] && rm -rf "$TEMP_BASE"
-        rm -rf "$TEMP_BASE"
+        [[ -n "$TEMP_BASE" ]] && rm -rf "$TEMP_BASE" 2>/dev/null
         return 1
     fi
 
     # 8. Cleanup temp
-        [[ -n "$TEMP_BASE" && -d "$TEMP_BASE" ]] && rm -rf "$TEMP_BASE"
-    rm -rf "$TEMP_BASE"
+    [[ -n "$TEMP_BASE" ]] && rm -rf "$TEMP_BASE" 2>/dev/null
 
     # 9. Send to Telegram - Now small and fast
     local FINAL_SIZE=$(du -h "$ARCHIVE_PATH" | cut -f1)

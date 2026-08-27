@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager ui.sh v1.1.7
+# MRM Manager ui.sh v1.1.8
 
 # ============================================
 # INTERACTIVE UI LIBRARY
