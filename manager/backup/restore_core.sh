@@ -11,7 +11,10 @@ do_restore() {
     setup_env
     init_backup_logging
 
-    local FILES=($(ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null))
+    # FIX: exclude pre_restore_* safety backups from the restore list — their
+    # tar layout has no MRM root, so selecting one silently restores nothing
+    # while reporting success (MRM-062)
+    local FILES=($(ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null | grep -v '/pre_restore_'))
     if [ ${#FILES[@]} -eq 0 ]; then
         ui_error "No backups found in $BACKUP_DIR"
         echo -e "Upload backup manually to $BACKUP_DIR or download from Telegram"
@@ -20,6 +23,9 @@ do_restore() {
     fi
 
     echo -e "${YELLOW}Select backup to restore:${NC}\n"
+    if ls "$BACKUP_DIR"/pre_restore_*.tar.gz >/dev/null 2>&1; then
+        echo -e "  ${CYAN}(pre_restore_* safety backups are hidden - they are not restorable)${NC}\n"
+    fi
     for i in "${!FILES[@]}"; do
         local SIZE=$(du -h "${FILES[$i]}" | cut -f1)
         local DATE=$(stat -c %y "${FILES[$i]}" | cut -d' ' -f1)
@@ -415,9 +421,15 @@ do_restore() {
                 ui_spinner_start "Importing PostgreSQL database..."
                 # Find the DB container even if stopped; start it if needed
                 local DB_CONT
-                DB_CONT=$(docker ps --format '{{.Names}}' | grep -iE "postgres|timescale" | head -1)
+                # FIX: precise compose-name match first (MRM-060); bare
+                # "grep -iE postgres|timescale" can match an unrelated container
+                # (postgres_exporter, node-exporter…) and the DROP SCHEMA below
+                # would hit the WRONG database (same pattern as MRM-047)
+                DB_CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(pasarguard-)?(postgresql|timescaledb|postgres|timescale)[-_]?[0-9]*$' | head -1)
+                [ -z "$DB_CONT" ] && DB_CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "postgres|timescale" | head -1)
                 if [ -z "$DB_CONT" ]; then
-                    DB_CONT=$(docker ps -a --format '{{.Names}}' | grep -iE "postgres|timescale" | head -1)
+                    DB_CONT=$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^(pasarguard-)?(postgresql|timescaledb|postgres|timescale)[-_]?[0-9]*$' | head -1)
+                    [ -z "$DB_CONT" ] && DB_CONT=$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -iE "postgres|timescale" | head -1)
                     [ -n "$DB_CONT" ] && docker start "$DB_CONT" >/dev/null 2>&1
                 fi
                 # NEW SERVER FIX: If no postgres container exists at all (brand new server),
@@ -426,7 +438,8 @@ do_restore() {
                     log_backup "INFO" "No postgres container found - starting from restored compose (new server)"
                     run_compose_file "$PANEL_COMPOSE_FILE" up -d postgres db postgresql >/dev/null 2>&1 || true
                     sleep 3
-                    DB_CONT=$(docker ps --format '{{.Names}}' | grep -iE "postgres|timescale" | head -1)
+                    DB_CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(pasarguard-)?(postgresql|timescaledb|postgres|timescale)[-_]?[0-9]*$' | head -1)
+                    [ -z "$DB_CONT" ] && DB_CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "postgres|timescale" | head -1)
                     if [ -n "$DB_CONT" ]; then
                         log_backup "SUCCESS" "Postgres container created from compose: $DB_CONT"
                     else
@@ -457,13 +470,15 @@ do_restore() {
                     fi
 
                     if [ -n "$DB_PASS" ]; then
+                        # FIX: ON_ERROR_STOP=1 so a mid-file SQL error fails the
+                        # import instead of reporting a false success (MRM-061)
                         if docker exec -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -U "$DB_USER" -d "$DB_NAME" -c "BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public; COMMIT;" >/dev/null 2>&1 && \
-                           cat "$SQL_FILE" | docker exec -i -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+                           cat "$SQL_FILE" | docker exec -i -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
                             DB_IMPORTED=true
                         fi
                     else
                         if docker exec "$DB_CONT" psql -U "$DB_USER" -d "$DB_NAME" -c "BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public; COMMIT;" >/dev/null 2>&1 && \
-                           cat "$SQL_FILE" | docker exec -i "$DB_CONT" psql -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+                           cat "$SQL_FILE" | docker exec -i "$DB_CONT" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
                             DB_IMPORTED=true
                         fi
                     fi
@@ -482,7 +497,7 @@ do_restore() {
                         [ -z "$DB_NAME" ] && DB_NAME="$DB_USER"
                         export PGPASSWORD="$DB_PASS"
                         if psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" -c "BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public; COMMIT;" >/dev/null 2>&1 && \
-                           psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" -f "$SQL_FILE2" >/dev/null 2>&1; then
+                           psql -h 127.0.0.1 -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -f "$SQL_FILE2" >/dev/null 2>&1; then
                             DB_IMPORTED=true
                         fi
                         unset PGPASSWORD
@@ -496,9 +511,13 @@ do_restore() {
             elif grep -qiE "mysql|mariadb" "$PANEL_ENV" 2>/dev/null; then
                 ui_spinner_start "Importing MySQL/MariaDB database..."
                 local DB_CONT
-                DB_CONT=$(docker ps --format '{{.Names}}' | grep -iE "mysql|mariadb" | head -1)
+                # FIX: precise compose-name match first (MRM-060), loose grep
+                # only as fallback — avoids picking an unrelated mysql container
+                DB_CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(pasarguard-)?(mysql|mariadb)[-_]?[0-9]*$' | head -1)
+                [ -z "$DB_CONT" ] && DB_CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "mysql|mariadb" | head -1)
                 if [ -z "$DB_CONT" ]; then
-                    DB_CONT=$(docker ps -a --format '{{.Names}}' | grep -iE "mysql|mariadb" | head -1)
+                    DB_CONT=$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^(pasarguard-)?(mysql|mariadb)[-_]?[0-9]*$' | head -1)
+                    [ -z "$DB_CONT" ] && DB_CONT=$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -iE "mysql|mariadb" | head -1)
                     [ -n "$DB_CONT" ] && docker start "$DB_CONT" >/dev/null 2>&1
                 fi
                 # NEW SERVER FIX: If no mysql container exists at all (brand new server),
@@ -507,7 +526,8 @@ do_restore() {
                     log_backup "INFO" "No MySQL container found - starting from restored compose (new server)"
                     run_compose_file "$PANEL_COMPOSE_FILE" up -d mysql mariadb db >/dev/null 2>&1 || true
                     sleep 3
-                    DB_CONT=$(docker ps --format '{{.Names}}' | grep -iE "mysql|mariadb" | head -1)
+                    DB_CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(pasarguard-)?(mysql|mariadb)[-_]?[0-9]*$' | head -1)
+                    [ -z "$DB_CONT" ] && DB_CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "mysql|mariadb" | head -1)
                     if [ -n "$DB_CONT" ]; then
                         log_backup "SUCCESS" "MySQL container created from compose: $DB_CONT"
                     fi

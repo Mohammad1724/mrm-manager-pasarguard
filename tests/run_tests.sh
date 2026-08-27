@@ -248,6 +248,34 @@ else
     fail "WORK_DIR trap missing safety guard"
 fi
 
+# Check restore_core.sh uses precise PG container match (MRM-060)
+if grep -qF "^(pasarguard-)?(postgresql" "$PROJECT_DIR/manager/backup/restore_core.sh"; then
+    pass "restore_core.sh uses precise compose-name match for PG container"
+else
+    fail "restore_core.sh missing precise PG container match"
+fi
+
+# Check restore_core.sh uses precise MySQL container match (MRM-060)
+if grep -qF "^(pasarguard-)?(mysql" "$PROJECT_DIR/manager/backup/restore_core.sh"; then
+    pass "restore_core.sh uses precise compose-name match for MySQL container"
+else
+    fail "restore_core.sh missing precise MySQL container match"
+fi
+
+# Check restore_core.sh aborts psql import on SQL error (MRM-061)
+if grep -qF "ON_ERROR_STOP=1" "$PROJECT_DIR/manager/backup/restore_core.sh"; then
+    pass "restore_core.sh aborts psql import on error (ON_ERROR_STOP=1)"
+else
+    fail "restore_core.sh missing ON_ERROR_STOP on psql import"
+fi
+
+# Check restore_core.sh excludes pre_restore safety backups from restore list (MRM-062)
+if grep -qF "grep -v '/pre_restore_'" "$PROJECT_DIR/manager/backup/restore_core.sh"; then
+    pass "restore_core.sh excludes pre_restore_* from restore list"
+else
+    fail "restore_core.sh still lists pre_restore_* as restorable"
+fi
+
 # Check post_restore.sh validates domains
 if grep -q "Skipping invalid domain" "$PROJECT_DIR/manager/backup/post_restore.sh"; then
     pass "post_restore.sh validates domain names"
