@@ -395,6 +395,41 @@ else
     pass "xray.sh has no orphaned comment"
 fi
 
+# Check monitor.sh loads monitor.conf at runtime (MRM-079)
+if grep -qF 'source "$MONITOR_CONFIG"' "$PROJECT_DIR/manager/monitor.sh"; then
+    pass "monitor.sh reads monitor.conf (was write-only)"
+else
+    fail "monitor.sh never reads monitor.conf"
+fi
+
+# Check monitor.sh honors config cooldown + ENABLED (MRM-079)
+if grep -qF 'COOLDOWN_SECONDS:-3600' "$PROJECT_DIR/manager/monitor.sh" && grep -qF 'ENABLED:-true' "$PROJECT_DIR/manager/monitor.sh"; then
+    pass "monitor.sh honors COOLDOWN_SECONDS and ENABLED"
+else
+    fail "monitor.sh hardcodes cooldown / ignores ENABLED"
+fi
+
+# Check monitor.sh detects panel via pasarguard/panel image (MRM-080)
+if grep -qF '^pasarguard\/panel' "$PROJECT_DIR/manager/monitor.sh"; then
+    pass "monitor.sh matches panel image precisely (no false UP)"
+else
+    fail "monitor.sh uses loose 'grep pasarguard' for panel status"
+fi
+
+# Check monitor.sh anchored TG greps + http(s) proxy (MRM-081)
+if grep -qF 'grep "^TG_TOKEN="' "$PROJECT_DIR/manager/monitor.sh" && grep -qF -- '--proxy" "$PROXY"' "$PROJECT_DIR/manager/monitor.sh"; then
+    pass "monitor.sh telegram copy anchored + http(s) proxy"
+else
+    fail "monitor.sh telegram copy still has MRM-072/074 class bugs"
+fi
+
+# Check monitor.sh retries alert without parse_mode (MRM-082)
+if [ "$(grep -cF -- '--data-urlencode "text=$MESSAGE"' "$PROJECT_DIR/manager/monitor.sh")" -ge 2 ]; then
+    pass "monitor.sh retries alert without parse_mode"
+else
+    fail "monitor.sh has no plain-text retry for Markdown 400"
+fi
+
 # Check post_restore.sh validates domains
 if grep -q "Skipping invalid domain" "$PROJECT_DIR/manager/backup/post_restore.sh"; then
     pass "post_restore.sh validates domain names"

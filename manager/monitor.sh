@@ -47,6 +47,9 @@ build_telegram_proxy_args() {
         else
             printf '%s\n' "--socks5-hostname" "$PROXY_STR"
         fi
+    elif [[ "$PROXY" == http://* || "$PROXY" == https://* ]]; then
+        # FIX: http(s) proxies were silently ignored (same as MRM-074) — MRM-081
+        printf '%s\n' "--proxy" "$PROXY"
     fi
 }
 
@@ -55,9 +58,11 @@ send_telegram_alert() {
     local TK CH PROXY RESULT
     local -a CURL_PROXY_ARGS=()
     if [ ! -f "$TG_CONFIG" ]; then return 1; fi
-    TK=$(grep "TG_TOKEN" "$TG_CONFIG" 2>/dev/null | cut -d'=' -f2 | tr -d '"')
-    CH=$(grep "TG_CHAT" "$TG_CONFIG" 2>/dev/null | cut -d'=' -f2 | tr -d '"')
-    PROXY=$(grep "TG_PROXY" "$TG_CONFIG" 2>/dev/null | cut -d'=' -f2 | tr -d '"')
+    # FIX: anchor keys so comments/similar keys can never shadow the real
+    # values (same as MRM-072 in telegram.sh) — MRM-081
+    TK=$(grep "^TG_TOKEN=" "$TG_CONFIG" 2>/dev/null | cut -d'=' -f2 | tr -d '"')
+    CH=$(grep "^TG_CHAT=" "$TG_CONFIG" 2>/dev/null | cut -d'=' -f2 | tr -d '"')
+    PROXY=$(grep "^TG_PROXY=" "$TG_CONFIG" 2>/dev/null | cut -d'=' -f2 | tr -d '"')
     mapfile -t CURL_PROXY_ARGS < <(build_telegram_proxy_args "$PROXY")
     if [ -z "$TK" ] || [ -z "$CH" ]; then return 1; fi
 
@@ -65,7 +70,14 @@ send_telegram_alert() {
         --data-urlencode "chat_id=$CH" \
         --data-urlencode "text=$MESSAGE" \
         --data-urlencode "parse_mode=Markdown" 2>&1)
-    
+    if ! echo "$RESULT" | grep -q '"ok":true'; then
+        # FIX: Markdown parsing can fail on _ / * / [ in hostnames or process
+        # output (Telegram 400 "can't parse entities") and the alert would be
+        # lost — retry as plain text (MRM-082)
+        RESULT=$(curl -4 -s -m 30 "${CURL_PROXY_ARGS[@]}" -X POST "https://api.telegram.org/bot$TK/sendMessage" \
+            --data-urlencode "chat_id=$CH" \
+            --data-urlencode "text=$MESSAGE" 2>&1)
+    fi
     if echo "$RESULT" | grep -q '"ok":true'; then
         log_monitor "INFO" "Alert sent: $(echo "$MESSAGE" | head -1)"
         return 0
@@ -90,7 +102,12 @@ get_panel_status() {
             echo "down"
         fi
     else
-        if docker ps --format '{{.Names}}' 2>/dev/null | grep -qiE "pasarguard"; then
+        # FIX: match the official pasarguard/panel image (MRM-080) — a loose
+        # "grep -i pasarguard" counts pasarguard-node-1/exporter etc. as the
+        # panel AND never fires the panel-down alert (same class as MRM-045)
+        local PANEL_ID
+        PANEL_ID="$(docker ps --format '{{.ID}}|{{.Image}}' 2>/dev/null | awk -F'|' '$2 ~ /^pasarguard\/panel(:|$)/ {print $1; exit}')"
+        if [ -n "$PANEL_ID" ]; then
             echo "up"
         else
             echo "down"
@@ -128,7 +145,8 @@ get_ram_info() {
 
 should_alert() {
     local ALERT_TYPE="$1"
-    local COOLDOWN=3600  # 1 hour cooldown per alert type
+    # FIX: cooldown from monitor.conf (was hardcoded 3600) — MRM-079
+    local COOLDOWN="${COOLDOWN_SECONDS:-3600}"
     local STATE_FILE="$MONITOR_STATE/$ALERT_TYPE"
     mkdir -p "$MONITOR_STATE"
     
@@ -153,6 +171,16 @@ clear_alert_state() {
 check_and_alert() {
     local PANEL_STATUS DISK_USAGE CPU_USAGE RAM_PERCENT
     local ALERTS=()
+    # FIX: monitor.conf used to be write-only — its values had NO effect.
+    # Load it now so ENABLED / thresholds / cooldown actually apply (MRM-079)
+    if [ -f "$MONITOR_CONFIG" ]; then
+        # shellcheck source=/dev/null
+        source "$MONITOR_CONFIG" 2>/dev/null
+    fi
+    if [ "${ENABLED:-true}" != "true" ]; then
+        log_monitor "INFO" "Monitor disabled by config (ENABLED=false)"
+        return 0
+    fi
     local HOST=$(hostname)
     local IP=$(curl -4 -s --connect-timeout 5 icanhazip.com 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
 
@@ -164,7 +192,7 @@ check_and_alert() {
     log_monitor "INFO" "Check - Panel:$PANEL_STATUS Disk:${DISK_USAGE}% CPU:${CPU_USAGE}% RAM:${RAM_PERCENT}%"
 
     # 1. Panel Down
-    if [ "$PANEL_STATUS" == "down" ]; then
+    if [ "${CHECK_PANEL_DOWN:-true}" = "true" ] && [ "$PANEL_STATUS" == "down" ]; then
         if should_alert "panel_down"; then
             local MSG="🚨 *MRM ALERT - PANEL DOWN*
 🖥 Host: $HOST
@@ -196,8 +224,8 @@ Panel container is not running. MRM will try to restart."
         clear_alert_state "panel_down"
     fi
 
-    # 2. Disk Full >85% warn, >90% critical
-    if [ "$DISK_USAGE" -ge 90 ] 2>/dev/null; then
+    # 2. Disk Full >85% warn, >90% critical (thresholds from monitor.conf)
+    if [ "${CHECK_DISK:-true}" = "true" ] && [ "$DISK_USAGE" -ge "${DISK_THRESHOLD_CRITICAL:-90}" ] 2>/dev/null; then
         if should_alert "disk_critical"; then
             local FREE=$(get_disk_free)
             local MSG="🚨 *MRM ALERT - DISK CRITICAL*
@@ -213,7 +241,7 @@ Commands:
 • journalctl --vacuum-time=7d"
             send_telegram_alert "$MSG"
         fi
-    elif [ "$DISK_USAGE" -ge 85 ] 2>/dev/null; then
+    elif [ "${CHECK_DISK:-true}" = "true" ] && [ "$DISK_USAGE" -ge "${DISK_THRESHOLD_WARN:-85}" ] 2>/dev/null; then
         if should_alert "disk_warn"; then
             local FREE=$(get_disk_free)
             local MSG="⚠️ *MRM ALERT - DISK HIGH*
@@ -228,8 +256,8 @@ Commands:
         clear_alert_state "disk_warn"
     fi
 
-    # 3. CPU >90%
-    if [ "$CPU_USAGE" -ge 90 ] 2>/dev/null; then
+    # 3. CPU >90% (threshold from monitor.conf)
+    if [ "${CHECK_CPU:-true}" = "true" ] && [ "$CPU_USAGE" -ge "${CPU_THRESHOLD:-90}" ] 2>/dev/null; then
         if should_alert "cpu_high"; then
             local LOAD=$(cat /proc/loadavg 2>/dev/null | awk '{print $1" "$2" "$3}')
             local TOP_PROC=$(ps aux --sort=-%cpu 2>/dev/null | head -n 6 | tail -n 5)
@@ -247,8 +275,8 @@ Top processes:
         clear_alert_state "cpu_high"
     fi
 
-    # 4. RAM >90%
-    if [ "$RAM_PERCENT" -ge 90 ] 2>/dev/null; then
+    # 4. RAM >90% (threshold from monitor.conf)
+    if [ "${CHECK_RAM:-true}" = "true" ] && [ "$RAM_PERCENT" -ge "${RAM_THRESHOLD:-90}" ] 2>/dev/null; then
         if should_alert "ram_high"; then
             local RAM_INFO=$(get_ram_info)
             local MSG="🧠 *MRM ALERT - RAM HIGH*
@@ -363,7 +391,7 @@ test_alerts() {
 🧠 RAM: ${RAM}%
 ⏰ $(date '+%Y-%m-%d %H:%M:%S')
 ✅ Alert system is working!
-Version: $(get_mrm_version 2>/dev/null || echo v1.1.14)
+Version: $(get_mrm_version 2>/dev/null || echo v1.1.15)
 "
     if send_telegram_alert "$MSG"; then
         ui_success "Test alert sent to Telegram!"
