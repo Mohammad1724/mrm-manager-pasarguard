@@ -184,6 +184,3 @@ mrm_ensure_xray_core() {
     _xerr "  3. Download manually and place at: $XRAY_BIN"
     return 1
 }
-
-# Pick which DB file to restore from a backup root. Prints "TYPE|PATH"
-# (sqlite MUST be checked before *.sql - "db.sqlite3" matches "*db.sql*"!)

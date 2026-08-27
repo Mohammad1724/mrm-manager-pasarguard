@@ -367,6 +367,34 @@ else
     fail "telegram.sh silently ignores http(s) proxies"
 fi
 
+# Check smart_fix.sh never assumes SSH port 22 (MRM-076)
+if grep -qF 'SSH_PORT=22' "$PROJECT_DIR/manager/backup/smart_fix.sh"; then
+    fail "smart_fix.sh assumes SSH port 22 (lockout risk)"
+else
+    pass "smart_fix.sh does not assume SSH port 22"
+fi
+
+# Check smart_fix.sh reports nginx fix only on real change (MRM-077)
+if grep -qF 'Nginx config left unchanged' "$PROJECT_DIR/manager/backup/smart_fix.sh"; then
+    pass "smart_fix.sh reports nginx no-op honestly"
+else
+    fail "smart_fix.sh claims nginx repaired even when no change"
+fi
+
+# Check smart_fix.sh verifies node certs exist before success (MRM-077)
+if grep -qF 'generation FAILED' "$PROJECT_DIR/manager/backup/smart_fix.sh"; then
+    pass "smart_fix.sh checks openssl output before claiming certs"
+else
+    fail "smart_fix.sh claims certs generated on openssl failure"
+fi
+
+# Check xray.sh has no orphaned documentation comment (MRM-078)
+if grep -qF 'Pick which DB file to restore' "$PROJECT_DIR/manager/backup/xray.sh"; then
+    fail "xray.sh contains orphaned mrm_pick_db_restore comment"
+else
+    pass "xray.sh has no orphaned comment"
+fi
+
 # Check post_restore.sh validates domains
 if grep -q "Skipping invalid domain" "$PROJECT_DIR/manager/backup/post_restore.sh"; then
     pass "post_restore.sh validates domain names"
