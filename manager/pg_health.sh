@@ -71,6 +71,10 @@ ph_ca_check() {
                 ui_error "سرتیفیکت self-signed است ولی UVICORN_SSL_CA_TYPE=public است → پنل بالا نمیآید (main.py)"
                 ui_warning "راهحل: UVICORN_SSL_CA_TYPE=private در .env"
             fi
+        elif [ -z "$ISSUER" ]; then
+            # FIX: unreadable/corrupt cert or missing openssl — otherwise this
+            # was reported as "issued by a public CA" (false success) (MRM-086)
+            ui_warning "نتوانستم سرتیفیکت را بخوانم (فایل خراب یا openssl موجود نیست): $CERT"
         else
             ui_success "سرتیفیکت توسط یک CA عمومی صادر شده ✓ (CA_TYPE=$CA_TYPE)"
         fi
@@ -90,7 +94,9 @@ ph_job_report() {
         KEY="${ENTRY%%:*}"; REST="${ENTRY#*:}"; DEF="${REST%%:*}"; DESC="${REST#*:}"
         VAL="$(ph_env_get "$KEY")"
         if [ -z "$VAL" ]; then
-            printf '  %b✘ %-45s %s\n' "${YELLOW}" "$KEY (تعریف نشده — پیشفرض $DEF)" "$DESC"
+            # FIX: a standard official install has NO JOB_* keys in .env and
+            # uses the config.py defaults — that is HEALTHY, not a failure (MRM-085)
+            printf '  %b— %-45s %s\n' "${CYAN}" "$KEY (پیشفرض رسمی $DEF)" "$DESC"
         elif [ "$VAL" != "$DEF" ]; then
             printf '  %b⚠ %-45s %s\n' "${YELLOW}" "$KEY=$VAL (پیشفرض $DEF)" "$DESC"
         else
@@ -151,7 +157,10 @@ ph_nodes_report() {
             local HOST PORT USER PASS DB PGC SQL
             IFS='|' read -r _ HOST PORT USER PASS DB <<< "$PROBE"
             PASS="$(mrm_b64dec "$PASS" 2>/dev/null)"
-            PGC="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE 'postgres|timescale' | head -1)"
+            # FIX: precise compose-name match first — bare grep could pick an
+            # unrelated container (logs-postgres-1, postgres_exporter…) (MRM-083)
+            PGC="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(pasarguard-)?(postgresql|timescaledb|postgres|timescale)[-_]?[0-9]*$' | head -1)"
+            [ -z "$PGC" ] && PGC="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE 'postgres|timescale' | head -1)"
             [ -z "$PGC" ] && { ui_error "کانتینر PostgreSQL پیدا نشد"; return 1; }
             SQL="SELECT id,name,address,port,status,keep_alive,default_timeout,internal_timeout,connection_type,COALESCE(node_version,'-'),COALESCE(xray_version,'-'),COALESCE(substr(message,1,80),'') FROM nodes ORDER BY id;"
             RAW="$(docker exec -e PGPASSWORD="$PASS" "$PGC" psql -w -A -t -F'|' -h "$HOST" -p "$PORT" -U "$USER" -d "$DB" -c "$SQL" 2>/dev/null)"
@@ -163,7 +172,9 @@ ph_nodes_report() {
             local HOST PORT USER PASS DB MYSQLC SQL
             IFS='|' read -r _ HOST PORT USER PASS DB <<< "$PROBE"
             PASS="$(mrm_b64dec "$PASS" 2>/dev/null)"
-            MYSQLC="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE 'mysql|mariadb' | head -1)"
+            # FIX: precise compose-name match first (MRM-083)
+            MYSQLC="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(pasarguard-)?(mysql|mariadb)[-_]?[0-9]*$' | head -1)"
+            [ -z "$MYSQLC" ] && MYSQLC="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE 'mysql|mariadb' | head -1)"
             [ -z "$MYSQLC" ] && { ui_error "کانتینر MySQL پیدا نشد"; return 1; }
             SQL="SELECT id,name,address,port,status,keep_alive,default_timeout,internal_timeout,connection_type,COALESCE(node_version,'-'),COALESCE(xray_version,'-'),COALESCE(SUBSTRING(message,1,80),'') FROM nodes ORDER BY id;"
             RAW="$(docker exec -e MYSQL_PWD="$PASS" "$MYSQLC" mysql -B -N -h"$HOST" -P"$PORT" -u"$USER" "$DB" -e "$SQL" 2>/dev/null)"
@@ -222,8 +233,10 @@ ph_temp_key() {
         return 1
     fi
     ui_info "Container: ${CONT:0:12}…"
-    docker exec -it "$CONT" pasarguard-cli generate-temp-key 2>/dev/null \
-        || docker exec -it "$CONT" python /code/pasarguard-cli.py generate-temp-key 2>/dev/null \
+    # FIX: -t requires a TTY on stdin; generate-temp-key only prints output
+    # (no interactive prompt) so -i is enough and works in non-TTY runs (MRM-084)
+    docker exec -i "$CONT" pasarguard-cli generate-temp-key 2>/dev/null \
+        || docker exec -i "$CONT" python /code/pasarguard-cli.py generate-temp-key 2>/dev/null \
         || ui_error "اجرای CLI در کانتینر ممکن نشد"
     echo ""
     ui_warning "این کلید ۵ دقیقه اعتبار دارد و یکبارمصرف است (برای ورود Owner از صفحه لاگین)"
@@ -233,7 +246,7 @@ ph_temp_key() {
 # ─── Full report ────────────────────────────────────────────────────────────
 ph_diagnose() {
     clear
-    ui_header "PASARGUARD HEALTH v${MRM_VERSION:-1.1.15}"
+    ui_header "PASARGUARD HEALTH v${MRM_VERSION:-1.1.16}"
     detect_active_panel > /dev/null 2>&1 || true
     echo -e "  ${BLUE}Panel:${NC} $(basename "$PANEL_DIR" 2>/dev/null) | Env: $PANEL_ENV"
     echo ""

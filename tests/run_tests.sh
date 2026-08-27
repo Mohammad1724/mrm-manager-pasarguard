@@ -430,6 +430,34 @@ else
     fail "monitor.sh has no plain-text retry for Markdown 400"
 fi
 
+# Check pg_health.sh uses precise DB container match (MRM-083)
+if grep -qF '^(pasarguard-)?(postgresql' "$PROJECT_DIR/manager/pg_health.sh" && grep -qF '^(pasarguard-)?(mysql' "$PROJECT_DIR/manager/pg_health.sh"; then
+    pass "pg_health.sh uses precise DB container match"
+else
+    fail "pg_health.sh uses loose grep for DB containers"
+fi
+
+# Check pg_health.sh temp-key uses -i not -it (MRM-084)
+if grep -q 'docker exec -it' "$PROJECT_DIR/manager/pg_health.sh"; then
+    fail "pg_health.sh temp-key still uses -it (fails without TTY)"
+else
+    pass "pg_health.sh temp-key uses -i (TTY not required)"
+fi
+
+# Check pg_health.sh does not mark official defaults as failures (MRM-085)
+if grep -qF 'پیشفرض رسمی' "$PROJECT_DIR/manager/pg_health.sh"; then
+    pass "pg_health.sh marks undefined JOB_* as official default (not ✘)"
+else
+    fail "pg_health.sh reports undefined JOB_* as failure"
+fi
+
+# Check pg_health.sh handles unreadable cert honestly (MRM-086)
+if grep -qF 'نتوانستم سرتیفیکت را بخوانم' "$PROJECT_DIR/manager/pg_health.sh"; then
+    pass "pg_health.sh warns on unreadable cert (no false 'public CA')"
+else
+    fail "pg_health.sh claims 'issued by public CA' on unreadable cert"
+fi
+
 # Check post_restore.sh validates domains
 if grep -q "Skipping invalid domain" "$PROJECT_DIR/manager/backup/post_restore.sh"; then
     pass "post_restore.sh validates domain names"
