@@ -156,9 +156,11 @@ set_subscription_url_prefix() {
     local SUB_PORT=""
 
     if [ -f "$DOMAIN_SEP_CONF" ]; then
-        # Get all domains
+        # Get all domains IN FILE ORDER — first is admin, second is sub.
+        # FIX: sort -u reordered them alphabetically and could swap
+        # admin/sub, writing the wrong subscription prefix (MRM-065)
         local ALL_DOMAINS
-        ALL_DOMAINS=$(grep -oP 'server_name\s+\K[^;]+' "$DOMAIN_SEP_CONF" 2>/dev/null | tr -d ' ' | sort -u)
+        ALL_DOMAINS=$(grep -oP 'server_name\s+\K[^;]+' "$DOMAIN_SEP_CONF" 2>/dev/null | tr -d ' ')
 
         # First domain is typically admin, second is sub
         ADMIN_DOMAIN=$(echo "$ALL_DOMAINS" | head -1)
@@ -192,14 +194,14 @@ set_subscription_url_prefix() {
     else
         # No domain separator - check if panel has SSL cert
         local PANEL_SSL
-        PANEL_SSL=$(grep -oP 'UVICORN_SSL_CERTFILE="\K[^"]+' "$PANEL_ENV" 2>/dev/null)
+        PANEL_SSL=$(grep -oP 'UVICORN_SSL_CERTFILE\s*=\s*"?\K[^"]+' "$PANEL_ENV" 2>/dev/null)
         if [ -n "$PANEL_SSL" ]; then
             # Panel has SSL - extract domain from cert path
             local CERT_DOMAIN
             CERT_DOMAIN=$(echo "$PANEL_SSL" | grep -oP '/certs/\K[^/]+')
             if [ -n "$CERT_DOMAIN" ]; then
                 local PANEL_PORT
-                PANEL_PORT=$(grep -oP 'UVICORN_PORT=\K[0-9]+' "$PANEL_ENV" 2>/dev/null)
+                PANEL_PORT=$(grep -oP 'UVICORN_PORT\s*=\s*\K[0-9]+' "$PANEL_ENV" 2>/dev/null)
                 [ -z "$PANEL_PORT" ] && PANEL_PORT="7431"
                 if [ "$PANEL_PORT" = "443" ]; then
                     SUB_URL="https://$CERT_DOMAIN"
@@ -215,7 +217,7 @@ set_subscription_url_prefix() {
         local SERVER_IP
         SERVER_IP=$(curl -4 -s --connect-timeout 5 icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}')
         local PANEL_PORT
-        PANEL_PORT=$(grep -oP 'UVICORN_PORT=\K[0-9]+' "$PANEL_ENV" 2>/dev/null)
+        PANEL_PORT=$(grep -oP 'UVICORN_PORT\s*=\s*\K[0-9]+' "$PANEL_ENV" 2>/dev/null)
         [ -z "$PANEL_PORT" ] && PANEL_PORT="7431"
         SUB_URL="https://$SERVER_IP:$PANEL_PORT"
         log_msg "${YELLOW}⚠️  Using server IP as fallback${NC}"
@@ -227,12 +229,14 @@ set_subscription_url_prefix() {
     # here would be a no-op, so we update the panel DB instead.
     if _apply_subscription_url_db "$SUB_URL"; then
         log_msg "${GREEN}✅ Subscription URL prefix updated in panel DB: $SUB_URL${NC}"
+        return 0
     else
         log_msg "${YELLOW}⚠️  Could not update the panel DB automatically.${NC}"
         log_msg "${YELLOW}    Set it manually: Dashboard → Settings → Subscription → URL prefix = $SUB_URL${NC}"
+        # FIX: propagate failure so main() reports this step as failed
+        # instead of printing "All 5 steps completed successfully" (MRM-063)
+        return 1
     fi
-
-    return 0
 }
 
 # Apply the subscription URL prefix straight into the panel DB (settings table,
@@ -254,7 +258,10 @@ _apply_subscription_url_db() {
             local HOST PORT USER PASS DB PGC SQL
             IFS='|' read -r _ HOST PORT USER PASS DB <<< "$PROBE"
             PASS="$(mrm_b64dec "$PASS" 2>/dev/null)"
-            PGC="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE 'postgres|timescale' | head -1)"
+            # FIX: precise compose-name match first (MRM-064); bare grep could
+            # pick an unrelated postgres container and update the WRONG DB
+            PGC="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(pasarguard-)?(postgresql|timescaledb|postgres|timescale)[-_]?[0-9]*$' | head -1)"
+            [ -z "$PGC" ] && PGC="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE 'postgres|timescale' | head -1)"
             [ -z "$PGC" ] && return 1
             SQL="UPDATE settings SET subscription = (jsonb_set(subscription::jsonb, '{url_prefix}', to_jsonb(:'url_prefix'::text), true))::json WHERE id = (SELECT id FROM settings ORDER BY id LIMIT 1);"
             # Attempt 1: exactly where the panel connects (may be a pooler like pgbouncer)
@@ -271,7 +278,9 @@ _apply_subscription_url_db() {
             local HOST PORT USER PASS DB MYSQLC ESC
             IFS='|' read -r _ HOST PORT USER PASS DB <<< "$PROBE"
             PASS="$(mrm_b64dec "$PASS" 2>/dev/null)"
-            MYSQLC="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE 'mysql|mariadb' | head -1)"
+            # FIX: precise compose-name match first (MRM-064)
+            MYSQLC="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(pasarguard-)?(mysql|mariadb)[-_]?[0-9]*$' | head -1)"
+            [ -z "$MYSQLC" ] && MYSQLC="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE 'mysql|mariadb' | head -1)"
             [ -z "$MYSQLC" ] && return 1
             ESC="${SUB_URL//\'/\'\'}"
             # MySQL forbids selecting the same table in a subquery — nest it.

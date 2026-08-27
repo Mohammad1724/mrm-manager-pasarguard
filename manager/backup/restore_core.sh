@@ -642,7 +642,9 @@ do_restore() {
     if declare -f main >/dev/null 2>&1; then
         echo ""
         echo -e "${CYAN}🔧 Running post-restore auto-fix...${NC}"
-        main 2>&1 | tee -a /var/log/mrm-post-restore.log
+        # FIX: main() already appends to /var/log/mrm-post-restore.log via
+        # log_msg; the old `tee -a` duplicated every line (MRM-067)
+        main 2>&1
         echo -e "${GREEN}✔ Post-restore auto-fix completed${NC}"
         log_backup "SUCCESS" "Post-restore auto-fix executed"
     else

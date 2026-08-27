@@ -276,6 +276,41 @@ else
     fail "restore_core.sh still lists pre_restore_* as restorable"
 fi
 
+# Check post_restore.sh propagates DB-update failure to main (MRM-063)
+if grep -A5 "Could not update the panel DB automatically" "$PROJECT_DIR/manager/backup/post_restore.sh" | grep -qF "return 1"; then
+    pass "post_restore.sh propagates subscription DB failure (return 1)"
+else
+    fail "post_restore.sh swallows subscription DB failure"
+fi
+
+# Check post_restore.sh uses precise DB container match (MRM-064)
+if grep -qF "^(pasarguard-)?(postgresql" "$PROJECT_DIR/manager/backup/post_restore.sh" && grep -qF "^(pasarguard-)?(mysql" "$PROJECT_DIR/manager/backup/post_restore.sh"; then
+    pass "post_restore.sh uses precise DB container match"
+else
+    fail "post_restore.sh missing precise DB container match"
+fi
+
+# Check post_restore.sh keeps domain order for admin/sub (MRM-065)
+if grep "ALL_DOMAINS=" "$PROJECT_DIR/manager/backup/post_restore.sh" | grep -q "sort -u"; then
+    fail "post_restore.sh still sorts domains (admin/sub order lost)"
+else
+    pass "post_restore.sh preserves domain order for admin/sub"
+fi
+
+# Check post_restore.sh tolerates spaced UVICORN_* format (MRM-066)
+if grep -qF 'UVICORN_PORT\s*=\s*\K[0-9]+' "$PROJECT_DIR/manager/backup/post_restore.sh"; then
+    pass "post_restore.sh matches spaced UVICORN_PORT format"
+else
+    fail "post_restore.sh UVICORN_PORT pattern is space-sensitive"
+fi
+
+# Check restore_core.sh does not duplicate post-restore log lines via tee (MRM-067)
+if grep -qF "main 2>&1 | tee -a" "$PROJECT_DIR/manager/backup/restore_core.sh"; then
+    fail "restore_core.sh still uses tee -a (duplicate log lines)"
+else
+    pass "restore_core.sh calls main without tee -a (no duplicate log)"
+fi
+
 # Check post_restore.sh validates domains
 if grep -q "Skipping invalid domain" "$PROJECT_DIR/manager/backup/post_restore.sh"; then
     pass "post_restore.sh validates domain names"
