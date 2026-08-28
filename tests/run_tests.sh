@@ -569,6 +569,45 @@ else
     fail "manual-edit revert still checks -f on mktemp file"
 fi
 
+# Check offline.sh feeds "y" FIRST on existing-install path (MRM-096)
+OFF="$PROJECT_DIR/manager/offline.sh"
+EXIST_BLOCK=$(sed -n '/^    if \[ -d "\/opt\/pasarguard" \]; then/,/^    else$/p' "$OFF" 2>/dev/null)
+FIRST_RESP=$(printf '%s\n' "$EXIST_BLOCK" | grep 'RESPONSES+=' | head -1)
+if [ -n "$FIRST_RESP" ] && echo "$FIRST_RESP" | grep -q 'RESPONSES+="y\\n"'; then
+    pass "offline.sh existing-path answers y BEFORE mirror n's (MRM-096)"
+else
+    fail "offline.sh existing-path RESPONSES order wrong (missing leading y)"
+fi
+
+# Check offline.sh restore removes stale MRM sources.list (MRM-097)
+if grep -q 'Managed by MRM' "$OFF" && grep -q 'rm -f /etc/apt/sources.list' "$OFF" \
+   && grep -q 'elif \[ -f /etc/apt/sources.list \]' "$OFF"; then
+    pass "offline.sh restore cleans stale MRM sources.list (MRM-097)"
+else
+    fail "offline.sh restore does not remove stale MRM sources.list"
+fi
+
+# Check offline.sh apt mirror reader extracts real URLs (MRM-098)
+if grep -qF 'https?://[^"[:space:]]+' "$OFF" && ! grep -qF 'awk '\''$1=="deb"' "$OFF"; then
+    pass "offline_get_current_apt_mirror extracts http(s) URLs (MRM-098)"
+else
+    fail "offline_get_current_apt_mirror still uses field-index awk"
+fi
+
+# Check offline.sh version literals (MRM-099)
+if grep -q 'v1.0.0' "$OFF"; then
+    fail "offline.sh still has v1.0.0 literals"
+else
+    pass "offline.sh has no stale v1.0.0 literals (MRM-099)"
+fi
+OFF_HDR=$(grep -oP 'OFFLINE / IRAN MODE v\K[0-9.]+' "$OFF" 2>/dev/null | head -1)
+OFF_VER=$(cat "$PROJECT_DIR/VERSION" 2>/dev/null | head -1)
+if [ -n "$OFF_HDR" ] && [ "$OFF_HDR" = "$OFF_VER" ]; then
+    pass "offline.sh header version = $OFF_VER (matches VERSION)"
+else
+    fail "offline.sh header version [$OFF_HDR] != VERSION [$OFF_VER]"
+fi
+
 # Check post_restore.sh validates domains
 if grep -q "Skipping invalid domain" "$PROJECT_DIR/manager/backup/post_restore.sh"; then
     pass "post_restore.sh validates domain names"

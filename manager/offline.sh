@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==========================================
-# OFFLINE / IRAN MODE v1.0.0
+# OFFLINE / IRAN MODE v1.1.21
 # Fixed: safe handling of sources.list.d, preserve 3rd party repos
 # ==========================================
 
@@ -55,21 +55,24 @@ offline_get_codename() {
 }
 
 offline_get_current_apt_mirror() {
-    local SOURCE_FILE MIRROR=""
-    for SOURCE_FILE in /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list /etc/apt/sources.list; do
-        [ -f "$SOURCE_FILE" ] || continue
-        case "$SOURCE_FILE" in
-            *.sources)
-                MIRROR=$(awk '/^URIs:/{print $2; exit}' "$SOURCE_FILE" 2>/dev/null)
-                ;;
-            *)
-                MIRROR=$(awk '$1=="deb" && $2 !~ /^\[/ {print $2; exit} $1=="deb" && $2 ~ /^\[/ {print $3; exit}' "$SOURCE_FILE" 2>/dev/null)
-                ;;
-        esac
-        if [ -n "$MIRROR" ]; then
-            printf '%s\n' "$MIRROR"
-            return 0
-        fi
+    local SOURCE_FILE MIRROR="" PASS
+    # FIX (MRM-098): extract the first http(s) URL (handles
+    # "deb [arch=… signed-by=…] URL" lines and quoted .sources URIs: — the old
+    # awk field indexes returned "signed-by=…" or a docker URL). Two passes
+    # prefer real Ubuntu archive files over third-party .d files (docker/
+    # nginx lists used to be reported as the "current APT mirror").
+    for PASS in 1 2; do
+        for SOURCE_FILE in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; do
+            [ -f "$SOURCE_FILE" ] || continue
+            if [ "$PASS" = 1 ] && ! grep -qiE "ubuntu\.com|archive\.ubuntu|security\.ubuntu|ports\.ubuntu" "$SOURCE_FILE" 2>/dev/null; then
+                continue
+            fi
+            MIRROR="$(grep -oP 'https?://[^"[:space:]]+' "$SOURCE_FILE" 2>/dev/null | head -1)"
+            if [ -n "$MIRROR" ]; then
+                printf '%s\n' "$MIRROR"
+                return 0
+            fi
+        done
     done
     return 1
 }
@@ -178,6 +181,11 @@ offline_restore_backup_dir() {
     mkdir -p /etc/apt/sources.list.d /etc/docker
     if [ -f "$BACKUP_DIR/apt/sources.list" ]; then
         cp "$BACKUP_DIR/apt/sources.list" /etc/apt/sources.list || return 1
+    elif [ -f /etc/apt/sources.list ] && grep -q "Managed by MRM" /etc/apt/sources.list 2>/dev/null; then
+        # FIX (MRM-097): the backup has no sources.list (e.g. Ubuntu 24.04
+        # default layout uses only .d/ubuntu.sources) — remove the stale
+        # MRM-managed file so the restored official sources are not shadowed.
+        rm -f /etc/apt/sources.list 2>/dev/null || true
     fi
     # SECURITY: Backup third-party repos before destructive rm
     local THIRD_PARTY_BACKUP="/tmp/mrm-third-party-backup-$(date +%s)"
@@ -243,7 +251,7 @@ offline_apply_apt_mirror() {
     # But to stay safe, if we have ubuntu.com in main sources.list, we will overwrite it
 
     cat > /etc/apt/sources.list <<EOF
-# Managed by MRM Iran/Offline Mode v1.0.0
+# Managed by MRM Iran/Offline Mode v1.1.21
 deb ${MIRROR} ${CODENAME} main restricted universe multiverse
 deb ${MIRROR} ${CODENAME}-updates main restricted universe multiverse
 deb ${MIRROR} ${CODENAME}-backports main restricted universe multiverse
@@ -307,7 +315,7 @@ PYEOF
 offline_show_status() {
     local CODENAME CURRENT_APT CURRENT_DOCKER
     clear
-    ui_header "IRAN / OFFLINE MODE v1.0.0"
+    ui_header "IRAN / OFFLINE MODE v1.1.21"
     if ! offline_require_ubuntu; then
         ui_error "This module currently supports Ubuntu only"
         echo ""
@@ -385,7 +393,7 @@ offline_test_mirrors() {
 offline_apply_recommended_apt() {
     local BACKUP_DIR
     clear
-    ui_header "APPLY IRAN APT MIRROR v1.0.0"
+    ui_header "APPLY IRAN APT MIRROR v1.1.21"
     if ! offline_require_ubuntu; then
         ui_error "This module currently supports Ubuntu only"
         pause
@@ -446,7 +454,7 @@ offline_apply_recommended_docker() {
 offline_apply_both_recommended() {
     local BACKUP_DIR
     clear
-    ui_header "APPLY IRAN MIRRORS v1.0.0"
+    ui_header "APPLY IRAN MIRRORS v1.1.21"
     if ! offline_require_ubuntu; then
         ui_error "This module currently supports Ubuntu only"
         pause
@@ -615,9 +623,14 @@ offline_install_panel_local() {
             pause
             return
         fi
+        # FIX (MRM-096): the official installer asks "override?" FIRST, then
+        # the mirror recalibrate questions — the stream must start with the
+        # "y" captured above. The old order (y appended last) shifted the
+        # stream: the override prompt consumed the first mirror "n" and the
+        # whole install silently aborted on an existing install.
+        RESPONSES+="y\n"
         if offline_is_known_apt_mirror "$(offline_get_current_apt_mirror 2>/dev/null || true)"; then RESPONSES+="n\n"; fi
         if offline_is_known_docker_mirror "$(offline_get_current_docker_mirror 2>/dev/null || true)"; then RESPONSES+="n\n"; fi
-        RESPONSES+="y\n"
         RESPONSES+="n\n"
     else
         if offline_is_known_apt_mirror "$(offline_get_current_apt_mirror 2>/dev/null || true)"; then RESPONSES+="n\n"; fi
@@ -723,7 +736,7 @@ offline_install_node_local() {
 offline_menu() {
     while true; do
         clear
-        ui_header "IRAN / OFFLINE MODE v1.0.0"
+        ui_header "IRAN / OFFLINE MODE v1.1.21"
         echo "1) 🇮🇷 Show Current Mirror Status"
         echo "2) 🧪 Test Iran Mirrors"
         echo "3) 📦 Apply Recommended Ubuntu APT Mirror [Preserves 3rd-party]"

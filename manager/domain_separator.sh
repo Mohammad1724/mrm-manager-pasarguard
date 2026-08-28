@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager v1.1.20
+# MRM Manager v1.1.21
 
 if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
 if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manager/safe_ops.sh ]; then source /opt/mrm-manager/safe_ops.sh; fi
