@@ -1,11 +1,11 @@
 #!/bin/bash
-# MRM Manager ssl.sh v1.1.23
+# MRM Manager ssl.sh v1.1.24
 
 # ═══════════════════════════════════════════════════════════════════════════
-# SSL MANAGEMENT MODULE v1.1.23
+# SSL MANAGEMENT MODULE v1.1.24
 # ═══════════════════════════════════════════════════════════════════════════
 # Author: MRM Manager Team
-# License: MIT
+# License: GPL-3.0
 # Requires: Bash 4.0+, certbot, openssl, curl
 #
 # Exit Codes:

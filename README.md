@@ -2,7 +2,7 @@
 
 مدیر خط فرمان ساده برای نگهداری و مدیریت **PasarGuard**.
 
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Bash](https://img.shields.io/badge/Bash-5%2B-4EAA25?logo=gnu-bash&logoColor=white)](https://www.gnu.org/software/bash/)
 
 ## نصب
@@ -62,4 +62,4 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/Mohammad1724/mrm-ma
 
 ## لایسنس
 
-این پروژه تحت لایسنس [MIT](LICENSE) منتشر شده است.
+این پروژه تحت لایسنس [GPL-3.0](LICENSE) منتشر شده است.

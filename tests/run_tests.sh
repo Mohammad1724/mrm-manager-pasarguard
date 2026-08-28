@@ -567,6 +567,26 @@ else
     fail "offline.sh mirror lists still differ from official PasarGuard list"
 fi
 
+# Check README + ssl.sh license mentions match the actual LICENSE file (MRM-107)
+LIC_FILE="$PROJECT_DIR/LICENSE"
+if grep -q 'GNU GENERAL PUBLIC LICENSE' "$LIC_FILE" 2>/dev/null; then
+    LICENSE_IS='GPL'
+else
+    LICENSE_IS='OTHER'
+fi
+if [ "$LICENSE_IS" = 'GPL' ]; then
+    if grep -q 'License-GPLv3' "$PROJECT_DIR/README.md" \
+        && grep -q 'GPL-3.0' "$PROJECT_DIR/README.md" \
+        && grep -q 'License: GPL-3.0' "$PROJECT_DIR/manager/ssl.sh" \
+        && ! grep -q 'License-MIT' "$PROJECT_DIR/README.md"; then
+        pass "README + ssl.sh license aligned with GPL-3.0 LICENSE (MRM-107)"
+    else
+        fail "README/ssl.sh license mentions do not match LICENSE (MIT leak?)"
+    fi
+else
+    pass "LICENSE file is not GPL — MRM-107 check skipped (non-GPL license in use)"
+fi
+
 # Check domain_separator.sh header version matches VERSION (MRM-094)
 DS_HDR_V=$(grep -oP '^# MRM Manager v\K[0-9.]+' "$DS" 2>/dev/null | head -1)
 DS_REAL_V=$(cat "$PROJECT_DIR/VERSION" 2>/dev/null | head -1)

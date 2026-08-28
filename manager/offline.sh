@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==========================================
-# OFFLINE / IRAN MODE v1.1.23
+# OFFLINE / IRAN MODE v1.1.24
 # Fixed: safe handling of sources.list.d, preserve 3rd party repos
 # ==========================================
 
@@ -251,7 +251,7 @@ offline_apply_apt_mirror() {
     # But to stay safe, if we have ubuntu.com in main sources.list, we will overwrite it
 
     cat > /etc/apt/sources.list <<EOF
-# Managed by MRM Iran/Offline Mode v1.1.23
+# Managed by MRM Iran/Offline Mode v1.1.24
 deb ${MIRROR} ${CODENAME} main restricted universe multiverse
 deb ${MIRROR} ${CODENAME}-updates main restricted universe multiverse
 deb ${MIRROR} ${CODENAME}-backports main restricted universe multiverse
@@ -315,7 +315,7 @@ PYEOF
 offline_show_status() {
     local CODENAME CURRENT_APT CURRENT_DOCKER
     clear
-    ui_header "IRAN / OFFLINE MODE v1.1.23"
+    ui_header "IRAN / OFFLINE MODE v1.1.24"
     if ! offline_require_ubuntu; then
         ui_error "This module currently supports Ubuntu only"
         echo ""
@@ -393,7 +393,7 @@ offline_test_mirrors() {
 offline_apply_recommended_apt() {
     local BACKUP_DIR
     clear
-    ui_header "APPLY IRAN APT MIRROR v1.1.23"
+    ui_header "APPLY IRAN APT MIRROR v1.1.24"
     if ! offline_require_ubuntu; then
         ui_error "This module currently supports Ubuntu only"
         pause
@@ -454,7 +454,7 @@ offline_apply_recommended_docker() {
 offline_apply_both_recommended() {
     local BACKUP_DIR
     clear
-    ui_header "APPLY IRAN MIRRORS v1.1.23"
+    ui_header "APPLY IRAN MIRRORS v1.1.24"
     if ! offline_require_ubuntu; then
         ui_error "This module currently supports Ubuntu only"
         pause
@@ -736,7 +736,7 @@ offline_install_node_local() {
 offline_menu() {
     while true; do
         clear
-        ui_header "IRAN / OFFLINE MODE v1.1.23"
+        ui_header "IRAN / OFFLINE MODE v1.1.24"
         echo "1) 🇮🇷 Show Current Mirror Status"
         echo "2) 🧪 Test Iran Mirrors"
         echo "3) 📦 Apply Recommended Ubuntu APT Mirror [Preserves 3rd-party]"
