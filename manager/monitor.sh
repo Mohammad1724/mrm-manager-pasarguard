@@ -391,7 +391,7 @@ test_alerts() {
 🧠 RAM: ${RAM}%
 ⏰ $(date '+%Y-%m-%d %H:%M:%S')
 ✅ Alert system is working!
-Version: $(get_mrm_version 2>/dev/null || echo v1.1.19)
+Version: $(get_mrm_version 2>/dev/null || echo v1.1.20)
 "
     if send_telegram_alert "$MSG"; then
         ui_success "Test alert sent to Telegram!"

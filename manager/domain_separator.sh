@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager v1.0.0
+# MRM Manager v1.1.20
 
 if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
 if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manager/safe_ops.sh ]; then source /opt/mrm-manager/safe_ops.sh; fi
@@ -117,8 +117,15 @@ setup_domain_separation() {
         pause; return
     fi
 
-    read -p "4. Current Panel Port (default: 7431): " PANEL_PORT
-    [ -z "$PANEL_PORT" ] && PANEL_PORT="7431"
+    # FIX (MRM-093): default = the panel's real UVICORN_PORT from .env — the
+    # official default is 8000 (config.py:54, .env.example), not the old
+    # hard-coded 7431 which pointed the proxy at a dead port. Same approach as
+    # post_restore.sh / pg_health.sh.
+    local PANEL_PORT_DEF
+    PANEL_PORT_DEF="$(grep -oP '^\s*UVICORN_PORT\s*=\s*\K[0-9]+' "$PANEL_ENV" 2>/dev/null | head -1)" || true
+    [ -z "$PANEL_PORT_DEF" ] && PANEL_PORT_DEF="8000"
+    read -p "4. Current Panel Port (default: $PANEL_PORT_DEF): " PANEL_PORT
+    [ -z "$PANEL_PORT" ] && PANEL_PORT="$PANEL_PORT_DEF"
     if ! validate_port_number "$PANEL_PORT"; then
         echo -e "${RED}Error: Panel Port must be a number between 1 and 65535!${NC}"
         pause; return
@@ -205,6 +212,20 @@ setup_domain_separation() {
     # Configure Nginx
     echo -e "${BLUE}Writing Nginx configuration...${NC}"
 
+    # FIX (MRM-092): the proxy scheme must follow the panel's real .env — SSL
+    # is OFF by default in the official panel (UVICORN_SSL_CERTFILE is commented
+    # in .env.example, config.py default None), so the old hard-coded
+    # "proxy_pass https://..." + always-on proxy_ssl_verify off produced 502 on
+    # default installs. Same detection as post_restore.sh:197.
+    local PANEL_PROTO PROXY_SSL_LINE
+    if [ -n "$(grep -oP '^\s*UVICORN_SSL_CERTFILE\s*=\s*"?\K[^"]+' "$PANEL_ENV" 2>/dev/null | head -1)" ]; then
+        PANEL_PROTO="https"
+        PROXY_SSL_LINE="        proxy_ssl_verify off;"
+    else
+        PANEL_PROTO="http"
+        PROXY_SSL_LINE=""
+    fi
+
     cat > "$NGINX_CONF" <<EOF
 # Admin Domain
 server {
@@ -216,9 +237,9 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/$ADMIN_DOM/privkey.pem;
 
     location / {
-        # FIXED: Changed to HTTPS to match Pasarguard .env config
-        proxy_pass https://127.0.0.1:$PANEL_PORT;
-        proxy_ssl_verify off;
+        # proxy scheme follows the panel .env (MRM-092)
+        proxy_pass $PANEL_PROTO://127.0.0.1:$PANEL_PORT;
+$PROXY_SSL_LINE
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -238,9 +259,9 @@ server {
     ssl_certificate_key ${SUB_CERT_PATH}/privkey.pem;
 
     location / {
-        # FIXED: Changed to HTTPS to match Pasarguard .env config
-        proxy_pass https://127.0.0.1:$PANEL_PORT;
-        proxy_ssl_verify off;
+        # proxy scheme follows the panel .env (MRM-092)
+        proxy_pass $PANEL_PROTO://127.0.0.1:$PANEL_PORT;
+$PROXY_SSL_LINE
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -304,7 +325,10 @@ edit_nginx_config_manually() {
         echo -e "${GREEN}Done.${NC}"
     else
         echo -e "${RED}Nginx config is invalid or restart failed. Reverting...${NC}"
-        if [ -n "$EDIT_BACKUP" ] && [ -f "$EDIT_BACKUP" ]; then
+        # FIX (MRM-095): use -s (non-empty) — mktemp always creates the file,
+        # so -f was always true and an EMPTY backup was copied instead of the
+        # clean removal path when the config was newly created and invalid
+        if [ -n "$EDIT_BACKUP" ] && [ -s "$EDIT_BACKUP" ]; then
             cp "$EDIT_BACKUP" "$NGINX_CONF" 2>/dev/null || true
             restart_nginx_checked >/dev/null 2>&1 || systemctl start nginx >/dev/null 2>&1 || true
         else

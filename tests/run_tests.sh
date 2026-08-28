@@ -523,6 +523,52 @@ else
     fail "is_theme_active can report Active with the template file missing"
 fi
 
+# Check domain_separator.sh proxy scheme follows the panel .env (MRM-092)
+DS="$PROJECT_DIR/manager/domain_separator.sh"
+if grep -q 'UVICORN_SSL_CERTFILE' "$DS" && grep -q '\$PANEL_PROTO://127.0.0.1:\$PANEL_PORT' "$DS"; then
+    pass "domain_separator detects panel SSL from .env (MRM-092)"
+else
+    fail "domain_separator proxy scheme not driven by panel .env"
+fi
+if grep -q 'proxy_pass https://127.0.0.1' "$DS"; then
+    fail "domain_separator still hard-codes https proxy_pass"
+else
+    pass "domain_separator has no hard-coded https proxy_pass"
+fi
+
+# Check domain_separator.sh panel port default comes from .env (MRM-093)
+if grep -q 'UVICORN_PORT' "$DS" && grep -qF 'PANEL_PORT_DEF="8000"' "$DS"; then
+    pass "domain_separator reads UVICORN_PORT with 8000 fallback (MRM-093)"
+else
+    fail "domain_separator panel port default still hard-coded"
+fi
+if grep -qE 'PANEL_PORT=(_DEF=)?"?7431|default: 7431' "$DS"; then
+    fail "domain_separator still references hard-coded 7431 port"
+else
+    pass "domain_separator has no hard-coded 7431 port"
+fi
+
+# Check domain_separator.sh header version matches VERSION (MRM-094)
+DS_HDR_V=$(grep -oP '^# MRM Manager v\K[0-9.]+' "$DS" 2>/dev/null | head -1)
+DS_REAL_V=$(cat "$PROJECT_DIR/VERSION" 2>/dev/null | head -1)
+if [ -n "$DS_HDR_V" ] && [ "$DS_HDR_V" = "$DS_REAL_V" ]; then
+    pass "domain_separator header version = $DS_REAL_V (matches VERSION)"
+else
+    fail "domain_separator header version [$DS_HDR_V] != VERSION [$DS_REAL_V]"
+fi
+if grep -q '# MRM Manager v1.0.0' "$DS"; then
+    fail "domain_separator header still says v1.0.0"
+else
+    pass "domain_separator header no longer says v1.0.0"
+fi
+
+# Check domain_separator.sh revert uses -s not -f (MRM-095)
+if grep -q '\[ -s "\$EDIT_BACKUP" \]' "$DS"; then
+    pass "manual-edit revert uses -s (non-empty backup) (MRM-095)"
+else
+    fail "manual-edit revert still checks -f on mktemp file"
+fi
+
 # Check post_restore.sh validates domains
 if grep -q "Skipping invalid domain" "$PROJECT_DIR/manager/backup/post_restore.sh"; then
     pass "post_restore.sh validates domain names"

@@ -1,8 +1,8 @@
 #!/bin/bash
-# MRM Manager Backup v1.1.19
+# MRM Manager Backup v1.1.20
 
 # ==========================================
-# MRM Backup & Restore v1.1.19
+# MRM Backup & Restore v1.1.20
 # ==========================================
 
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
