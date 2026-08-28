@@ -100,9 +100,17 @@ apply_smart_fix() {
     local NG_CONF="/etc/nginx/conf.d/panel_separate.conf"
     if [ -f "$NG_CONF" ]; then
         ui_spinner_start "Fixing Nginx config..."
+        # FIX (MRM-105): convert the legacy http proxy to https ONLY when the
+        # panel actually has SSL configured — the old sed forced
+        # https + proxy_ssl_verify off even on HTTP-only panels, breaking the
+        # proxy (same class as MRM-092). HTTP-only panels stay http.
+        local PANEL_SSL_DETECT=""
+        PANEL_SSL_DETECT="$(grep -oP '^\s*UVICORN_SSL_CERTFILE\s*=\s*"?\K[^"]+' "$PANEL_ENV" 2>/dev/null | head -1)"
         # SECURITY: Check if already fixed before modifying (idempotent)
         if ! grep -q "proxy_ssl_verify" "$NG_CONF" 2>/dev/null; then
-            sed -i 's|proxy_pass http://127.0.0.1:7431;|proxy_pass https://127.0.0.1:7431;\n        proxy_ssl_verify off;|g' "$NG_CONF"
+            if [ -n "$PANEL_SSL_DETECT" ]; then
+                sed -i 's|proxy_pass http://127.0.0.1:7431;|proxy_pass https://127.0.0.1:7431;\n        proxy_ssl_verify off;|g' "$NG_CONF"
+            fi
         fi
         systemctl restart nginx >/dev/null 2>&1
         ui_spinner_stop
@@ -110,8 +118,10 @@ apply_smart_fix() {
         # config uses a different panel port the sed is a no-op (MRM-077)
         if grep -q "proxy_ssl_verify" "$NG_CONF" 2>/dev/null; then
             ui_success "Nginx configuration repaired"
-        else
+        elif [ -n "$PANEL_SSL_DETECT" ]; then
             ui_warning "Nginx config left unchanged (expected proxy_pass to 127.0.0.1:7431 not found)"
+        else
+            ui_success "Panel SSL is disabled (HTTP) — Nginx proxy left as http (no https conversion needed)"
         fi
     fi
     log_backup "SUCCESS" "Smart fix completed"

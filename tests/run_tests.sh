@@ -567,6 +567,22 @@ else
     fail "offline.sh mirror lists still differ from official PasarGuard list"
 fi
 
+# Check smart_fix.sh nginx repair is scheme-aware (MRM-105)
+SF="$PROJECT_DIR/manager/backup/smart_fix.sh"
+if grep -q 'MRM-105' "$SF" && grep -q 'UVICORN_SSL_CERTFILE' "$SF" && grep -q 'PANEL_SSL_DETECT' "$SF"; then
+    pass "smart_fix.sh converts to https only when panel SSL is on (MRM-105)"
+else
+    fail "smart_fix.sh still force-converts http proxy without checking panel SSL"
+fi
+
+# Check subscription template is Google-fonts-free / self-hosted (MRM-108)
+TPL="$PROJECT_DIR/templates/subscription/index.html"
+if ! grep -q 'fonts.googleapis.com' "$TPL" && grep -q 'data:font/woff2;base64' "$TPL"; then
+    pass "subscription template self-hosts Vazirmatn (no Google Fonts) (MRM-108)"
+else
+    fail "subscription template still depends on Google Fonts"
+fi
+
 # Check README + ssl.sh license mentions match the actual LICENSE file (MRM-107)
 LIC_FILE="$PROJECT_DIR/LICENSE"
 if grep -q 'GNU GENERAL PUBLIC LICENSE' "$LIC_FILE" 2>/dev/null; then
