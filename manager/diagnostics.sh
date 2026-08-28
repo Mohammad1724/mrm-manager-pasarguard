@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==========================================
-# DIAGNOSTICS & DOCTOR v1.1.17
+# DIAGNOSTICS & DOCTOR v1.1.18
 # Full system check: Docker, Disk, RAM, Logs, Panel, Node, Nginx
 # ==========================================
 
@@ -187,7 +187,7 @@ mrm_render_home_dashboard() {
     if mrm_telegram_enabled; then TG_STATUS="$(mrm_colored_state "Configured" "Not Configured" ok)"; else TG_STATUS="$(mrm_colored_state "Configured" "Not Configured" bad)"; fi
     if [ -n "$(mrm_latest_backup_file)" ]; then BACKUP_STATUS="$(mrm_colored_state "Ready" "Missing" ok)"; else BACKUP_STATUS="$(mrm_colored_state "Ready" "Missing" bad)"; fi
 
-    ui_section "HOME DASHBOARD - $(get_mrm_version 2>/dev/null || echo v1.1.17)"
+    ui_section "HOME DASHBOARD - $(get_mrm_version 2>/dev/null || echo v1.1.18)"
     ui_kv "Active Panel" "$ACTIVE_PANEL"
     ui_kv "Panel Directory" "${PANEL_DIR:-unknown}"
     echo -e "${UI_DIM:-}\033[2mServices:\033[0m${NC:-} Panel ${PANEL_STATUS} Node ${NODE_STATUS} Nginx ${NGINX_STATUS}"
@@ -225,7 +225,7 @@ run_full_diagnostics() {
     local PANEL_COMPOSE NODE_COMPOSE CERT_COUNT DISK_INFO DISK_USAGE DISK_FREE RAM_INFO RAM_USED RAM_TOTAL RAM_PERCENT CPU_INFO CPU_USED LOAD DOCKER_INFO
     clear
     detect_active_panel > /dev/null
-    ui_header "DOCTOR - FULL SYSTEM DIAGNOSTICS v1.1.17"
+    ui_header "DOCTOR - FULL SYSTEM DIAGNOSTICS v1.1.18"
 
     PANEL_COMPOSE="$(get_panel_compose_file 2>/dev/null || true)"
     NODE_COMPOSE="$(get_node_compose_file 2>/dev/null || true)"
@@ -361,9 +361,9 @@ run_full_diagnostics() {
 run_doctor_cli() {
     local MODE="${1:-full}"
     detect_active_panel > /dev/null
-    echo "=== MRM DOCTOR v1.1.17"
+    echo "=== MRM DOCTOR v1.1.18"
     echo "Date: $(date)"
-    echo "Version: $(get_mrm_version 2>/dev/null || echo v1.1.17)"
+    echo "Version: $(get_mrm_version 2>/dev/null || echo v1.1.18)"
     echo "Panel: $(cat "$CONFIG_FILE" 2>/dev/null || echo unknown) - $PANEL_DIR"
     echo ""
 
@@ -438,7 +438,7 @@ diagnostics_restart_node() {
 diagnostics_menu() {
     while true; do
         clear
-        ui_header "DIAGNOSTICS & DOCTOR v1.1.17"
+        ui_header "DIAGNOSTICS & DOCTOR v1.1.18"
         mrm_render_home_dashboard
 
         echo "1) 🩺 Run Full Doctor Diagnostics"

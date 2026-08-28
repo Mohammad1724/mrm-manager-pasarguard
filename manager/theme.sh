@@ -426,7 +426,10 @@ uninstall_theme() {
 }
 
 is_theme_active() {
-    if grep -q "SUBSCRIPTION_PAGE_TEMPLATE" "$PANEL_ENV" 2>/dev/null; then return 0; fi
+    # FIX: anchor the key and ignore commented lines (MRM-091) — the official
+    # panel .env.example ships "SUBSCRIPTION_PAGE_TEMPLATE" commented out, so a
+    # plain grep would report Theme "Active" on a default install
+    if grep -qE "^[[:space:]]*SUBSCRIPTION_PAGE_TEMPLATE[[:space:]]*=" "$PANEL_ENV" 2>/dev/null; then return 0; fi
     return 1
 }
 

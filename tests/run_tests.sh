@@ -499,6 +499,23 @@ else
     pass "commented CUSTOM_TEMPLATES_DIRECTORY is ignored (behavioral)"
 fi
 
+# Check theme.sh is_theme_active is anchored + comment-aware (MRM-091)
+if grep -qE 'grep -qE "\^\[\[:space:\]\]\*SUBSCRIPTION_PAGE_TEMPLATE' "$PROJECT_DIR/manager/theme.sh"; then
+    pass "theme.sh is_theme_active anchored (MRM-091)"
+else
+    fail "theme.sh is_theme_active still greps unanchored SUBSCRIPTION_PAGE_TEMPLATE"
+fi
+if grep -q 'grep -q "SUBSCRIPTION_PAGE_TEMPLATE"' "$PROJECT_DIR/manager/theme.sh"; then
+    fail "theme.sh still contains the loose SUBSCRIPTION_PAGE_TEMPLATE grep"
+else
+    pass "theme.sh has no loose SUBSCRIPTION_PAGE_TEMPLATE grep"
+fi
+if printf '# SUBSCRIPTION_PAGE_TEMPLATE = "x"\n' | grep -qE "^[[:space:]]*SUBSCRIPTION_PAGE_TEMPLATE[[:space:]]*="; then
+    fail "commented SUBSCRIPTION_PAGE_TEMPLATE still counts as active"
+else
+    pass "commented SUBSCRIPTION_PAGE_TEMPLATE is ignored (behavioral)"
+fi
+
 # Check post_restore.sh validates domains
 if grep -q "Skipping invalid domain" "$PROJECT_DIR/manager/backup/post_restore.sh"; then
     pass "post_restore.sh validates domain names"
