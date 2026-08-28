@@ -429,7 +429,12 @@ is_theme_active() {
     # FIX: anchor the key and ignore commented lines (MRM-091) — the official
     # panel .env.example ships "SUBSCRIPTION_PAGE_TEMPLATE" commented out, so a
     # plain grep would report Theme "Active" on a default install
-    if grep -qE "^[[:space:]]*SUBSCRIPTION_PAGE_TEMPLATE[[:space:]]*=" "$PANEL_ENV" 2>/dev/null; then return 0; fi
+    # Also require the template file to exist (MRM-091b) — the env key alone
+    # must not show "Active" if the template was removed/lost.
+    if grep -qE "^[[:space:]]*SUBSCRIPTION_PAGE_TEMPLATE[[:space:]]*=" "$PANEL_ENV" 2>/dev/null \
+        && [ -n "${DATA_DIR:-}" ] && [ -s "$DATA_DIR/templates/subscription/index.html" ]; then
+        return 0
+    fi
     return 1
 }
 

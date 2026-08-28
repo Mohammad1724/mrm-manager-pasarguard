@@ -516,6 +516,13 @@ else
     pass "commented SUBSCRIPTION_PAGE_TEMPLATE is ignored (behavioral)"
 fi
 
+# Check theme.sh is_theme_active also requires the template file (MRM-091b)
+if grep -q 'DATA_DIR/templates/subscription/index.html' "$PROJECT_DIR/manager/theme.sh"; then
+    pass "is_theme_active requires template file existence (MRM-091b)"
+else
+    fail "is_theme_active can report Active with the template file missing"
+fi
+
 # Check post_restore.sh validates domains
 if grep -q "Skipping invalid domain" "$PROJECT_DIR/manager/backup/post_restore.sh"; then
     pass "post_restore.sh validates domain names"

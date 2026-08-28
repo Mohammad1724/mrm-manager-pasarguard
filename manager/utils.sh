@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager utils.sh v1.1.18
+# MRM Manager utils.sh v1.1.19
 
 export RED='\033[0;31m'
 export GREEN='\033[0;32m'
@@ -13,7 +13,7 @@ export NC='\033[0m'
 CONFIG_FILE="/opt/mrm-manager/panel.conf"
 MRM_VERSION_FILE="/opt/mrm-manager/VERSION"
 # FIX: Default version matches current release (was "1.0.3")
-MRM_DEFAULT_VERSION="1.1.18"
+MRM_DEFAULT_VERSION="1.1.19"
 
 ensure_mrm_config_dir() {
     mkdir -p "$(dirname "$CONFIG_FILE")"
