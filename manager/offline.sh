@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==========================================
-# OFFLINE / IRAN MODE v1.1.22
+# OFFLINE / IRAN MODE v1.1.23
 # Fixed: safe handling of sources.list.d, preserve 3rd party repos
 # ==========================================
 
@@ -11,16 +11,16 @@ if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manage
 
 OFFLINE_BACKUP_ROOT="/opt/mrm-manager/offline-backups"
 OFFLINE_UBUNTU_MIRRORS=(
-    "http://mirror.arvancloud.ir/ubuntu"
+    "https://mirror.arvancloud.ir/ubuntu"
     "http://ir.archive.ubuntu.com/ubuntu"
-    "https://repo.iut.ac.ir/repo/ubuntu/ubuntu"
+    "https://repo.iut.ac.ir/repo/ubuntu"
 )
 OFFLINE_DOCKER_MIRRORS=(
     "https://docker.arvancloud.ir"
     "https://hub.hamdocker.ir"
     "https://docker.iranserver.com"
 )
-OFFLINE_RECOMMENDED_APT_MIRROR="http://mirror.arvancloud.ir/ubuntu"
+OFFLINE_RECOMMENDED_APT_MIRROR="https://mirror.arvancloud.ir/ubuntu"
 OFFLINE_RECOMMENDED_DOCKER_MIRROR="https://docker.arvancloud.ir"
 OFFLINE_LOCAL_PANEL_ARCHIVE="/root/pasarguard-standalone.tar.gz"
 OFFLINE_LOCAL_NODE_ARCHIVE="/root/pg-node-standalone.tar.gz"
@@ -251,7 +251,7 @@ offline_apply_apt_mirror() {
     # But to stay safe, if we have ubuntu.com in main sources.list, we will overwrite it
 
     cat > /etc/apt/sources.list <<EOF
-# Managed by MRM Iran/Offline Mode v1.1.22
+# Managed by MRM Iran/Offline Mode v1.1.23
 deb ${MIRROR} ${CODENAME} main restricted universe multiverse
 deb ${MIRROR} ${CODENAME}-updates main restricted universe multiverse
 deb ${MIRROR} ${CODENAME}-backports main restricted universe multiverse
@@ -315,7 +315,7 @@ PYEOF
 offline_show_status() {
     local CODENAME CURRENT_APT CURRENT_DOCKER
     clear
-    ui_header "IRAN / OFFLINE MODE v1.1.22"
+    ui_header "IRAN / OFFLINE MODE v1.1.23"
     if ! offline_require_ubuntu; then
         ui_error "This module currently supports Ubuntu only"
         echo ""
@@ -393,7 +393,7 @@ offline_test_mirrors() {
 offline_apply_recommended_apt() {
     local BACKUP_DIR
     clear
-    ui_header "APPLY IRAN APT MIRROR v1.1.22"
+    ui_header "APPLY IRAN APT MIRROR v1.1.23"
     if ! offline_require_ubuntu; then
         ui_error "This module currently supports Ubuntu only"
         pause
@@ -454,7 +454,7 @@ offline_apply_recommended_docker() {
 offline_apply_both_recommended() {
     local BACKUP_DIR
     clear
-    ui_header "APPLY IRAN MIRRORS v1.1.22"
+    ui_header "APPLY IRAN MIRRORS v1.1.23"
     if ! offline_require_ubuntu; then
         ui_error "This module currently supports Ubuntu only"
         pause
@@ -736,7 +736,7 @@ offline_install_node_local() {
 offline_menu() {
     while true; do
         clear
-        ui_header "IRAN / OFFLINE MODE v1.1.22"
+        ui_header "IRAN / OFFLINE MODE v1.1.23"
         echo "1) 🇮🇷 Show Current Mirror Status"
         echo "2) 🧪 Test Iran Mirrors"
         echo "3) 📦 Apply Recommended Ubuntu APT Mirror [Preserves 3rd-party]"

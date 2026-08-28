@@ -202,7 +202,7 @@ set_subscription_url_prefix() {
             if [ -n "$CERT_DOMAIN" ]; then
                 local PANEL_PORT
                 PANEL_PORT=$(grep -oP 'UVICORN_PORT\s*=\s*\K[0-9]+' "$PANEL_ENV" 2>/dev/null)
-                [ -z "$PANEL_PORT" ] && PANEL_PORT="7431"
+                [ -z "$PANEL_PORT" ] && PANEL_PORT="8000"
                 if [ "$PANEL_PORT" = "443" ]; then
                     SUB_URL="https://$CERT_DOMAIN"
                 else
@@ -218,7 +218,7 @@ set_subscription_url_prefix() {
         SERVER_IP=$(curl -4 -s --connect-timeout 5 icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}')
         local PANEL_PORT
         PANEL_PORT=$(grep -oP 'UVICORN_PORT\s*=\s*\K[0-9]+' "$PANEL_ENV" 2>/dev/null)
-        [ -z "$PANEL_PORT" ] && PANEL_PORT="7431"
+        [ -z "$PANEL_PORT" ] && PANEL_PORT="8000"
         SUB_URL="https://$SERVER_IP:$PANEL_PORT"
         log_msg "${YELLOW}⚠️  Using server IP as fallback${NC}"
     fi

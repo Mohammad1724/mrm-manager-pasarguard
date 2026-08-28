@@ -548,6 +548,25 @@ else
     pass "domain_separator has no hard-coded 7431 port"
 fi
 
+# Check post_restore.sh panel-port fallback uses the official 8000 (MRM-103)
+PR="$PROJECT_DIR/manager/backup/post_restore.sh"
+if grep -q 'PANEL_PORT="8000"' "$PR" && ! grep -q 'PANEL_PORT="7431"' "$PR"; then
+    pass "post_restore.sh panel port fallback = 8000 (MRM-103)"
+else
+    fail "post_restore.sh still falls back to 7431"
+fi
+
+# Check offline.sh mirror lists aligned with official PasarGuard list (MRM-106)
+OFF2="$PROJECT_DIR/manager/offline.sh"
+if grep -q 'https://mirror.arvancloud.ir/ubuntu' "$OFF2" \
+   && grep -q 'https://repo.iut.ac.ir/repo/ubuntu"' "$OFF2" \
+   && ! grep -q 'repo/ubuntu/ubuntu' "$OFF2" \
+   && ! grep -q 'http://mirror.arvancloud.ir/ubuntu' "$OFF2"; then
+    pass "offline.sh mirrors aligned with official list (MRM-106)"
+else
+    fail "offline.sh mirror lists still differ from official PasarGuard list"
+fi
+
 # Check domain_separator.sh header version matches VERSION (MRM-094)
 DS_HDR_V=$(grep -oP '^# MRM Manager v\K[0-9.]+' "$DS" 2>/dev/null | head -1)
 DS_REAL_V=$(cat "$PROJECT_DIR/VERSION" 2>/dev/null | head -1)
@@ -731,6 +750,20 @@ done < <({
     echo "templates/subscription/index.html"
 })
 [ "$MISSING" -eq 0 ] && pass "all install.sh downloads are covered by checksums.txt"
+
+# 10.5: every checksums.txt hash actually matches the file on disk (MRM-104) —
+# a stale manifest passes the existence checks above but breaks the
+# install-time sha256 verification (install.sh aborts on mismatch).
+HASH_BAD=0
+while read -r HASH REL; do
+    [ -z "$REL" ] && continue
+    ACTUAL="$(sha256sum "$PROJECT_DIR/$REL" 2>/dev/null | awk '{print $1}')"
+    if [ "$ACTUAL" != "$HASH" ]; then
+        fail "checksum mismatch for $REL (stale checksums.txt?)"
+        HASH_BAD=1
+    fi
+done < "$PROJECT_DIR/checksums.txt"
+[ "$HASH_BAD" -eq 0 ] && pass "all checksums.txt hashes match actual files"
 
 echo ""
 

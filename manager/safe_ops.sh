@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager v1.1.22
+# MRM Manager v1.1.23
 
 if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
 if ! declare -f ui_header >/dev/null 2>&1 && [ -r /opt/mrm-manager/ui.sh ]; then source /opt/mrm-manager/ui.sh; fi
