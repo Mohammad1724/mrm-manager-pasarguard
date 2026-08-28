@@ -608,6 +608,30 @@ else
     fail "offline.sh header version [$OFF_HDR] != VERSION [$OFF_VER]"
 fi
 
+# Check safe_ops.sh create loop guards against "/" (MRM-100)
+SO="$PROJECT_DIR/manager/safe_ops.sh"
+if grep -q '\[ "$TARGET" != "/" \] || continue' "$SO"; then
+    pass "safe_ops.sh create loop guards "/" (MRM-100)"
+else
+    fail "safe_ops.sh create loop can cp -a / (missing "/" guard)"
+fi
+
+# Check safe_ops.sh restore pre-flights present backups (MRM-101)
+if grep -q 'restore point incomplete' "$SO" && grep -q 'if [ ! -e "$RP_DIR/files$TARGET" ]' "$SO"; then
+    pass "safe_ops.sh restore pre-flights backups (MRM-101)"
+else
+    fail "safe_ops.sh restore can delete live file before verifying backup"
+fi
+
+# Check safe_ops.sh header version matches VERSION (MRM-102)
+SO_HDR=$(grep -oP '^# MRM Manager v\K[0-9.]+' "$SO" 2>/dev/null | head -1)
+SO_VER=$(cat "$PROJECT_DIR/VERSION" 2>/dev/null | head -1)
+if [ -n "$SO_HDR" ] && [ "$SO_HDR" = "$SO_VER" ]; then
+    pass "safe_ops.sh header version = $SO_VER (matches VERSION)"
+else
+    fail "safe_ops.sh header version [$SO_HDR] != VERSION [$SO_VER]"
+fi
+
 # Check post_restore.sh validates domains
 if grep -q "Skipping invalid domain" "$PROJECT_DIR/manager/backup/post_restore.sh"; then
     pass "post_restore.sh validates domain names"

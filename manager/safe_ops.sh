@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager v1.0.0
+# MRM Manager v1.1.22
 
 if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
 if ! declare -f ui_header >/dev/null 2>&1 && [ -r /opt/mrm-manager/ui.sh ]; then source /opt/mrm-manager/ui.sh; fi
@@ -51,6 +51,9 @@ mrm_create_restore_point() {
             /*) ;;
             *) continue ;;
         esac
+        # FIX (MRM-100): mirror the restore-side "/" guard — without it,
+        # a caller passing "/" would trigger "cp -a / <restore-point>/files/"
+        [ "$TARGET" != "/" ] || continue
 
         if [ -e "$TARGET" ]; then
             BACKUP_PATH="$RP_DIR/files$TARGET"
@@ -129,6 +132,23 @@ mrm_restore_point_by_dir() {
         HOOKS="$(awk -F= '/^hooks=/{sub(/^hooks=/, ""); print $0}' "$META_FILE" 2>/dev/null)"
         [ -n "$HOOKS" ] || HOOKS="none"
     fi
+
+    # FIX (MRM-101): pre-flight - every "present" entry's backup must exist
+    # BEFORE anything is touched (the loop used to rm -rf the live target first
+    # and then fail on a missing/corrupt backup, losing the live file).
+    while IFS='|' read -r STATE TARGET; do
+        [ "$STATE" = "present" ] || continue
+        [ -n "$TARGET" ] || continue
+        case "$TARGET" in
+            /*) ;;
+            *) continue ;;
+        esac
+        [ "$TARGET" != "/" ] || continue
+        if [ ! -e "$RP_DIR/files$TARGET" ] 2>/dev/null; then
+            echo "ERROR: restore point incomplete - backup missing: $TARGET. Aborting without changes." >&2
+            return 1
+        fi
+    done < "$MANIFEST"
 
     while IFS='|' read -r STATE TARGET; do
         [ -n "$TARGET" ] || continue
