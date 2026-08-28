@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==========================================
-# DIAGNOSTICS & DOCTOR v1.1.16
+# DIAGNOSTICS & DOCTOR v1.1.17
 # Full system check: Docker, Disk, RAM, Logs, Panel, Node, Nginx
 # ==========================================
 
@@ -28,7 +28,10 @@ mrm_panel_running() {
     if [ -n "$COMPOSE_FILE" ]; then
         docker compose -f "$COMPOSE_FILE" ps 2>/dev/null | grep -q "Up"
     else
-        docker ps --format '{{.Names}}' | grep -qiE "pasarguard"
+        # FIX: match the official pasarguard/panel image (MRM-087) — a loose
+        # "grep -i pasarguard" counts pasarguard-node-1/exporter etc. as the
+        # panel, so the panel-down alert never fires (same class as MRM-080)
+        docker ps --format '{{.Image}}' 2>/dev/null | grep -qE "^pasarguard/panel(:|$)"
     fi
 }
 
@@ -38,7 +41,10 @@ mrm_node_running() {
     if [ -n "$COMPOSE_FILE" ]; then
         docker compose -f "$COMPOSE_FILE" ps 2>/dev/null | grep -q "Up"
     else
-        docker ps --format '{{.Names}}' | grep -qiE "pg-node"
+        # FIX: match the official pasarguard/node image (MRM-087) — the old
+        # "pg-node" pattern never matched the official compose name
+        # pasarguard-node-1 -> false "Node containers stopped" (MRM-039 class)
+        docker ps --format '{{.Image}}' 2>/dev/null | grep -qE "^pasarguard/node(:|$)"
     fi
 }
 
@@ -47,7 +53,10 @@ mrm_nginx_running() {
 }
 
 mrm_theme_enabled() {
-    [ -f "$PANEL_ENV" ] && grep -q "CUSTOM_TEMPLATES_DIRECTORY" "$PANEL_ENV" 2>/dev/null
+    # FIX: anchor the key and ignore commented lines (MRM-090) — the official
+    # .env.example ships "CUSTOM_TEMPLATES_DIRECTORY" commented out, so a plain
+    # grep would report Theme "Active" for a default install
+    [ -f "$PANEL_ENV" ] && grep -qE "^[[:space:]]*CUSTOM_TEMPLATES_DIRECTORY[[:space:]]*=" "$PANEL_ENV" 2>/dev/null
 }
 
 mrm_domain_split_enabled() {
@@ -71,7 +80,7 @@ mrm_ssl_status_text() {
     CERT_COUNT="$(mrm_ssl_cert_count)"
     if [ "$CERT_COUNT" -gt 0 ] 2>/dev/null; then
         printf '%b' "${GREEN}Ready (${CERT_COUNT})${NC}"
-    elif grep -qE "UVICORN_SSL_CERTFILE|SSL_CERT_FILE" "$PANEL_ENV" "$NODE_ENV" 2>/dev/null; then
+    elif grep -qE "^[[:space:]]*(UVICORN_SSL_CERTFILE|UVICORN_SSL_KEYFILE)[[:space:]]*=" "$PANEL_ENV" "$NODE_ENV" 2>/dev/null; then
         printf '%b' "${YELLOW}Custom Path${NC}"
     else
         printf '%b' "${RED}Inactive${NC}"
@@ -85,7 +94,10 @@ mrm_backup_dir() {
 mrm_latest_backup_file() {
     local DIR
     DIR="$(mrm_backup_dir)"
-    ls -1t "$DIR"/*.tar.gz 2>/dev/null | head -1
+    # FIX: skip pre_restore_* safety copies (MRM-089) — they are created during
+    # restore and are always newer than the last real backup, so they must not
+    # be shown as "Latest backup"
+    ls -1t "$DIR"/*.tar.gz 2>/dev/null | grep -v '/pre_restore_' | head -1
 }
 
 mrm_latest_backup_text() {
@@ -120,8 +132,13 @@ mrm_check_ram() {
 }
 
 mrm_check_cpu() {
-    local CPU=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1 || echo 0)
-    local LOAD=$(cat /proc/loadavg | awk '{print $1}')
+    # FIX: report 100-idle, not the 'us' field (MRM-088) — awk '{print $2}'
+    # took only the user CPU, under-reporting when sy/wa are busy (same
+    # 100-idle parsing as monitor.sh)
+    local CPU LOAD
+    CPU=$(top -bn1 2>/dev/null | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1}' | cut -d'.' -f1)
+    [ -z "$CPU" ] && CPU=0
+    LOAD=$(cat /proc/loadavg 2>/dev/null | awk '{print $1}')
     echo "$CPU $LOAD"
 }
 
@@ -170,7 +187,7 @@ mrm_render_home_dashboard() {
     if mrm_telegram_enabled; then TG_STATUS="$(mrm_colored_state "Configured" "Not Configured" ok)"; else TG_STATUS="$(mrm_colored_state "Configured" "Not Configured" bad)"; fi
     if [ -n "$(mrm_latest_backup_file)" ]; then BACKUP_STATUS="$(mrm_colored_state "Ready" "Missing" ok)"; else BACKUP_STATUS="$(mrm_colored_state "Ready" "Missing" bad)"; fi
 
-    ui_section "HOME DASHBOARD - $(get_mrm_version 2>/dev/null || echo v1.1.16)"
+    ui_section "HOME DASHBOARD - $(get_mrm_version 2>/dev/null || echo v1.1.17)"
     ui_kv "Active Panel" "$ACTIVE_PANEL"
     ui_kv "Panel Directory" "${PANEL_DIR:-unknown}"
     echo -e "${UI_DIM:-}\033[2mServices:\033[0m${NC:-} Panel ${PANEL_STATUS} Node ${NODE_STATUS} Nginx ${NGINX_STATUS}"
@@ -208,7 +225,7 @@ run_full_diagnostics() {
     local PANEL_COMPOSE NODE_COMPOSE CERT_COUNT DISK_INFO DISK_USAGE DISK_FREE RAM_INFO RAM_USED RAM_TOTAL RAM_PERCENT CPU_INFO CPU_USED LOAD DOCKER_INFO
     clear
     detect_active_panel > /dev/null
-    ui_header "DOCTOR - FULL SYSTEM DIAGNOSTICS v1.1.16"
+    ui_header "DOCTOR - FULL SYSTEM DIAGNOSTICS v1.1.17"
 
     PANEL_COMPOSE="$(get_panel_compose_file 2>/dev/null || true)"
     NODE_COMPOSE="$(get_node_compose_file 2>/dev/null || true)"
@@ -344,9 +361,9 @@ run_full_diagnostics() {
 run_doctor_cli() {
     local MODE="${1:-full}"
     detect_active_panel > /dev/null
-    echo "=== MRM DOCTOR v1.1.16"
+    echo "=== MRM DOCTOR v1.1.17"
     echo "Date: $(date)"
-    echo "Version: $(get_mrm_version 2>/dev/null || echo v1.1.16)"
+    echo "Version: $(get_mrm_version 2>/dev/null || echo v1.1.17)"
     echo "Panel: $(cat "$CONFIG_FILE" 2>/dev/null || echo unknown) - $PANEL_DIR"
     echo ""
 
@@ -421,7 +438,7 @@ diagnostics_restart_node() {
 diagnostics_menu() {
     while true; do
         clear
-        ui_header "DIAGNOSTICS & DOCTOR v1.1.16"
+        ui_header "DIAGNOSTICS & DOCTOR v1.1.17"
         mrm_render_home_dashboard
 
         echo "1) 🩺 Run Full Doctor Diagnostics"

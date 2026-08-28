@@ -458,6 +458,47 @@ else
     fail "pg_health.sh claims 'issued by public CA' on unreadable cert"
 fi
 
+# Check diagnostics.sh matches the official panel/node images (MRM-087)
+DIAG="$PROJECT_DIR/manager/diagnostics.sh"
+if grep -qF '^pasarguard/panel(:|$)' "$DIAG" && grep -qF '^pasarguard/node(:|$)' "$DIAG"; then
+    pass "diagnostics.sh matches pasarguard/panel + pasarguard/node images"
+else
+    fail "diagnostics.sh missing precise image match for panel/node"
+fi
+if grep -q 'grep -qiE "pasarguard"' "$DIAG" || grep -q 'grep -qiE "pg-node"' "$DIAG"; then
+    fail "diagnostics.sh still contains loose pasarguard/pg-node greps (MRM-087)"
+else
+    pass "diagnostics.sh has no loose pasarguard/pg-node greps"
+fi
+
+# Check diagnostics.sh reports 100-idle CPU, not the 'us' field (MRM-088)
+if grep -q '100 - \$1' "$DIAG" && grep -q 'id\.\*' "$DIAG" && ! grep -qF 'top -bn1 | grep "Cpu(s)" | awk' "$DIAG"; then
+    pass "mrm_check_cpu computes 100-idle (MRM-088)"
+else
+    fail "mrm_check_cpu still parses the layout-dependent field 2"
+fi
+
+# Check diagnostics.sh skips pre_restore_* safety copies (MRM-089)
+if grep -q "grep -v '/pre_restore_'" "$DIAG"; then
+    pass "mrm_latest_backup_file excludes pre_restore_* safety copies"
+else
+    fail "mrm_latest_backup_file can pick a pre_restore_* file"
+fi
+
+# Check diagnostics.sh anchored + comment-aware panel .env greps (MRM-090)
+if grep -qF '^[[:space:]]*CUSTOM_TEMPLATES_DIRECTORY[[:space:]]*=' "$DIAG" && grep -qF 'UVICORN_SSL_CERTFILE|UVICORN_SSL_KEYFILE' "$DIAG" && ! grep -q 'SSL_CERT_FILE' "$DIAG"; then
+    pass "theme/ssl checks are anchored and use real panel vars"
+else
+    fail "theme/ssl checks still use loose grep or SSL_CERT_FILE"
+fi
+
+# Behavioral: new grep patterns must NOT match commented lines (MRM-090)
+if printf '# CUSTOM_TEMPLATES_DIRECTORY = "/x"\n' | grep -qE "^[[:space:]]*CUSTOM_TEMPLATES_DIRECTORY[[:space:]]*="; then
+    fail "commented CUSTOM_TEMPLATES_DIRECTORY still counts as active"
+else
+    pass "commented CUSTOM_TEMPLATES_DIRECTORY is ignored (behavioral)"
+fi
+
 # Check post_restore.sh validates domains
 if grep -q "Skipping invalid domain" "$PROJECT_DIR/manager/backup/post_restore.sh"; then
     pass "post_restore.sh validates domain names"
