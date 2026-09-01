@@ -65,6 +65,14 @@ do_backup() {
         log_backup "ERROR" "Database export failed - backup will NOT contain the DB"
     fi
 
+    # FIX (MRM-108): if the DB export failed, remove ANY leftover db.* file so a
+    # partial/corrupt dump can never be archived and later restored as if it were
+    # a real database (which is exactly how a post-restore crash-loop happens).
+    if [ "$DB_SUCCESS" = false ]; then
+        rm -f "$B_PATH/database/db.sql" "$B_PATH/database/db.sql.gz" "$B_PATH/database/db.sqlite3" 2>/dev/null
+        log_backup "INFO" "Removed any partial DB files from the backup workspace"
+    fi
+
     if [ "$DB_SUCCESS" = false ] && [ "$MODE" != "auto" ]; then
         echo ""
         echo -e "${RED}⚠️  WARNING: Database export failed!${NC}"

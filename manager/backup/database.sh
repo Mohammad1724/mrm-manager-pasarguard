@@ -240,7 +240,9 @@ mrm_export_postgres() {
             if ! ( docker exec -e PGPASSWORD="$PASS" "$CONT" pg_dump -w -h 127.0.0.1 -p "$INNER_PORT" -U "$USER" -d "$DBNAME" > "$DEST" 2>"$ERR_FILE" \
                    && mrm_pg_dump_ok "$DEST" ); then
                 log_backup "ERROR" "pg_dump via container failed: $(tail -n 3 "$ERR_FILE" 2>/dev/null | tr '\n' ' ')"
-                rm -f "$ERR_FILE"
+                # FIX (MRM-108): never leave a partial dump behind — it could be
+                # archived as a "valid" DB file and later restored.
+                rm -f "$ERR_FILE" "$DEST"
                 return 1
             fi
         fi
@@ -260,7 +262,7 @@ mrm_export_postgres() {
             rm -f "$PGPASS_FILE"
             return 0
         fi
-        rm -f "$PGPASS_FILE"
+        rm -f "$PGPASS_FILE" "$DEST"
     fi
     return 1
 }
@@ -278,6 +280,7 @@ mrm_export_mysql() {
            && mrm_mysql_dump_ok "$DEST"; then
             return 0
         fi
+        rm -f "$DEST"
     fi
     if command -v mysqldump >/dev/null 2>&1; then
         # SECURITY: Use config file to avoid exposing password in process list
@@ -296,7 +299,7 @@ MYEOF
             rm -f "$MYCNF_FILE"
             return 0
         fi
-        rm -f "$MYCNF_FILE"
+        rm -f "$MYCNF_FILE" "$DEST"
     fi
     return 1
 }

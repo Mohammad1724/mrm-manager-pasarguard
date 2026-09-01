@@ -348,6 +348,15 @@ do_restore() {
             # --- SQLite restore (panel stopped -> plain file copy is safe) ---
             ui_spinner_start "Restoring SQLite database..."
             local DB_IMPORTED=false
+            local SQLITE_OK=true
+            # FIX (MRM-108): validate the SQLite file (magic header) BEFORE
+            # copying it over a possibly-working database — mirrors the
+            # PostgreSQL/MySQL dump validation.
+            if ! mrm_is_sqlite_file "$DB_RESTORE_PATH"; then
+                SQLITE_OK=false
+                log_backup "ERROR" "SQLite backup file is not a valid SQLite database - refusing to restore"
+                ui_error "SQLite backup file is invalid - skipping database restore"
+            fi
             local TARGET_SQLITE=""
             # Where does the RESTORED config want the DB? (parse the restored .env)
             local ENV_URL
@@ -358,7 +367,7 @@ do_restore() {
             fi
 
             # 1) Host-visible absolute path (official installs: /var/lib/pasarguard/db.sqlite3)
-            if [ -n "$TARGET_SQLITE" ] && [[ "$TARGET_SQLITE" == /* ]]; then
+            if [ "$SQLITE_OK" = true ] && [ -n "$TARGET_SQLITE" ] && [[ "$TARGET_SQLITE" == /* ]]; then
                 local TARGET_DIR D_OWNER
                 TARGET_DIR="$(dirname "$TARGET_SQLITE")"
                 mkdir -p "$TARGET_DIR" 2>/dev/null
@@ -373,7 +382,7 @@ do_restore() {
             fi
 
             # 2) In-container DB: copy directly into the (stopped) container filesystem
-            if [ "$DB_IMPORTED" = false ]; then
+            if [ "$SQLITE_OK" = true ] && [ "$DB_IMPORTED" = false ]; then
                 local PCONT IN_PATH WD
                 PCONT="$(mrm_find_panel_container)"
                 if [ -n "$PCONT" ]; then
@@ -400,7 +409,7 @@ do_restore() {
             fi
 
             # 3) Last resort: known host paths (older PasarGuard stored DB on volume)
-            if [ "$DB_IMPORTED" = false ]; then
+            if [ "$SQLITE_OK" = true ] && [ "$DB_IMPORTED" = false ]; then
                 local HOST_CAND
                 for HOST_CAND in "$DATA_DIR/db.sqlite3" "$PANEL_DIR/db.sqlite3"; do
                     if cp -f "$DB_RESTORE_PATH" "$HOST_CAND" 2>/dev/null; then
