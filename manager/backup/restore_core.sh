@@ -483,6 +483,9 @@ do_restore() {
                     else
                         local PGPASS_ENV=()
                         [ -n "$DB_PASS" ] && PGPASS_ENV=(-e "PGPASSWORD=$DB_PASS")
+                        # FIX (MRM-108): -w on every psql call so it NEVER prompts
+                        # for a password. docker exec has no TTY, so a prompt would
+                        # hang or fail obscurely; fail loudly instead.
                         local IMPORT_LOG="$TEMP_BASE/pg_import_$$.log"
 
                         # ── Reset the target database ──────────────────────────────
@@ -492,51 +495,61 @@ do_restore() {
                         # CASCADE` is UNSAFE on TimescaleDB: it drops the extension
                         # and leaves a DB where the re-import can fail mid-way,
                         # silently leaving a schema with no data / no alembic_version.
-                        local DB_DROPPED=false DB_RESET_OK=false
+                        local DB_DROPPED=false DB_RESET_OK=false DB_READY=true
                         if [[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]]; then
-                            docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -U "$DB_USER" -d postgres -c \
+                            # Kill lingering connections to the target DB (the panel
+                            # is already stopped; pgbouncer may hold pooled links).
+                            docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c \
                                 "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$DB_NAME' AND pid <> pg_backend_pid();" >/dev/null 2>&1 || true
-                            if docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -U "$DB_USER" -d postgres -c "DROP DATABASE IF EXISTS \"$DB_NAME\" WITH (FORCE);" >/dev/null 2>&1; then
+                            if docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c "DROP DATABASE IF EXISTS \"$DB_NAME\" WITH (FORCE);" >/dev/null 2>&1; then
                                 DB_DROPPED=true
-                                if docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -U "$DB_USER" -d postgres -c "CREATE DATABASE \"$DB_NAME\" OWNER \"$DB_USER\";" >/dev/null 2>&1 \
-                                   || docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -U "$DB_USER" -d postgres -c "CREATE DATABASE \"$DB_NAME\";" >/dev/null 2>&1; then
+                                if docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c "CREATE DATABASE \"$DB_NAME\" OWNER \"$DB_USER\";" >/dev/null 2>&1 \
+                                   || docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c "CREATE DATABASE \"$DB_NAME\";" >/dev/null 2>&1; then
                                     DB_RESET_OK=true
                                     log_backup "INFO" "Recreated database $DB_NAME (clean restore)"
-                                else
-                                    log_backup "ERROR" "Dropped $DB_NAME but could not recreate it (permission?)"
                                 fi
                             fi
                         fi
-                        if [ "$DB_RESET_OK" = false ] && [ "$DB_DROPPED" = false ]; then
+                        if [ "$DB_RESET_OK" = true ]; then
+                            :  # fresh database ready for import
+                        elif [ "$DB_DROPPED" = true ]; then
+                            # Dropped but CREATE DATABASE failed: importing into a
+                            # missing database would only produce confusing errors.
+                            DB_READY=false
+                            log_backup "ERROR" "Dropped $DB_NAME but CREATE DATABASE failed - cannot import"
+                            ui_error "Could not recreate database $DB_NAME - restore aborted"
+                        else
                             # Fallback: schema reset (DB user lacks CREATEDB or
                             # `postgres` maintenance DB access).
                             log_backup "WARNING" "DROP/CREATE DATABASE unavailable - falling back to schema reset"
-                            docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -U "$DB_USER" -d "$DB_NAME" -c "BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public; COMMIT;" >/dev/null 2>&1 || true
+                            docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -U "$DB_USER" -d "$DB_NAME" -c "BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public; COMMIT;" >/dev/null 2>&1 || true
                         fi
 
                         # ── Import (ON_ERROR_STOP=1 so a mid-file error fails) ─────
-                        if cat "$SQL_FILE" | docker exec -i "${PGPASS_ENV[@]}" "$DB_CONT" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" >"$IMPORT_LOG" 2>&1; then
-                            # ── VERIFY before declaring success ────────────────────
-                            # A zero exit code can still leave an incomplete DB; the
-                            # panel REQUIRES alembic_version (1 row). settings is
-                            # checked as a soft signal (exists in v3+ only).
-                            local ALEMBIC_ROWS SETTINGS_ROWS
-                            ALEMBIC_ROWS="$(docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -tA -U "$DB_USER" -d "$DB_NAME" -c "SELECT count(*) FROM alembic_version;" 2>/dev/null)"
-                            if [ "$ALEMBIC_ROWS" = "1" ]; then
-                                DB_IMPORTED=true
-                                SETTINGS_ROWS="$(docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -tA -U "$DB_USER" -d "$DB_NAME" -c "SELECT count(*) FROM settings;" 2>/dev/null)"
-                                if [ -n "$SETTINGS_ROWS" ] && [ "$SETTINGS_ROWS" -ge 1 ] 2>/dev/null; then
-                                    log_backup "SUCCESS" "PostgreSQL import verified (alembic_version=1, settings=$SETTINGS_ROWS)"
+                        if [ "$DB_READY" = true ]; then
+                            if docker exec -i "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" < "$SQL_FILE" >"$IMPORT_LOG" 2>&1; then
+                                # ── VERIFY before declaring success ────────────────
+                                # A zero exit code can still leave an incomplete DB; the
+                                # panel REQUIRES alembic_version (1 row). settings is
+                                # checked as a soft signal (exists in v3+ only).
+                                local ALEMBIC_ROWS SETTINGS_ROWS
+                                ALEMBIC_ROWS="$(docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -tA -U "$DB_USER" -d "$DB_NAME" -c "SELECT count(*) FROM alembic_version;" 2>/dev/null)"
+                                if [ "$ALEMBIC_ROWS" = "1" ]; then
+                                    DB_IMPORTED=true
+                                    SETTINGS_ROWS="$(docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -tA -U "$DB_USER" -d "$DB_NAME" -c "SELECT count(*) FROM settings;" 2>/dev/null)"
+                                    if [ -n "$SETTINGS_ROWS" ] && [ "$SETTINGS_ROWS" -ge 1 ] 2>/dev/null; then
+                                        log_backup "SUCCESS" "PostgreSQL import verified (alembic_version=1, settings=$SETTINGS_ROWS)"
+                                    else
+                                        log_backup "WARNING" "alembic_version=1 but settings empty/missing (pre-v3 backup?)"
+                                    fi
                                 else
-                                    log_backup "WARNING" "alembic_version=1 but settings empty/missing (pre-v3 backup?)"
+                                    log_backup "ERROR" "Import finished but alembic_version='$ALEMBIC_ROWS' (expected 1) - DB incomplete"
+                                    ui_error "Import produced an incomplete database (alembic_version=$ALEMBIC_ROWS, expected 1)"
                                 fi
                             else
-                                log_backup "ERROR" "Import finished but alembic_version='$ALEMBIC_ROWS' (expected 1) - DB incomplete"
-                                ui_error "Import produced an incomplete database (alembic_version=$ALEMBIC_ROWS, expected 1)"
+                                log_backup "ERROR" "PostgreSQL import failed (ON_ERROR_STOP). Last output lines:"
+                                tail -n 15 "$IMPORT_LOG" 2>/dev/null | while IFS= read -r L; do log_backup "ERROR" "  $L"; done
                             fi
-                        else
-                            log_backup "ERROR" "PostgreSQL import failed (ON_ERROR_STOP). Last output lines:"
-                            tail -n 15 "$IMPORT_LOG" 2>/dev/null | while IFS= read -r L; do log_backup "ERROR" "  $L"; done
                         fi
                         [ -n "$IMPORT_LOG" ] && [ -f "$IMPORT_LOG" ] && rm -f "$IMPORT_LOG"
                     fi
@@ -558,8 +571,8 @@ do_restore() {
                             [ -z "$DB_USER" ] && DB_USER="pasarguard"
                             [ -z "$DB_NAME" ] && DB_NAME="$DB_USER"
                             export PGPASSWORD="$DB_PASS"
-                            if psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" -c "BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public; COMMIT;" >/dev/null 2>&1 && \
-                               psql -h 127.0.0.1 -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -f "$SQL_FILE2" >/dev/null 2>&1; then
+                            if psql -w -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" -c "BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public; COMMIT;" >/dev/null 2>&1 && \
+                               psql -w -h 127.0.0.1 -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -f "$SQL_FILE2" >/dev/null 2>&1; then
                                 DB_IMPORTED=true
                             fi
                             unset PGPASSWORD
@@ -613,8 +626,15 @@ do_restore() {
                         TEMP_SQL="$ROOT/database/db.sql"
                         gunzip -c "$DB_RESTORE_PATH" > "$TEMP_SQL" 2>/dev/null && SQL_FILE="$TEMP_SQL"
                     fi
-                    if docker exec -e MYSQL_PWD="$DB_PASS" "$DB_CONT" mysql -u "$DB_USER" "$DB_NAME" < "$SQL_FILE" 2>/dev/null; then
-                        DB_IMPORTED=true
+                    # FIX (MRM-108): validate the dump before importing — a
+                    # truncated mysqldump would silently produce a half-restored DB.
+                    if ! mrm_mysql_dump_ok "$SQL_FILE"; then
+                        log_backup "ERROR" "Refusing to restore: MySQL dump is empty/truncated (missing 'Dump completed' trailer)"
+                        ui_error "Dump file is incomplete - aborting DB restore (live DB left untouched)"
+                    else
+                        if docker exec -e MYSQL_PWD="$DB_PASS" "$DB_CONT" mysql -u "$DB_USER" "$DB_NAME" < "$SQL_FILE" 2>/dev/null; then
+                            DB_IMPORTED=true
+                        fi
                     fi
                     [ "$DB_IS_GZ" = true ] && [ -f "$TEMP_SQL" ] && [ "$TEMP_SQL" != "$DB_RESTORE_PATH" ] && rm -f "$TEMP_SQL"
                 fi

@@ -872,6 +872,78 @@ fi
 
 echo ""
 
+# ─── Test Group 12: Dump Integrity Validation (MRM-108) ─────────────────────
+echo "💾 Group 12: Dump Integrity Validation (MRM-108)"
+echo ""
+
+# database.sh defines only functions (plus one harmless global), so it can be
+# sourced here to test the dump validators directly without docker.
+if source "$PROJECT_DIR/manager/backup/database.sh" 2>/dev/null; then
+    TMPVAL=$(mktemp -d)
+
+    # PostgreSQL: complete dump must be accepted
+    printf 'CREATE TABLE foo(x int);\nCOPY foo FROM stdin;\n1\n\\.\n-- PostgreSQL database dump complete\n' > "$TMPVAL/pg_good.sql"
+    if mrm_pg_dump_ok "$TMPVAL/pg_good.sql"; then
+        pass "mrm_pg_dump_ok accepts a complete pg_dump"
+    else
+        fail "mrm_pg_dump_ok rejected a complete pg_dump"
+    fi
+
+    # PostgreSQL: truncated dump (no trailer) must be rejected
+    printf 'CREATE TABLE foo(x int);\n' > "$TMPVAL/pg_bad.sql"
+    if mrm_pg_dump_ok "$TMPVAL/pg_bad.sql"; then
+        fail "mrm_pg_dump_ok accepted a truncated dump"
+    else
+        pass "mrm_pg_dump_ok rejects a truncated dump"
+    fi
+
+    # PostgreSQL: empty file must be rejected
+    : > "$TMPVAL/pg_empty.sql"
+    if mrm_pg_dump_ok "$TMPVAL/pg_empty.sql"; then
+        fail "mrm_pg_dump_ok accepted an empty dump"
+    else
+        pass "mrm_pg_dump_ok rejects an empty dump"
+    fi
+
+    # PostgreSQL: complete gzip dump must be accepted
+    gzip -c "$TMPVAL/pg_good.sql" > "$TMPVAL/pg_good.sql.gz"
+    if mrm_pg_dump_ok "$TMPVAL/pg_good.sql.gz"; then
+        pass "mrm_pg_dump_ok accepts a complete .sql.gz dump"
+    else
+        fail "mrm_pg_dump_ok rejected a complete .sql.gz dump"
+    fi
+
+    # PostgreSQL: truncated gzip dump must be rejected
+    gzip -c "$TMPVAL/pg_bad.sql" > "$TMPVAL/pg_bad.sql.gz"
+    if mrm_pg_dump_ok "$TMPVAL/pg_bad.sql.gz"; then
+        fail "mrm_pg_dump_ok accepted a truncated .sql.gz dump"
+    else
+        pass "mrm_pg_dump_ok rejects a truncated .sql.gz dump"
+    fi
+
+    # MySQL: complete dump must be accepted
+    printf 'CREATE TABLE foo(x int);\n-- Dump completed on 2026-09-01 12:00:00\n' > "$TMPVAL/my_good.sql"
+    if mrm_mysql_dump_ok "$TMPVAL/my_good.sql"; then
+        pass "mrm_mysql_dump_ok accepts a complete mysqldump"
+    else
+        fail "mrm_mysql_dump_ok rejected a complete mysqldump"
+    fi
+
+    # MySQL: truncated dump must be rejected
+    printf 'CREATE TABLE foo(x int);\n' > "$TMPVAL/my_bad.sql"
+    if mrm_mysql_dump_ok "$TMPVAL/my_bad.sql"; then
+        fail "mrm_mysql_dump_ok accepted a truncated dump"
+    else
+        pass "mrm_mysql_dump_ok rejects a truncated dump"
+    fi
+
+    rm -rf "$TMPVAL"
+else
+    fail "could not source manager/backup/database.sh for validation tests"
+fi
+
+echo ""
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 echo "═══════════════════════════════════════════════════════════"
 echo "  Test Results"
