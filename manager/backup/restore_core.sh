@@ -472,18 +472,73 @@ do_restore() {
                         fi
                     fi
 
-                    if [ -n "$DB_PASS" ]; then
-                        # FIX: ON_ERROR_STOP=1 so a mid-file SQL error fails the
-                        # import instead of reporting a false success (MRM-061)
-                        if docker exec -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -U "$DB_USER" -d "$DB_NAME" -c "BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public; COMMIT;" >/dev/null 2>&1 && \
-                           cat "$SQL_FILE" | docker exec -i -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
-                            DB_IMPORTED=true
-                        fi
+                    # ── VALIDATE the dump BEFORE touching the live database ────────
+                    # A truncated/corrupt dump must NEVER destroy a working database.
+                    # (MRM-108: a partial dump restores a schema with no data and no
+                    # alembic_version -> panel crash-loops on start.)
+                    if ! mrm_pg_dump_ok "$SQL_FILE"; then
+                        log_backup "ERROR" "Refusing to restore: dump is empty/truncated (missing pg_dump trailer)"
+                        ui_error "Dump file is incomplete - aborting DB restore (live DB left untouched)"
+                        DB_IMPORTED=false
                     else
-                        if docker exec "$DB_CONT" psql -U "$DB_USER" -d "$DB_NAME" -c "BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public; COMMIT;" >/dev/null 2>&1 && \
-                           cat "$SQL_FILE" | docker exec -i "$DB_CONT" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
-                            DB_IMPORTED=true
+                        local PGPASS_ENV=()
+                        [ -n "$DB_PASS" ] && PGPASS_ENV=(-e "PGPASSWORD=$DB_PASS")
+                        local IMPORT_LOG="$TEMP_BASE/pg_import_$$.log"
+
+                        # ── Reset the target database ──────────────────────────────
+                        # Preferred: drop & recreate the whole DATABASE. On a fresh DB
+                        # the dump re-runs `CREATE EXTENSION timescaledb` exactly the
+                        # way pg_dump/pg_restore expect. The old `DROP SCHEMA public
+                        # CASCADE` is UNSAFE on TimescaleDB: it drops the extension
+                        # and leaves a DB where the re-import can fail mid-way,
+                        # silently leaving a schema with no data / no alembic_version.
+                        local DB_DROPPED=false DB_RESET_OK=false
+                        if [[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]]; then
+                            docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -U "$DB_USER" -d postgres -c \
+                                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$DB_NAME' AND pid <> pg_backend_pid();" >/dev/null 2>&1 || true
+                            if docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -U "$DB_USER" -d postgres -c "DROP DATABASE IF EXISTS \"$DB_NAME\" WITH (FORCE);" >/dev/null 2>&1; then
+                                DB_DROPPED=true
+                                if docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -U "$DB_USER" -d postgres -c "CREATE DATABASE \"$DB_NAME\" OWNER \"$DB_USER\";" >/dev/null 2>&1 \
+                                   || docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -U "$DB_USER" -d postgres -c "CREATE DATABASE \"$DB_NAME\";" >/dev/null 2>&1; then
+                                    DB_RESET_OK=true
+                                    log_backup "INFO" "Recreated database $DB_NAME (clean restore)"
+                                else
+                                    log_backup "ERROR" "Dropped $DB_NAME but could not recreate it (permission?)"
+                                fi
+                            fi
                         fi
+                        if [ "$DB_RESET_OK" = false ] && [ "$DB_DROPPED" = false ]; then
+                            # Fallback: schema reset (DB user lacks CREATEDB or
+                            # `postgres` maintenance DB access).
+                            log_backup "WARNING" "DROP/CREATE DATABASE unavailable - falling back to schema reset"
+                            docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -U "$DB_USER" -d "$DB_NAME" -c "BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public; COMMIT;" >/dev/null 2>&1 || true
+                        fi
+
+                        # ── Import (ON_ERROR_STOP=1 so a mid-file error fails) ─────
+                        if cat "$SQL_FILE" | docker exec -i "${PGPASS_ENV[@]}" "$DB_CONT" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" >"$IMPORT_LOG" 2>&1; then
+                            # ── VERIFY before declaring success ────────────────────
+                            # A zero exit code can still leave an incomplete DB; the
+                            # panel REQUIRES alembic_version (1 row). settings is
+                            # checked as a soft signal (exists in v3+ only).
+                            local ALEMBIC_ROWS SETTINGS_ROWS
+                            ALEMBIC_ROWS="$(docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -tA -U "$DB_USER" -d "$DB_NAME" -c "SELECT count(*) FROM alembic_version;" 2>/dev/null)"
+                            if [ "$ALEMBIC_ROWS" = "1" ]; then
+                                DB_IMPORTED=true
+                                SETTINGS_ROWS="$(docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -tA -U "$DB_USER" -d "$DB_NAME" -c "SELECT count(*) FROM settings;" 2>/dev/null)"
+                                if [ -n "$SETTINGS_ROWS" ] && [ "$SETTINGS_ROWS" -ge 1 ] 2>/dev/null; then
+                                    log_backup "SUCCESS" "PostgreSQL import verified (alembic_version=1, settings=$SETTINGS_ROWS)"
+                                else
+                                    log_backup "WARNING" "alembic_version=1 but settings empty/missing (pre-v3 backup?)"
+                                fi
+                            else
+                                log_backup "ERROR" "Import finished but alembic_version='$ALEMBIC_ROWS' (expected 1) - DB incomplete"
+                                ui_error "Import produced an incomplete database (alembic_version=$ALEMBIC_ROWS, expected 1)"
+                            fi
+                        else
+                            log_backup "ERROR" "PostgreSQL import failed (ON_ERROR_STOP). Last output lines:"
+                            tail -n 15 "$IMPORT_LOG" 2>/dev/null | while IFS= read -r L; do log_backup "ERROR" "  $L"; done
+                        fi
+                        [ -n "$IMPORT_LOG" ] && [ -f "$IMPORT_LOG" ] && rm -f "$IMPORT_LOG"
                     fi
 
                     [ "$DB_IS_GZ" = true ] && [ -f "$TEMP_SQL" ] && [ "$TEMP_SQL" != "$DB_RESTORE_PATH" ] && rm -f "$TEMP_SQL"
@@ -495,15 +550,20 @@ do_restore() {
                             SQL_FILE2="$ROOT/database/db.sql"
                             gunzip -c "$DB_RESTORE_PATH" > "$SQL_FILE2" 2>/dev/null
                         fi
-                        parse_db_credentials "$PANEL_ENV"
-                        [ -z "$DB_USER" ] && DB_USER="pasarguard"
-                        [ -z "$DB_NAME" ] && DB_NAME="$DB_USER"
-                        export PGPASSWORD="$DB_PASS"
-                        if psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" -c "BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public; COMMIT;" >/dev/null 2>&1 && \
-                           psql -h 127.0.0.1 -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -f "$SQL_FILE2" >/dev/null 2>&1; then
-                            DB_IMPORTED=true
+                        if ! mrm_pg_dump_ok "$SQL_FILE2"; then
+                            log_backup "ERROR" "Refusing to restore: dump is empty/truncated (missing pg_dump trailer)"
+                            ui_error "Dump file is incomplete - aborting DB restore (live DB left untouched)"
+                        else
+                            parse_db_credentials "$PANEL_ENV"
+                            [ -z "$DB_USER" ] && DB_USER="pasarguard"
+                            [ -z "$DB_NAME" ] && DB_NAME="$DB_USER"
+                            export PGPASSWORD="$DB_PASS"
+                            if psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" -c "BEGIN; DROP SCHEMA public CASCADE; CREATE SCHEMA public; COMMIT;" >/dev/null 2>&1 && \
+                               psql -h 127.0.0.1 -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -f "$SQL_FILE2" >/dev/null 2>&1; then
+                                DB_IMPORTED=true
+                            fi
+                            unset PGPASSWORD
                         fi
-                        unset PGPASSWORD
                         [ "$DB_IS_GZ" = true ] && [ -f "$SQL_FILE2" ] && rm -f "$SQL_FILE2"
                     else
                         log_backup "ERROR" "No DB container or psql found for restore"

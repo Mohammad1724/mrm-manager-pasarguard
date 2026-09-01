@@ -183,12 +183,41 @@ mrm_sqlite_path_from_container() {
     return 0
 }
 
+# Validate a PostgreSQL plain-text dump. pg_dump ALWAYS ends a successful dump
+# with the trailer "-- PostgreSQL database dump complete". A dump missing that
+# trailer is truncated/corrupt (pg_dump was killed or errored mid-way) and MUST
+# NOT be trusted: restoring it yields a schema with no data and no
+# alembic_version, which makes the panel crash-loop on start (MRM-108).
+# Accepts a plain .sql file OR a .sql.gz (decompresses on the fly to check).
+mrm_pg_dump_ok() {
+    local F="$1" TAIL=""
+    [ -s "$F" ] || return 1
+    if [[ "$F" == *.gz ]]; then
+        TAIL="$(gunzip -c "$F" 2>/dev/null | tail -c 1024)"
+    else
+        TAIL="$(tail -c 1024 "$F" 2>/dev/null)"
+    fi
+    printf '%s' "$TAIL" | grep -q "PostgreSQL database dump complete"
+}
+
+# Validate a MySQL/MariaDB dump: mysqldump ends with "-- Dump completed on ...".
+mrm_mysql_dump_ok() {
+    local F="$1" TAIL=""
+    [ -s "$F" ] || return 1
+    if [[ "$F" == *.gz ]]; then
+        TAIL="$(gunzip -c "$F" 2>/dev/null | tail -c 1024)"
+    else
+        TAIL="$(tail -c 1024 "$F" 2>/dev/null)"
+    fi
+    printf '%s' "$TAIL" | grep -qE "Dump completed on|-- Dump completed"
+}
+
 # Export PostgreSQL (try: dedicated postgres container, then host pg_dump).
 # Always sets PGPASSWORD (even empty) and passes -w so pg_dump NEVER prompts
 # for a password interactively (would hang the menu / cron job).
 mrm_export_postgres() {
     local DEST="$1" HOST="$2" PORT="$3" USER="$4" PASS="$5" DBNAME="$6"
-    local CONT INNER_PORT
+    local CONT INNER_PORT ERR_FILE
     # FIX: match official compose service names first (pasarguard-postgresql-1…),
     # not any container whose name merely contains "postgres" (MRM-049)
     CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(pasarguard-)?(postgresql|timescaledb|postgres|timescale)[-_]?[0-9]*$' | head -1)
@@ -196,13 +225,28 @@ mrm_export_postgres() {
     if [ -n "$CONT" ]; then
         # FIX: the panel connects through pgbouncer (6432) but inside the postgres
         # container the server itself listens on 5432 — dump the server directly (MRM-046)
+        # FIX (MRM-108): dump the container's OWN server via the local unix socket
+        # (no -h). A hostname from the panel URL (docker service name, pgbouncer…)
+        # may not be reachable from INSIDE the DB container, and guessing 5432 is
+        # fragile. The unix socket always hits the right instance.
         INNER_PORT="$PORT"
         [ "$INNER_PORT" = "6432" ] && INNER_PORT=5432
-        log_backup "INFO" "pg_dump via container: $CONT ($USER@$HOST:$INNER_PORT/$DBNAME)"
-        if docker exec -e PGPASSWORD="$PASS" "$CONT" pg_dump -w -h "$HOST" -p "$INNER_PORT" -U "$USER" -d "$DBNAME" 2>/dev/null > "$DEST" \
-           && [ -s "$DEST" ] && [ "$(stat -c%s "$DEST" 2>/dev/null || echo 0)" -gt 100 ]; then
-            return 0
+        log_backup "INFO" "pg_dump via container: $CONT ($USER@$DBNAME)"
+        ERR_FILE="$(mktemp /tmp/mrm-pgdump.XXXXXX)"
+        if ! ( docker exec -e PGPASSWORD="$PASS" "$CONT" pg_dump -w -U "$USER" -d "$DBNAME" > "$DEST" 2>"$ERR_FILE" \
+               && mrm_pg_dump_ok "$DEST" ); then
+            # Retry over TCP localhost in case the image has no unix socket
+            log_backup "WARNING" "unix-socket pg_dump failed, retrying via 127.0.0.1:$INNER_PORT"
+            if ! ( docker exec -e PGPASSWORD="$PASS" "$CONT" pg_dump -w -h 127.0.0.1 -p "$INNER_PORT" -U "$USER" -d "$DBNAME" > "$DEST" 2>"$ERR_FILE" \
+                   && mrm_pg_dump_ok "$DEST" ); then
+                log_backup "ERROR" "pg_dump via container failed: $(tail -n 3 "$ERR_FILE" 2>/dev/null | tr '\n' ' ')"
+                rm -f "$ERR_FILE"
+                return 1
+            fi
         fi
+        rm -f "$ERR_FILE"
+        log_backup "SUCCESS" "PostgreSQL dumped via container: $(du -h "$DEST" 2>/dev/null | cut -f1)"
+        return 0
     fi
     if command -v pg_dump >/dev/null 2>&1; then
         log_backup "INFO" "pg_dump via host: $HOST:$PORT ($USER/$DBNAME)"
@@ -212,7 +256,7 @@ mrm_export_postgres() {
         echo "$HOST:$PORT:$DBNAME:$USER:$PASS" > "$PGPASS_FILE"
         chmod 600 "$PGPASS_FILE"
         if PGPASSFILE="$PGPASS_FILE" pg_dump -w -h "$HOST" -p "$PORT" -U "$USER" -d "$DBNAME" 2>/dev/null > "$DEST" \
-           && [ -s "$DEST" ] && [ "$(stat -c%s "$DEST" 2>/dev/null || echo 0)" -gt 100 ]; then
+           && mrm_pg_dump_ok "$DEST"; then
             rm -f "$PGPASS_FILE"
             return 0
         fi
@@ -231,7 +275,7 @@ mrm_export_mysql() {
     [ -z "$CONT" ] && CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "mysql|mariadb" | head -1)
     if [ -n "$CONT" ]; then
         if docker exec -e MYSQL_PWD="$PASS" "$CONT" mysqldump --connect-timeout=5 -h"$HOST" -P"$PORT" -u"$USER" "$DBNAME" 2>/dev/null > "$DEST" \
-           && [ -s "$DEST" ] && [ "$(stat -c%s "$DEST" 2>/dev/null || echo 0)" -gt 100 ]; then
+           && mrm_mysql_dump_ok "$DEST"; then
             return 0
         fi
     fi
@@ -248,7 +292,7 @@ port=$PORT
 MYEOF
         chmod 600 "$MYCNF_FILE"
         if mysqldump --defaults-file="$MYCNF_FILE" --connect-timeout=5 "$DBNAME" 2>/dev/null > "$DEST" \
-           && [ -s "$DEST" ] && [ "$(stat -c%s "$DEST" 2>/dev/null || echo 0)" -gt 100 ]; then
+           && mrm_mysql_dump_ok "$DEST"; then
             rm -f "$MYCNF_FILE"
             return 0
         fi
