@@ -304,6 +304,14 @@ function App() {
                 aria-label={`${Math.min(usagePercentage, 100).toFixed(0)}% ${t('userInfo.used')}`}
               >
                 <span className="treasury-orbit-spark" aria-hidden="true" />
+                <div className="treasury-orbit-water" style={{ '--water-level': `${Math.min(usagePercentage, 100)}%` } as CSSProperties} aria-hidden="true">
+                  <div className="treasury-orbit-water-fill">
+                    <svg viewBox="0 0 240 14" preserveAspectRatio="none">
+                      <path className="treasury-orbit-wave-soft" d="M0 8 C24 1 48 13 72 7 C96 1 120 13 144 7 C168 1 192 13 216 7 C228 4 234 8 240 6 L240 14 L0 14 Z" />
+                      <path className="treasury-orbit-wave-line" d="M0 9 C30 3 54 12 84 8 C114 4 138 12 168 8 C198 4 222 12 240 8 L240 14 L0 14 Z" />
+                    </svg>
+                  </div>
+                </div>
                 <div className="treasury-orbit-center">
                   <strong>{Math.min(usagePercentage, 100).toFixed(0)}<small>%</small></strong>
                   <span>{t('userInfo.used')}</span>

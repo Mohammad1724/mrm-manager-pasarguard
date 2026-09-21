@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Backup - Database Module v1.3.1
+# MRM Backup - Database Module v1.4.0
 # SQLite/PostgreSQL/MySQL backup and restore
 # Includes live-safe export, cold copy, and probe detection
 

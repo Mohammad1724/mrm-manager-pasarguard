@@ -1,6 +1,7 @@
 import { useState, memo, useMemo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, Check, ScanQrCode, Files, Download, Radio, Server, ShieldCheck, Signal } from 'lucide-react';
+import { Copy, Check, ScanQrCode, Files, Download, Radio, Server, ShieldCheck } from 'lucide-react';
+import { PingGauge } from '@/components/ping-gauge';
 import { toast } from 'sonner';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { parseLinks, type ParsedLink } from '@/lib/linkParser';
@@ -159,7 +160,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
           </button>
           <button
             type="button"
-            onClick={() => handleShowQR({ protocol: 'unknown', name: t('config.subscriptionLink'), emoji: '📱', raw: subscriptionUrl })}
+            onClick={() => handleShowQR({ protocol: 'unknown', name: t('config.subscriptionLink'), emoji: '', raw: subscriptionUrl })}
             className="treasury-link-action"
             title={t('qr.show')}
           >
@@ -203,7 +204,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
                 <small>{dir === 'rtl' ? 'آماده اتصال امن' : 'Secure connection ready'}</small>
               </div>
               <div className="treasury-server-ping" title={dir === 'rtl' ? 'پینگ تقریبی سرور' : 'Estimated server ping'}>
-                <Signal className="size-3.5" aria-hidden="true" />
+                <PingGauge ms={Number(serverPings[index]) || 0} />
                 <b dir="ltr">{serverPings[index]} ms</b>
               </div>
               <div className="treasury-link-actions">

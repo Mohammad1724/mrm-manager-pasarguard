@@ -31,7 +31,7 @@ export const ProminentSubscriptionLink = memo(({ hasChart }: ProminentSubscripti
   const subscriptionLinkData = useMemo<ParsedLink>(() => ({
     protocol: 'unknown',
     name: t('config.subscriptionLink'),
-    emoji: '📱',
+    emoji: '',
     raw: subscriptionUrl
   }), [subscriptionUrl, t]);
 

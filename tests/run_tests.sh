@@ -1039,7 +1039,7 @@ fi
 # ─── v1.3.1: user-facing naming — «نسخه قدیمی تم» / «MRM Special» ─────────────
 
 if grep -q 'نسخه قدیمی تم' "$PROJECT_DIR/plugin/mrm-special.js" && \
-   grep -q '💎 MRM Special' "$PROJECT_DIR/plugin/mrm-special.js" && \
+   grep -q 'MRM Special' "$PROJECT_DIR/plugin/mrm-special.js" && \
    grep -q 'Old template' "$PROJECT_DIR/manager/theme.sh" && \
    ! grep -q 'Zomorod-style' "$PROJECT_DIR/manager/theme.sh" && \
    ! grep -q 'Classic MRM' "$PROJECT_DIR/manager/theme.sh" && \
@@ -1067,6 +1067,40 @@ echo -e "  ${RED}Failed${NC}: $FAIL"
 echo -e "  ${YELLOW}Skipped${NC}: $SKIP"
 echo -e "  Total:  $((PASS + FAIL + SKIP))"
 echo ""
+
+# ─── v1.4.0: MRM Turquoise identity — فیروزه‌ای/زغالی ─────────────────────────
+if grep -qi -- "--treasury-gold: #2db7b2" templates/subscription-src/src/index.css && \
+   grep -qi -- "--treasury-emerald: #0b6e6a" templates/subscription-src/src/index.css; then
+    pass "[159] turquoise identity tokens in template source" || fail "[159] turquoise identity tokens in template source"
+else
+    fail "[159] turquoise identity tokens in template source"
+fi
+if grep -qi -- "#2db7b2" templates/subscription/index.html && \
+   grep -qi -- "#59e0d8" templates/subscription/index.html && \
+   grep -qi -- "#0b6e6a" templates/subscription/index.html; then
+    pass "[160] turquoise identity in built template" || fail "[160] turquoise identity in built template"
+else
+    fail "[160] turquoise identity in built template"
+fi
+if grep -q "primary: '#2DB7B2'" plugin/mrm-runtime.js && grep -q "primary: '#2DB7B2'" plugin/mrm-special.js; then
+    pass "[161] turquoise default theme colors in runtime + panel" || fail "[161] turquoise default theme colors in runtime + panel"
+else
+    fail "[161] turquoise default theme colors in runtime + panel"
+fi
+if python3 -c "
+import re,sys,pathlib
+pat=re.compile(r'[\U0001F300-\U0001FAFF]')
+bad=[]
+for root in ('templates/subscription-src/src','plugin'):
+    for f in pathlib.Path(root).rglob('*'):
+        if f.is_file() and f.suffix in ('.ts','.tsx','.json','.js') and f.name != 'run_tests.sh' and pat.search(f.read_text(errors='ignore')):
+            bad.append(str(f))
+sys.exit(1 if bad else 0)
+" 2>/dev/null; then
+    pass "[162] zero emoji in template source + plugin UI" || fail "[162] zero emoji in template source + plugin UI"
+else
+    fail "[162] zero emoji in template source + plugin UI"
+fi
 
 if [ "$FAIL" -eq 0 ]; then
     echo -e "  ${GREEN}✔ All tests passed!${NC}"

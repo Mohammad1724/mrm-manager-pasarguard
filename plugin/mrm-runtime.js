@@ -4,7 +4,7 @@
   const PREFIX = 'x-mrm-';
   const SUPPORT_ID = 'mrm-support-link';
   const THEME_STYLE_ID = 'mrm-theme-style';
-  const THEME_DEFAULTS = { primary: '#C9992D', secondary: '#064C38' };
+  const THEME_DEFAULTS = { primary: '#2DB7B2', secondary: '#0B6E6A' };
   const DEFAULTS = {
     enabled: true,
     storeName: 'MRM',

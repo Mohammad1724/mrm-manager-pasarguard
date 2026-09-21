@@ -21,7 +21,7 @@
 # Data layout:   /var/lib/pasarguard/mrm/
 # Profile map:   profiles/profiles.json  (admins.json is created by sitecustomize)
 # ============================================================================
-SPECIAL_VERSION="1.1.1"
+SPECIAL_VERSION="1.2.0"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091

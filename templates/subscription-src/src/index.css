@@ -65,76 +65,76 @@
 
 :root {
   color-scheme: light;
-  --background: #f3f5f1;
-  --foreground: #17231d;
+  --background: #EDF3F2;
+  --foreground: #15292B;
   --card: rgba(255, 255, 255, 0.92);
-  --card-solid: #ffffff;
-  --card-foreground: #17231d;
-  --popover: rgba(255, 255, 255, 0.94);
-  --popover-foreground: #17231d;
-  --primary: #7b5d13;
-  --primary-soft: rgba(151, 111, 22, 0.12);
-  --primary-foreground: #ffffff;
-  --secondary: #0c6b4e;
-  --secondary-foreground: #ffffff;
-  --muted: #e7ebe5;
-  --muted-foreground: #617068;
-  --accent: #e8eee9;
-  --accent-foreground: #173d30;
+  --card-solid: #FFFFFF;
+  --card-foreground: #15292B;
+  --popover: rgba(255, 255, 255, 0.95);
+  --popover-foreground: #15292B;
+  --primary: #0E8F8A;
+  --primary-soft: rgba(14, 143, 138, 0.12);
+  --primary-foreground: #FFFFFF;
+  --secondary: #0B6E6A;
+  --secondary-foreground: #FFFFFF;
+  --muted: #E1EBE9;
+  --muted-foreground: #5C7472;
+  --accent: #DCEDEB;
+  --accent-foreground: #0B4744;
   --destructive: #c9342f;
-  --success: #167b52;
-  --warning: #9b6710;
-  --info: #276da8;
-  --border: rgba(43, 62, 52, 0.14);
-  --input: rgba(43, 62, 52, 0.09);
-  --ring: #8e6a16;
-  --separator: rgba(43, 62, 52, 0.12);
-  --material: rgba(248, 250, 247, 0.78);
+  --success: #12876B;
+  --warning: #9B6710;
+  --info: #276DA8;
+  --border: rgba(23, 58, 58, 0.13);
+  --input: rgba(23, 58, 58, 0.09);
+  --ring: #0E8F8A;
+  --separator: rgba(23, 58, 58, 0.12);
+  --material: rgba(237, 243, 242, 0.8);
   --material-strong: rgba(255, 255, 255, 0.9);
-  --shadow: 0 1px 2px rgba(17, 33, 25, 0.04), 0 10px 32px rgba(17, 33, 25, 0.07);
-  --shadow-raised: 0 1px 3px rgba(17, 33, 25, 0.06), 0 18px 44px rgba(17, 33, 25, 0.1);
-  --chart-1: #9a741a;
-  --chart-2: #177a55;
-  --chart-3: #c39a3b;
-  --chart-4: #4c8c72;
-  --chart-5: #6f7d76;
+  --shadow: 0 1px 2px rgba(18, 32, 34, 0.04), 0 10px 32px rgba(18, 32, 34, 0.07);
+  --shadow-raised: 0 1px 3px rgba(18, 32, 34, 0.06), 0 18px 44px rgba(18, 32, 34, 0.1);
+  --chart-1: #0E8F8A;
+  --chart-2: #14ADA6;
+  --chart-3: #59E0D8;
+  --chart-4: #0B6E6A;
+  --chart-5: #8FC7C4;
 }
 
 .dark {
   color-scheme: dark;
-  --background: #07100d;
-  --foreground: #f1f5f1;
-  --card: rgba(18, 31, 25, 0.88);
-  --card-solid: #121f19;
-  --card-foreground: #f1f5f1;
-  --popover: rgba(23, 37, 30, 0.94);
-  --popover-foreground: #f1f5f1;
-  --primary: #d6ae4a;
-  --primary-soft: rgba(214, 174, 74, 0.14);
-  --primary-foreground: #172015;
-  --secondary: #208661;
-  --secondary-foreground: #ffffff;
-  --muted: #1b2922;
-  --muted-foreground: #9eaaa3;
-  --accent: #22332a;
-  --accent-foreground: #f1f5f1;
+  --background: #0E1618;
+  --foreground: #EAF6F5;
+  --card: rgba(18, 32, 34, 0.9);
+  --card-solid: #122022;
+  --card-foreground: #EAF6F5;
+  --popover: rgba(18, 32, 34, 0.95);
+  --popover-foreground: #EAF6F5;
+  --primary: #2DB7B2;
+  --primary-soft: rgba(45, 183, 178, 0.14);
+  --primary-foreground: #04302E;
+  --secondary: #0E8F8A;
+  --secondary-foreground: #FFFFFF;
+  --muted: #182826;
+  --muted-foreground: #9CB4B2;
+  --accent: #1E3234;
+  --accent-foreground: #EAF6F5;
   --destructive: #ff6961;
-  --success: #54c88f;
-  --warning: #e7b85c;
-  --info: #70aee2;
-  --border: rgba(226, 239, 230, 0.13);
-  --input: rgba(226, 239, 230, 0.09);
-  --ring: #d6ae4a;
-  --separator: rgba(226, 239, 230, 0.11);
-  --material: rgba(10, 20, 16, 0.76);
-  --material-strong: rgba(18, 31, 25, 0.9);
+  --success: #3ECFA3;
+  --warning: #E7B85C;
+  --info: #70AEE2;
+  --border: rgba(200, 236, 233, 0.13);
+  --input: rgba(200, 236, 233, 0.09);
+  --ring: #2DB7B2;
+  --separator: rgba(200, 236, 233, 0.11);
+  --material: rgba(10, 18, 20, 0.78);
+  --material-strong: rgba(18, 32, 34, 0.9);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 14px 38px rgba(0, 0, 0, 0.22);
   --shadow-raised: 0 2px 3px rgba(0, 0, 0, 0.25), 0 22px 54px rgba(0, 0, 0, 0.3);
-  --chart-1: #d6ae4a;
-  --chart-2: #54c88f;
-  --chart-3: #f0cc70;
-  --chart-4: #3d9b77;
-  --chart-5: #9eaaa3;
+  --chart-1: #2DB7B2;
+  --chart-2: #59E0D8;
+  --chart-3: #0E8F8A;
+  --chart-4: #14ADA6;
+  --chart-5: #9CB4B2;
 }
 
 @layer base {
@@ -210,8 +210,8 @@
     inset: 0;
     pointer-events: none;
     background:
-      radial-gradient(circle at 78% -12%, rgba(190, 148, 43, 0.12), transparent 38%),
-      radial-gradient(circle at -8% 36%, rgba(23, 122, 85, 0.09), transparent 34%);
+      radial-gradient(circle at 78% -12%, rgba(45, 183, 178, 0.12), transparent 38%),
+      radial-gradient(circle at -8% 36%, rgba(18, 135, 121, 0.09), transparent 34%);
   }
   .ios-profile-row,
   .ios-notice,
@@ -298,7 +298,7 @@
     flex: none;
     border-radius: 50%;
     background: conic-gradient(var(--primary) var(--progress), var(--muted) 0);
-    box-shadow: 0 0 0 1px var(--border), 0 10px 30px rgba(114, 82, 12, 0.1);
+    box-shadow: 0 0 0 1px var(--border), 0 10px 30px rgba(14, 143, 138, 0.1);
   }
   .ios-progress-ring::after {
     position: absolute;
@@ -591,7 +591,7 @@
   .ios-segmented-item.is-selected {
     color: var(--foreground);
     background: var(--card-solid);
-    box-shadow: 0 1px 4px rgba(14, 28, 21, 0.14);
+    box-shadow: 0 1px 4px rgba(18, 32, 34, 0.14);
   }
 
   .ios-accordion-item {
@@ -685,17 +685,17 @@
 .ios-segmented-item:active,
 .ios-app-button:active { transform: scale(0.96); }
 
-/* Emerald Treasury — creative ganj identity */
+/* MRM Turquoise — فیروزه‌ای water identity (original) */
 @layer components {
   .treasury-shell {
-    --treasury-emerald: #064c38;
-    --treasury-emerald-deep: #033528;
-    --treasury-emerald-bright: #0e7655;
-    --treasury-gold: #c9992d;
-    --treasury-gold-bright: #efc85c;
-    --treasury-gold-foreground: #152014;
-    --treasury-emerald-foreground: #f8fbf8;
-    --treasury-ivory: #fbfaf5;
+    --treasury-emerald: #0B6E6A;
+    --treasury-emerald-deep: #083E3C;
+    --treasury-emerald-bright: #14ADA6;
+    --treasury-gold: #2DB7B2;
+    --treasury-gold-bright: #59E0D8;
+    --treasury-gold-foreground: #04302E;
+    --treasury-emerald-foreground: #EAFFFD;
+    --treasury-ivory: #F4FBFA;
     background:
       radial-gradient(circle at 82% 2%, color-mix(in srgb, var(--treasury-gold) 12%, transparent), transparent 28rem),
       radial-gradient(circle at 6% 32%, color-mix(in srgb, var(--treasury-emerald-bright) 8%, transparent), transparent 25rem),
@@ -1136,8 +1136,8 @@
 
   .treasury-reservoir {
     --liquid-level: 100%;
-    --liquid-color: #14845e;
-    --liquid-color-bright: #4ed39f;
+    --liquid-color: #0E8F8A;
+    --liquid-color-bright: #3ECFA3;
     display: grid;
     grid-template-columns: minmax(0, 0.85fr) minmax(260px, 1.15fr);
     gap: 1.15rem;
@@ -1325,7 +1325,7 @@
     height: 3px;
     flex: 1;
     border-radius: 99px;
-    background: linear-gradient(90deg, #d13d38, #d79c25 48%, #16825d);
+    background: linear-gradient(90deg, #d13d38, #2DB7B2 48%, #0E8F8A);
     opacity: 0.8;
   }
 
@@ -1337,7 +1337,7 @@
     border: 0.5px solid color-mix(in srgb, var(--success) 18%, var(--border));
     border-radius: 1.25rem;
     padding: 0.7rem 0.8rem;
-    background: color-mix(in srgb, var(--card) 88%, rgba(24, 130, 92, 0.09));
+    background: color-mix(in srgb, var(--card) 88%, rgba(18, 135, 121, 0.09));
     box-shadow: var(--shadow);
   }
 
@@ -1475,7 +1475,7 @@
     transition: transform 150ms ease, filter 150ms ease;
   }
 
-  .treasury-copy-all.is-success { color: white; background: linear-gradient(135deg, #169269, #07523e); }
+  .treasury-copy-all.is-success { color: white; background: linear-gradient(135deg, #14ADA6, #083E3C); }
 
   .treasury-subscription-card {
     position: relative;
@@ -1771,7 +1771,7 @@
 .treasury-cta-chip.is-urgent {
   color: #fff;
   border-color: transparent;
-  background: linear-gradient(135deg, var(--treasury-gold), #d97706);
+  background: linear-gradient(135deg, var(--treasury-gold), #2DB7B2);
   box-shadow: 0 6px 18px color-mix(in srgb, var(--treasury-gold) 34%, transparent);
   animation: mrmRenewPulse 2s ease-in-out infinite;
 }
@@ -1884,4 +1884,128 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .treasury-cta-chip.is-urgent { animation: none; }
+}
+
+/* MRM signature visuals — water ring, CTA shimmer, ping needle gauge */
+.treasury-orbit-water {
+  position: absolute;
+  inset: 28px;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: 50%;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--treasury-gold) 10%, transparent);
+}
+
+.treasury-orbit-water-fill {
+  position: absolute;
+  right: -30%;
+  bottom: 0;
+  left: -30%;
+  top: calc(100% - var(--water-level, 0%));
+  transform-origin: 50% 100%;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--treasury-gold-bright) 88%, transparent),
+    color-mix(in srgb, var(--treasury-emerald-bright) 92%, transparent)
+  );
+  animation: mrm-water-slosh 7s ease-in-out infinite;
+}
+
+.treasury-orbit-water svg {
+  position: absolute;
+  top: -1px;
+  left: 0;
+  width: 200%;
+  height: 12px;
+}
+
+.treasury-orbit-wave-soft {
+  fill: color-mix(in srgb, var(--treasury-gold-bright) 88%, transparent);
+  animation: mrm-water-drift 7s linear infinite;
+}
+
+.treasury-orbit-wave-line {
+  fill: color-mix(in srgb, var(--treasury-emerald-bright) 75%, transparent);
+  opacity: 0.55;
+  animation: mrm-water-drift 5s linear infinite reverse;
+}
+
+@keyframes mrm-water-slosh {
+  0%, 100% { transform: rotate(-1.8deg); }
+  50% { transform: rotate(1.8deg); }
+}
+
+@keyframes mrm-water-drift {
+  to { transform: translateX(-50%); }
+}
+
+.treasury-orbit-center {
+  position: relative;
+  z-index: 1;
+}
+
+.treasury-orbit-center strong {
+  text-shadow: 0 1px 8px color-mix(in srgb, var(--treasury-emerald-deep) 55%, transparent);
+}
+
+.treasury-quick-main {
+  position: relative;
+  overflow: hidden;
+}
+
+.treasury-quick-main::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-120%);
+  background: linear-gradient(105deg, transparent 25%, rgba(255, 255, 255, 0.22) 48%, transparent 72%);
+  animation: mrm-cta-shimmer 3.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes mrm-cta-shimmer {
+  0% { transform: translateX(-120%); }
+  55% { transform: translateX(120%); }
+  100% { transform: translateX(120%); }
+}
+
+.treasury-ping-gauge {
+  width: 34px;
+  height: 21px;
+  overflow: visible;
+}
+
+.treasury-ping-track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--treasury-emerald) 22%, transparent);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+}
+
+.treasury-ping-track-ok {
+  fill: none;
+  stroke: var(--treasury-gold);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+}
+
+.treasury-ping-needle {
+  transform: rotate(var(--needle-angle, 0deg));
+  transform-origin: 24px 27px;
+  animation: mrm-needle-in 0.85s cubic-bezier(0.2, 0.85, 0.25, 1) both;
+}
+
+.treasury-ping-needle line {
+  stroke: var(--treasury-gold-bright);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.treasury-ping-hub {
+  fill: var(--treasury-gold);
+}
+
+@keyframes mrm-needle-in {
+  from { transform: rotate(-88deg); }
 }

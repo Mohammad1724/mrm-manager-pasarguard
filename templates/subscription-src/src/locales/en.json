@@ -143,7 +143,7 @@
     "lastUsed": "Last used",
     "mobileHint": "Install the app first, then tap it to add the subscription automatically.",
     "desktopHint": "On desktop, install the app first. If it does not open, copy the subscription link.",
-    "guide": "💡 First install a VPN app, then tap “Direct Connect” to add the subscription automatically.",
+    "guide": " First install a VPN app, then tap “Direct Connect” to add the subscription automatically.",
     "platforms": {
       "android": "Android",
       "ios": "iOS",

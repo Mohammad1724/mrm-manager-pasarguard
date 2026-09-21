@@ -5,7 +5,7 @@ if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
 if ! declare -f ui_header >/dev/null 2>&1 && [ -r /opt/mrm-manager/ui.sh ]; then source /opt/mrm-manager/ui.sh; fi
 if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manager/safe_ops.sh ]; then source /opt/mrm-manager/safe_ops.sh; fi
 [ -r "/opt/mrm-manager/versions.conf" ] && source /opt/mrm-manager/versions.conf
-THEME_VERSION="${THEME_VERSION:-2.1.1}"
+THEME_VERSION="${THEME_VERSION:-2.2.0}"
 
 # ✅ اطمینان از تشخیص پنل و تنظیم DATA_DIR
 detect_active_panel > /dev/null

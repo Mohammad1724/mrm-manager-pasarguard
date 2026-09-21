@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager Backup v1.3.1
+# MRM Manager Backup v1.4.0
 # Modular structure: each feature in its own file for easier maintenance
 
 # ==========================================

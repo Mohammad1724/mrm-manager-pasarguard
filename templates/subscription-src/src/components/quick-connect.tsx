@@ -372,7 +372,7 @@ export function ConnectGuide() {
   return (
     <div className="mrm-guide animate-fadeIn" role="note">
       <span className="mrm-guide-icon" aria-hidden="true">
-        💡
+        
       </span>
       <span className="mrm-guide-text">{t('quickConnect.guide')}</span>
       <button type="button" className="mrm-guide-close" onClick={dismiss} aria-label="✕">
