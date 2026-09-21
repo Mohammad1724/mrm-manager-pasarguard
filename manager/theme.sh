@@ -205,6 +205,13 @@ install_theme_wizard() {
     # ✅ تشخیص مجدد پنل برای اطمینان
     detect_active_panel > /dev/null
 
+    # Re-resolve download URLs at use time — the exported vars freeze the version
+    # seen when utils.sh was sourced (the updater sources utils.sh before
+    # installing the new VERSION file → downloads pinned to the previous tag,
+    # e.g. v1.3.1 while running v1.4.x).
+    THEME_HTML_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v$(get_mrm_version)/templates/subscription/index.html"
+    THEME_CLASSIC_HTML_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v$(get_mrm_version)/templates/subscription-classic/index.html"
+
     if ! command -v python3 &> /dev/null; then
         echo -e "${RED}Python3 is required but not installed.${NC}"
         pause; return
@@ -348,6 +355,16 @@ def clean_text(value, fallback):
     return value or fallback
 
 
+def clean_brand(value):
+    # Title format is "<brand> · {{ user.username }}". Earlier releases stored
+    # the whole title as the brand default and appended the suffix again on
+    # every run ("FarsNet · {{ user.username }} · {{ user.username }}"). Strip
+    # template expressions + trailing separators, however deep the damage.
+    value = re.sub(r'\{\{.*?\}\}', ' ', value or '')
+    value = re.sub(r'\s+', ' ', value).strip()
+    return value.rstrip(' ·|•-–—:')
+
+
 try:
     with open(old_path, 'r', encoding='utf-8', errors='ignore') as f:
         old_content = f.read()
@@ -358,7 +375,9 @@ try:
     if m_brand:
         brand_value = html.unescape(m_brand.group(1).strip())
         if brand_value and '__BRAND__' not in brand_value:
-            defaults['brand'] = brand_value
+            brand_value = clean_brand(brand_value)
+            if brand_value:
+                defaults['brand'] = brand_value
 
     bot_patterns = [
         r'href=["\']https://t\.me/([^"\']+)["\'][^>]*id=["\']renewBtn["\']',
@@ -416,7 +435,7 @@ def get_input(label, key):
         return defaults[key]
 
 
-new_brand = html.escape(clean_text(get_input('Brand Name', 'brand'), defaults['brand']), quote=False)
+new_brand = html.escape(clean_brand(clean_text(get_input('Brand Name', 'brand'), defaults['brand'])), quote=False)
 new_bot = clean_handle(get_input('Bot Username (No @)', 'bot'), defaults['bot'])
 new_sup = clean_handle(get_input('Support ID (No @)', 'sup'), defaults['sup'])
 new_news = html.escape(clean_text(get_input('News Text', 'news'), defaults['news']), quote=False)
@@ -661,6 +680,7 @@ theme_menu() {
 case "${1:-}" in
     --set-template)     shift; theme_set_template "$@"; exit $? ;;
     --current-template) theme_current_template; exit 0 ;;
+    --clean-brand)      shift; python3 -c 'import re,sys; v=re.sub(r"\{\{.*?\}\}"," ",sys.argv[1]); v=re.sub(r"\s+"," ",v).strip(); print(v.rstrip(" ·|•-–—:"))' "${1:-}"; exit $? ;;
 esac
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

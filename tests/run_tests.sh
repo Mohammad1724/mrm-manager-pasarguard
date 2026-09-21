@@ -1116,6 +1116,14 @@ else
     fail "[164] theme.sh standalone run has no missing functions"
 fi
 
+# ─── v1.4.1: wizard brand cleanup — no {{ user.username }} accumulation ───────
+_out165="$(cd "$PROJECT_DIR" && bash manager/theme.sh --clean-brand 'FarsNet · {{ user.username }} · {{ user.username }}' 2>/dev/null || true)"
+if [ "$_out165" = "FarsNet" ]; then
+    pass "[165] wizard brand cleanup strips {{ user.username }} title-suffix accumulation" || fail "[165] wizard brand cleanup strips {{ user.username }} title-suffix accumulation"
+else
+    fail "[165] wizard brand cleanup strips {{ user.username }} title-suffix accumulation"
+fi
+
 if [ "$FAIL" -eq 0 ]; then
     echo -e "  ${GREEN}✔ All tests passed!${NC}"
     echo ""
