@@ -150,35 +150,75 @@ export function QuickConnect({ variant = 'hero', className }: QuickConnectProps)
     [lastAppId]
   );
 
-  const connect = useCallback(
-    (app: ConnectAppDef) => {
-      try {
-        localStorage.setItem(LAST_APP_KEY, app.id);
-      } catch {
-        /* ignore */
-      }
-      setLastAppId(app.id);
-      setDialogOpen(false);
-      toast.success(t('quickConnect.opening', { app: app.name }), {
-        description: t('quickConnect.notOpened'),
-        duration: 4000,
-      });
-      const link = app.buildDeepLink(subscriptionUrl, pageTitle);
-      setTimeout(() => {
-        window.location.href = link;
-      }, 120);
-    },
-    [subscriptionUrl, pageTitle, t]
+  const recommendedApp = useMemo(
+    () =>
+      CONNECT_APPS.find(
+        (a) => a.platforms.includes(detectedPlatform) && a.recommended?.includes(detectedPlatform)
+      ) ??
+      CONNECT_APPS.find((a) => a.platforms.includes(detectedPlatform)) ??
+      null,
+    [detectedPlatform]
   );
 
-  /** One-tap entry point: reuse last app, otherwise open the picker */
+  /** Fire the deep link and resolve whether the OS handed off to an app. */
+  const tryAutoOpen = useCallback(
+    (app: ConnectAppDef) =>
+      new Promise<boolean>((resolve) => {
+        let settled = false;
+        const cleanup = () => {
+          clearTimeout(timer);
+          document.removeEventListener('visibilitychange', onVisibility);
+          window.removeEventListener('blur', onBlur);
+        };
+        const finish = (opened: boolean) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve(opened);
+        };
+        const onVisibility = () => {
+          if (document.visibilityState === 'hidden') finish(true);
+        };
+        const onBlur = () => finish(true);
+        const timer = setTimeout(() => finish(false), 1800);
+        document.addEventListener('visibilitychange', onVisibility);
+        window.addEventListener('blur', onBlur);
+        window.location.href = app.buildDeepLink(subscriptionUrl, pageTitle);
+      }),
+    [subscriptionUrl, pageTitle]
+  );
+
+  const connect = useCallback(
+    (app: ConnectAppDef) => {
+      setDialogOpen(false);
+      toast.info(t('quickConnect.opening', { app: app.name }), { duration: 2500 });
+      void tryAutoOpen(app).then((opened) => {
+        if (opened) {
+          try {
+            localStorage.setItem(LAST_APP_KEY, app.id);
+          } catch {
+            /* ignore */
+          }
+          setLastAppId(app.id);
+        } else {
+          toast(t('quickConnect.notOpened'), { duration: 5000 });
+          setDialogOpen(true);
+        }
+      });
+    },
+    [tryAutoOpen, t]
+  );
+
+  /** Smart one-tap entry: saved app first, otherwise the recommended app for
+   *  this device — the picker only shows when the app is missing. */
   const handleMainClick = useCallback(() => {
-    if (lastApp) {
-      connect(lastApp);
+    const target = lastApp ?? recommendedApp;
+    if (target) {
+      connect(target);
     } else {
       setDialogOpen(true);
     }
-  }, [lastApp, connect]);
+  }, [lastApp, recommendedApp, connect]);
 
   const handleCopy = useCallback(() => {
     copyToClipboard(subscriptionUrl, t('quickConnect.copiedSuccess'));

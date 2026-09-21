@@ -2,7 +2,8 @@
 set -Eeuo pipefail
 DATA_DIR="${MRM_DATA_DIR:-/var/lib/pasarguard/mrm}"
 REQUEST_FILE="${DATA_DIR}/update-request.json"; STATUS_FILE="${DATA_DIR}/update-status.json"; LOG_FILE="${DATA_DIR}/panel-update.log"; LOCK_FILE="${DATA_DIR}/.panel-update.lock"; MRM_CLI="${MRM_CLI:-/usr/local/bin/mrm}"
-mkdir -p "${DATA_DIR}"; touch "${LOCK_FILE}"; chmod 600 "${LOCK_FILE}" || true; exec 9>"${LOCK_FILE}"; flock -n 9 || exit 0; [[ -s "${REQUEST_FILE}" ]] || exit 0
+mkdir -p "${DATA_DIR}"; touch "${LOCK_FILE}"; chmod 600 "${LOCK_FILE}" || true; exec 9>"${LOCK_FILE}"; flock -n 9 || exit 0
+trap 'rm -f "${REQUEST_FILE}"' EXIT; [[ -s "${REQUEST_FILE}" ]] || exit 0
 read_target() { python3 - "${REQUEST_FILE}" <<'PY2'
 import json,re,sys
 try: value=json.load(open(sys.argv[1],encoding='utf-8')).get('target_sha','')

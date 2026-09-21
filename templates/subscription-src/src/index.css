@@ -1780,7 +1780,22 @@
   50% { box-shadow: 0 8px 26px color-mix(in srgb, var(--treasury-gold) 55%, transparent); }
 }
 
-.mrm-connect-dialog { max-width: 26rem; }
+.mrm-connect-dialog {
+  /* Inset-centered (no translate) so RTL/mirroring browsers cannot push the
+     modal off-screen; fills up to 26rem inside 1rem viewport margins. */
+  position: fixed;
+  top: 50% !important;
+  left: 1rem !important;
+  right: 1rem !important;
+  transform: translateY(-50%) !important;
+  translate: none !important;
+  margin-inline: auto !important;
+  width: auto !important;
+  max-width: 26rem !important;
+  max-height: 85dvh;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
 .mrm-connect-gem {
   display: inline-grid;
   place-items: center;

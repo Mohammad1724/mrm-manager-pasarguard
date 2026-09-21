@@ -21,7 +21,7 @@
 # Data layout:   /var/lib/pasarguard/mrm/
 # Profile map:   profiles/profiles.json  (admins.json is created by sitecustomize)
 # ============================================================================
-SPECIAL_VERSION="1.2.2"
+SPECIAL_VERSION="1.2.3"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
@@ -165,6 +165,7 @@ Description=Watch for MRM panel update requests
 
 [Path]
 PathExists=/var/lib/pasarguard/mrm/update-request.json
+PathChanged=/var/lib/pasarguard/mrm/update-request.json
 Unit=mrm-panel-update.service
 
 [Install]
@@ -188,6 +189,7 @@ Description=Watch for MRM template switch requests
 
 [Path]
 PathExists=/var/lib/pasarguard/mrm/template-request.json
+PathChanged=/var/lib/pasarguard/mrm/template-request.json
 Unit=mrm-template-switch.service
 
 [Install]

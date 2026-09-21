@@ -21,6 +21,19 @@ export function detectOS(): OperatingSystem {
   const platform = window.navigator.platform?.toLowerCase() || '';
   const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   
+  // Mobile markers from the UA string FIRST — Samsung Internet (and desktop
+  // mode) report userAgentData.platform as "Linux armv8l"/"Windows", which
+  // used to route phones to the desktop tab.
+  if (/android tv|google tv|googletv|fire tv|firetv/.test(userAgent)) {
+    return 'androidtv';
+  }
+  if (/android/.test(userAgent)) {
+    return 'android';
+  }
+  if (/iphone|ipad|ipod/.test(userAgent) || (platform === 'macintel' && navigator.maxTouchPoints > 1)) {
+    return 'ios';
+  }
+
   // Check for modern userAgentData API (more accurate)
   const userAgentData = (navigator as NavigatorWithUserAgentData).userAgentData;
   if (userAgentData?.platform) {

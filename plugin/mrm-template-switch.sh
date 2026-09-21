@@ -13,6 +13,7 @@ THEME_CLI="${MRM_THEME_CLI:-/opt/mrm-manager/theme.sh}"
 
 mkdir -p "${DATA_DIR}"; touch "${LOCK_FILE}"; chmod 600 "${LOCK_FILE}" || true
 exec 9>"${LOCK_FILE}"; flock -n 9 || exit 0
+trap 'rm -f "${REQUEST_FILE}"' EXIT
 [[ -s "${REQUEST_FILE}" ]] || exit 0
 
 read_template() { python3 - "${REQUEST_FILE}" <<'PY2'

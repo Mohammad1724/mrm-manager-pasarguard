@@ -1159,6 +1159,18 @@ else
     fail "[169] namespace slug mrm allowed; reserved words only rejected when explicit"
 fi
 
+# ─── v1.4.5: template-switch un-brick + smart one-tap connect + mobile detect ─
+if grep -qF "PathChanged=/var/lib/pasarguard/mrm/template-request.json" manager/special.sh &&
+   grep -qF "PathChanged=/var/lib/pasarguard/mrm/update-request.json" manager/special.sh &&
+   grep -qF "trap 'rm -f" plugin/mrm-template-switch.sh &&
+   grep -qF "tryAutoOpen" templates/subscription-src/src/components/quick-connect.tsx &&
+   grep -qF "/android/.test(userAgent)" templates/subscription-src/src/lib/osDetector.ts &&
+   grep -qF "translate: none !important" templates/subscription-src/src/index.css; then
+    pass "[170] template-switch un-brick (trap + PathChanged) + smart connect + mobile detect" || fail "[170] template-switch un-brick (trap + PathChanged) + smart connect + mobile detect"
+else
+    fail "[170] template-switch un-brick (trap + PathChanged) + smart connect + mobile detect"
+fi
+
 if [ "$FAIL" -eq 0 ]; then
     echo -e "  ${GREEN}✔ All tests passed!${NC}"
     echo ""
