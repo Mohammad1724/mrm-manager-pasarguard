@@ -1150,6 +1150,15 @@ else
     fail "[168] in-tab role diagnostics button wired"
 fi
 
+# ─── v1.4.4: namespace "mrm" allowed + username-fallback cannot block saves ────
+if grep -qF 'RESERVED_SLUGS = {"api", "info", "raw", "apps", "usage", "admin"}' plugin/mrm_admin_subscriptions.py &&
+   grep -qF '        if explicit:' plugin/mrm_admin_subscriptions.py &&
+   ! grep -qF '"mrm"}' plugin/mrm_admin_subscriptions.py; then
+    pass "[169] namespace slug mrm allowed; reserved words only rejected when explicit" || fail "[169] namespace slug mrm allowed; reserved words only rejected when explicit"
+else
+    fail "[169] namespace slug mrm allowed; reserved words only rejected when explicit"
+fi
+
 if [ "$FAIL" -eq 0 ]; then
     echo -e "  ${GREEN}✔ All tests passed!${NC}"
     echo ""

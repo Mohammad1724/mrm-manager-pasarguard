@@ -78,7 +78,7 @@ UPDATE_REPO_API = "https://api.github.com/repos/PEDIHS/mrm-template/commits/main
 UPDATE_CACHE_TTL = 300
 _UPDATE_CACHE: dict[str, object] = {"checked_at": 0.0, "latest_sha": None, "error": None}
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
-RESERVED_SLUGS = {"api", "info", "raw", "apps", "usage", "admin", "mrm"}
+RESERVED_SLUGS = {"api", "info", "raw", "apps", "usage", "admin"}
 
 VAR_STORE_NAME = "MRM_STORE_NAME"
 VAR_SUPPORT_ID = "MRM_SUPPORT_ID"
@@ -242,15 +242,16 @@ def _update_runtime_state() -> dict:
 
 
 def _normalize_slug(value: str | None, username: str, admin_id: int) -> str:
-    raw = (value or username or "").strip().lower()
+    explicit = (value or "").strip()
+    raw = (explicit or username or "").strip().lower()
     slug = re.sub(r"[^a-z0-9_-]+", "-", raw).strip("-_")
-    if not slug:
-        slug = f"admin-{admin_id}"
     if not SLUG_RE.fullmatch(slug) or slug in RESERVED_SLUGS:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Invalid or reserved namespace. Use 1-32 lowercase letters, digits, _ or -.",
-        )
+        if explicit:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid or reserved namespace. Use 1-32 lowercase letters, digits, _ or -.",
+            )
+        slug = f"admin-{admin_id}"
     return slug
 
 
