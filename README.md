@@ -19,6 +19,7 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/Mohammad1724/mrm-ma
 mrm          # منوی اصلی
 mrm health   # بررسی سلامت پنل PasarGuard
 mrm temp-key # کلید موقت Owner (بازنشانی ادمین)
+mrm special  # تب «MRM · Special» در تنظیمات پنل + صفحه‌ی اشتراک
 ```
 
 ## 🧰 امکانات
@@ -28,6 +29,7 @@ mrm temp-key # کلید موقت Owner (بازنشانی ادمین)
 - 🩺 **PasarGuard Health** — بررسی `/health`، گواهی/CA_TYPE، وضعیت نودها و فاصله‌های `JOB_*` در برابر پیش‌فرض رسمی پنل
 - 🎛️ **کنترل پنل** — مدیریت سرویس‌ها، مشاهده‌ی Logها و Monitor هشداردار
 - 🌐 **Domain Separator** — جداسازی لینک پنل و لینک ساب + 🎨 مدیریت Theme
+- ◆ **MRM Special** — تب تنظیمات اختصاصی داخل خودِ پنل PasarGuard + صفحه‌ی اشتراک حرفه‌ای (اتصال مستقیم یک‌لمسی، اعلان زمان‌بندی‌شده، چندزبانه) — با `mrm special`
 - 🇮🇷 **ابزارهای ایران / Offline Mode**
 
 ## 🔄 به‌روزرسانی

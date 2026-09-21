@@ -5,7 +5,7 @@ if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
 if ! declare -f ui_header >/dev/null 2>&1 && [ -r /opt/mrm-manager/ui.sh ]; then source /opt/mrm-manager/ui.sh; fi
 if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manager/safe_ops.sh ]; then source /opt/mrm-manager/safe_ops.sh; fi
 [ -r "/opt/mrm-manager/versions.conf" ] && source /opt/mrm-manager/versions.conf
-THEME_VERSION="${THEME_VERSION:-1.0.1}"
+THEME_VERSION="${THEME_VERSION:-2.0.0}"
 
 # ✅ اطمینان از تشخیص پنل و تنظیم DATA_DIR
 detect_active_panel > /dev/null
@@ -458,6 +458,7 @@ theme_menu() {
         echo "2) Activate Theme"
         echo "3) Deactivate Theme"
         echo "4) Uninstall Theme"
+        echo "5) ◆ MRM Special (in-panel settings tab)"
         echo "0) Back"
         echo -e "${BLUE}===========================================${NC}"
         read -p "Select: " T_OPT
@@ -466,6 +467,7 @@ theme_menu() {
             2) activate_theme ;;
             3) deactivate_theme ;;
             4) uninstall_theme ;;
+            5) bash /opt/mrm-manager/special.sh || echo "MRM Special could not be started" ;;
             0) return ;;
             *) theme_invalid_option ;;
         esac

@@ -1,0 +1,1129 @@
+(() => {
+  'use strict';
+
+  const VERSION = '4.8.1';
+  const HEADER_PREFIX = 'x-mrm-';
+  const NAV_ID = 'mrm-special-nav';
+  const ROOT_ID = 'mrm-special-root';
+  const OUTLET_MARK = 'data-mrm-prev-display';
+  const THEME_DEFAULTS = { primary: '#C9992D', secondary: '#064C38' };
+
+  let active = false;
+  let cachedSettings = null;
+  let cachedProfile = null;
+  let cachedNamespaces = null;
+  let namespaceError = null;
+  let cachedAdminProfiles = null;
+  let adminProfilesError = null;
+  let cachedUpdate = null;
+  let updatePollTimer = null;
+  const UPDATE_NOTICE_ID = 'mrm-update-notice';
+  let maintainQueued = false;
+  let accessResolved = false;
+  let accessAllowed = false;
+  let isOwner = false;
+  let currentAdmin = null;
+
+  const defaults = {
+    storeName: 'MRM',
+    supportId: '',
+    showConfigs: true,
+    showWireGuard: false,
+    showPing: true,
+    showApps: true,
+    showAnnouncement: false,
+    announcementMode: 'always',
+    announcementTimes: '',
+    announcementDuration: 60,
+    themePrimary: THEME_DEFAULTS.primary,
+    themeSecondary: THEME_DEFAULTS.secondary,
+  };
+
+  const css = `
+    #${NAV_ID}{position:relative;flex-shrink:0;white-space:nowrap}
+    #${NAV_ID} .z-tab{display:flex;align-items:center;gap:.38rem}
+    #${NAV_ID} .z-tab-gem{width:1rem;height:1rem;color:#059669;filter:drop-shadow(0 0 5px rgba(16,185,129,.28))}
+    #${NAV_ID} .z-tab-badge{font-size:.56rem;font-weight:800;line-height:1;padding:.2rem .34rem;border-radius:999px;color:#fff;background:linear-gradient(135deg,#047857,#065f46 58%,#9a6a17);box-shadow:0 0 0 1px rgba(184,134,11,.18),0 2px 8px rgba(6,95,70,.15)}
+    [data-mrm-active="1"] > button:not(#${NAV_ID}){border-bottom-color:transparent!important;color:hsl(var(--muted-foreground))!important}
+    #${NAV_ID}[data-z-active="true"]{border-bottom-width:2px!important;border-bottom-color:#059669!important;color:hsl(var(--foreground))!important;background:linear-gradient(180deg,transparent,rgba(16,185,129,.05))}
+    #${ROOT_ID}{width:100%;padding:1rem 1rem 2rem;direction:rtl;color:hsl(var(--foreground));font-family:inherit}
+    #${ROOT_ID} *{box-sizing:border-box}
+    #${ROOT_ID} .z-hero{position:relative;overflow:hidden;border:1px solid rgba(16,185,129,.22);border-radius:calc(var(--radius,.5rem) + .45rem);padding:1.1rem;background:linear-gradient(135deg,rgba(6,95,70,.12),rgba(4,120,87,.055) 55%,rgba(184,134,11,.10));box-shadow:var(--card-shadow,none)}
+    #${ROOT_ID} .z-hero:before{content:"";position:absolute;width:240px;height:240px;border-radius:999px;left:-90px;top:-170px;background:radial-gradient(circle,rgba(16,185,129,.22),transparent 68%);pointer-events:none}
+    #${ROOT_ID} .z-hero:after{content:"";position:absolute;width:220px;height:220px;border-radius:999px;right:-90px;bottom:-160px;background:radial-gradient(circle,rgba(184,134,11,.17),transparent 68%);pointer-events:none}
+    #${ROOT_ID} .z-hero-row{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+    #${ROOT_ID} .z-brand{display:flex;align-items:center;gap:.8rem}
+    #${ROOT_ID} .z-logo{width:46px;height:46px;display:grid;place-items:center;border-radius:14px;color:#fff;background:linear-gradient(145deg,#064e3b,#047857 60%,#9a6a17);box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),0 8px 24px rgba(6,95,70,.18)}
+    #${ROOT_ID} .z-logo svg{width:25px;height:25px}
+    #${ROOT_ID} .z-title-row{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+    #${ROOT_ID} .z-title{margin:0;font-size:1.12rem;font-weight:850;letter-spacing:-.01em}
+    #${ROOT_ID} .z-special,#${ROOT_ID} .z-role{font-size:.61rem;font-weight:850;padding:.22rem .44rem;border-radius:999px;color:#8a5b08;background:rgba(184,134,11,.10);border:1px solid rgba(184,134,11,.24)}
+    #${ROOT_ID} .z-role{color:#047857;background:rgba(16,185,129,.08);border-color:rgba(16,185,129,.18)}
+    html.dark #${ROOT_ID} .z-special{color:#e5b84e}html.dark #${ROOT_ID} .z-role{color:#6ee7b7}
+    #${ROOT_ID} .z-subtitle{margin-top:.18rem;font-size:.75rem;color:hsl(var(--muted-foreground));line-height:1.65}
+    #${ROOT_ID} .z-version{font-size:.66rem;color:hsl(var(--muted-foreground));border:1px solid hsl(var(--border));background:hsl(var(--background)/.72);padding:.3rem .5rem;border-radius:.45rem}
+    #${ROOT_ID} .z-content{display:grid;gap:1rem;margin-top:1rem}
+    #${ROOT_ID} .z-card{position:relative;border:1px solid hsl(var(--border));border-radius:calc(var(--radius,.5rem) + .25rem);background:hsl(var(--card));padding:1rem;box-shadow:var(--card-shadow,none);overflow:hidden}
+    #${ROOT_ID} .z-card.z-accent{border-color:rgba(16,185,129,.20)}
+    #${ROOT_ID} .z-card.z-accent:before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:linear-gradient(#059669,#b8860b)}
+    #${ROOT_ID} .z-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;margin-bottom:.85rem}
+    #${ROOT_ID} .z-card-title{display:flex;align-items:center;gap:.5rem;font-size:.91rem;font-weight:800;margin:0}
+    #${ROOT_ID} .z-card-icon{width:29px;height:29px;border-radius:.55rem;display:grid;place-items:center;background:rgba(16,185,129,.08);color:#059669;border:1px solid rgba(16,185,129,.14)}
+    #${ROOT_ID} .z-card-icon svg{width:15px;height:15px}
+    #${ROOT_ID} .z-card-note{font-size:.67rem;color:hsl(var(--muted-foreground));line-height:1.6;margin-top:.18rem}
+    #${ROOT_ID} .z-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}
+    @media(max-width:760px){#${ROOT_ID}{padding:.85rem .75rem 1.5rem}#${ROOT_ID} .z-grid{grid-template-columns:1fr}}
+    #${ROOT_ID} .z-field label{display:block;margin-bottom:.35rem;font-size:.74rem;font-weight:700}
+    #${ROOT_ID} input[type=text],#${ROOT_ID} input[type=number],#${ROOT_ID} input[type=url],#${ROOT_ID} textarea,#${ROOT_ID} select{width:100%;border:1px solid hsl(var(--border));background:hsl(var(--background));color:hsl(var(--foreground));border-radius:var(--radius,.5rem);padding:.58rem .68rem;font:inherit;font-size:.8rem;outline:none;transition:border-color .15s,box-shadow .15s}
+    #${ROOT_ID} textarea{min-height:88px;resize:vertical;line-height:1.65}
+    #${ROOT_ID} input:focus,#${ROOT_ID} textarea:focus,#${ROOT_ID} select:focus{border-color:rgba(5,150,105,.62);box-shadow:0 0 0 3px rgba(16,185,129,.09)}
+    #${ROOT_ID} .z-help{margin-top:.34rem;font-size:.66rem;color:hsl(var(--muted-foreground));line-height:1.6}
+    #${ROOT_ID} .z-toggle{min-height:55px;display:flex;align-items:center;justify-content:space-between;gap:1rem;border:1px solid hsl(var(--border));background:hsl(var(--background)/.46);border-radius:var(--radius,.5rem);padding:.62rem .72rem}
+    #${ROOT_ID} .z-toggle.is-special{border-color:rgba(184,134,11,.20);background:linear-gradient(135deg,rgba(6,95,70,.035),rgba(184,134,11,.045))}
+    #${ROOT_ID} .z-toggle-title{font-size:.77rem;font-weight:700}
+    #${ROOT_ID} .z-toggle-sub{font-size:.64rem;color:hsl(var(--muted-foreground));margin-top:.12rem;line-height:1.5}
+    #${ROOT_ID} input[type=checkbox]{appearance:none;width:36px;height:20px;flex:0 0 auto;border-radius:999px;background:hsl(var(--input));border:1px solid hsl(var(--border));position:relative;cursor:pointer;transition:.18s}
+    #${ROOT_ID} input[type=checkbox]:after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:999px;background:hsl(var(--foreground)/.72);transition:.18s}
+    #${ROOT_ID} input[type=checkbox]:checked{background:linear-gradient(135deg,#059669,#047857);border-color:#047857}
+    #${ROOT_ID} input[type=checkbox]:checked:after{left:18px;background:#fff}
+    #${ROOT_ID} .z-apps{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center}
+    #${ROOT_ID} .z-chip{font-size:.66rem;border:1px solid rgba(16,185,129,.18);border-radius:999px;padding:.3rem .5rem;background:rgba(16,185,129,.055)}
+    #${ROOT_ID} .z-native{font-size:.61rem;padding:.18rem .36rem;border-radius:.4rem;background:rgba(184,134,11,.09);border:1px solid rgba(184,134,11,.17);color:#8a5b08}
+    html.dark #${ROOT_ID} .z-native{color:#deb24b}
+    #${ROOT_ID} .z-actions{position:sticky;bottom:.5rem;z-index:2;margin-top:1rem;display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap;border:1px solid hsl(var(--border));border-radius:calc(var(--radius,.5rem) + .2rem);padding:.72rem .8rem;background:hsl(var(--background)/.90);backdrop-filter:blur(12px);box-shadow:0 -8px 24px rgba(0,0,0,.035)}
+    #${ROOT_ID} .z-save,#${ROOT_ID} .z-mini-btn{border:0;border-radius:var(--radius,.5rem);padding:.6rem .92rem;font:inherit;font-size:.75rem;font-weight:800;color:#fff;background:linear-gradient(135deg,#047857,#065f46 68%,#8f6418);box-shadow:0 6px 16px rgba(6,95,70,.12);cursor:pointer}
+    #${ROOT_ID} .z-mini-btn{padding:.48rem .7rem;font-size:.68rem}
+    #${ROOT_ID} .z-mini-btn.z-danger{background:rgba(220,38,38,.09);box-shadow:none;color:#dc2626;border:1px solid rgba(220,38,38,.2)}
+    #${ROOT_ID} .z-save:disabled,#${ROOT_ID} .z-mini-btn:disabled{opacity:.55;cursor:wait}
+    #${ROOT_ID} .z-status{font-size:.7rem;color:hsl(var(--muted-foreground))}
+    #${ROOT_ID} .z-status.ok{color:#059669}#${ROOT_ID} .z-status.err{color:#dc2626}
+    #${ROOT_ID} .z-loading{padding:3rem 1rem;text-align:center;color:hsl(var(--muted-foreground));font-size:.8rem}
+    #${ROOT_ID} .z-error{border:1px solid rgba(220,38,38,.24);background:rgba(220,38,38,.05);border-radius:.7rem;padding:.9rem;color:#dc2626;font-size:.76rem;line-height:1.7}
+    #${ROOT_ID} .z-pending{border:1px solid rgba(184,134,11,.24);background:linear-gradient(135deg,rgba(184,134,11,.08),rgba(16,185,129,.04));border-radius:.75rem;padding:.85rem;font-size:.72rem;line-height:1.8;color:hsl(var(--muted-foreground))}
+    #${ROOT_ID} .z-path{display:flex;align-items:center;justify-content:space-between;gap:.7rem;flex-wrap:wrap;border:1px solid rgba(16,185,129,.18);background:rgba(16,185,129,.045);border-radius:.7rem;padding:.72rem}
+    #${ROOT_ID} .z-path code{direction:ltr;text-align:left;font-size:.7rem;overflow-wrap:anywhere}
+    #${ROOT_ID} .z-ns-create{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:.55rem;align-items:end}
+    #${ROOT_ID} .z-ns-list{display:grid;gap:.55rem;margin-top:.8rem}
+    #${ROOT_ID} .z-ns-row{display:grid;grid-template-columns:minmax(0,.7fr) minmax(0,1.6fr) auto auto;gap:.55rem;align-items:center;padding:.68rem;border:1px solid hsl(var(--border));border-radius:.7rem;background:hsl(var(--background)/.42)}
+    #${ROOT_ID} .z-ns-admin{font-size:.75rem;font-weight:800;direction:ltr;text-align:left}
+    #${ROOT_ID} .z-ns-url{min-width:0;font-size:.66rem;direction:ltr;text-align:left;color:hsl(var(--muted-foreground));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    @media(max-width:760px){#${ROOT_ID} .z-ns-create{grid-template-columns:1fr}#${ROOT_ID} .z-ns-row{grid-template-columns:1fr auto auto}#${ROOT_ID} .z-ns-url{grid-column:1/-1;grid-row:2}}
+    #${ROOT_ID} .z-admin-list{display:grid;gap:.7rem}
+    #${ROOT_ID} .z-admin-card{display:grid;grid-template-columns:minmax(0,.7fr) minmax(0,1fr) minmax(0,1fr) minmax(0,.8fr) auto;gap:.55rem;align-items:end;padding:.75rem;border:1px solid hsl(var(--border));border-radius:.75rem;background:hsl(var(--background)/.42)}
+    #${ROOT_ID} .z-admin-meta{align-self:center;min-width:0}
+    #${ROOT_ID} .z-admin-name{font-size:.76rem;font-weight:850;direction:ltr;text-align:left;overflow:hidden;text-overflow:ellipsis}
+    #${ROOT_ID} .z-admin-count{font-size:.63rem;color:hsl(var(--muted-foreground));margin-top:.18rem}
+    #${ROOT_ID} .z-admin-status{grid-column:1/-1;font-size:.66rem;color:hsl(var(--muted-foreground))}
+    #${ROOT_ID} .z-admin-status.ok{color:#059669}#${ROOT_ID} .z-admin-status.err{color:#dc2626}
+
+    #${ROOT_ID} .z-appearance-card{border-color:color-mix(in srgb,#059669 22%,hsl(var(--border)));background:linear-gradient(145deg,hsl(var(--card)),color-mix(in srgb,hsl(var(--card)) 94%,#059669 6%))}
+    #${ROOT_ID} .z-theme-preview{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.75rem;align-items:center;min-height:78px;margin-bottom:.9rem;border:1px solid hsl(var(--border));border-radius:.85rem;padding:.75rem;background:linear-gradient(135deg,color-mix(in srgb,var(--z-preview-secondary) 12%,hsl(var(--background))),color-mix(in srgb,var(--z-preview-primary) 11%,hsl(var(--background))))}
+    #${ROOT_ID} .z-theme-preview-main{display:flex;align-items:center;gap:.65rem;min-width:0}
+    #${ROOT_ID} .z-theme-preview-logo{width:42px;height:42px;flex:none;border-radius:13px;background:linear-gradient(145deg,var(--z-preview-secondary),color-mix(in srgb,var(--z-preview-secondary) 66%,#000));box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),0 8px 20px color-mix(in srgb,var(--z-preview-secondary) 22%,transparent)}
+    #${ROOT_ID} .z-theme-preview-text strong{display:block;font-size:.78rem}#${ROOT_ID} .z-theme-preview-text span{display:block;margin-top:.16rem;color:hsl(var(--muted-foreground));font-size:.64rem}
+    #${ROOT_ID} .z-theme-preview-btn{border:0;border-radius:999px;padding:.5rem .7rem;color:#fff;background:var(--z-preview-primary);font:inherit;font-size:.67rem;font-weight:800;box-shadow:0 5px 14px color-mix(in srgb,var(--z-preview-primary) 24%,transparent)}
+    #${ROOT_ID} .z-color-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}
+    #${ROOT_ID} .z-color-card{min-width:0;border:1px solid hsl(var(--border));border-radius:.9rem;padding:.7rem;background:hsl(var(--background)/.44)}
+    #${ROOT_ID} .z-color-title{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.55rem;font-size:.74rem;font-weight:800}
+    #${ROOT_ID} .z-color-swatch{width:24px;height:24px;flex:none;border:2px solid rgba(255,255,255,.72);border-radius:50%;box-shadow:0 0 0 1px hsl(var(--border)),0 3px 9px rgba(0,0,0,.12)}
+    #${ROOT_ID} .z-color-plane{position:relative;height:156px;overflow:hidden;border:1px solid hsl(var(--border));border-radius:.72rem;cursor:crosshair;touch-action:none;background:linear-gradient(to top,#000,transparent),linear-gradient(to right,#fff,var(--picker-hue,#f00))}
+    #${ROOT_ID} .z-color-cursor{position:absolute;width:16px;height:16px;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.65),0 2px 5px rgba(0,0,0,.35);transform:translate(-50%,-50%);pointer-events:none}
+    #${ROOT_ID} .z-color-hue{appearance:none;width:100%;height:14px;margin:.62rem 0 .5rem;border:1px solid hsl(var(--border));border-radius:999px;outline:none;cursor:pointer;background:linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)}
+    #${ROOT_ID} .z-color-hue::-webkit-slider-thumb{appearance:none;width:20px;height:20px;border:2px solid #fff;border-radius:50%;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.28),0 2px 6px rgba(0,0,0,.2)}
+    #${ROOT_ID} .z-color-hue::-moz-range-thumb{width:18px;height:18px;border:2px solid #fff;border-radius:50%;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.28)}
+    #${ROOT_ID} .z-color-hex{width:100%!important;text-transform:uppercase;font-family:ui-monospace,SFMono-Regular,Menlo,monospace!important;text-align:center;direction:ltr}
+    #${ROOT_ID} .z-appearance-actions{display:flex;align-items:center;justify-content:space-between;gap:.65rem;flex-wrap:wrap;margin-top:.85rem}
+    #${ROOT_ID} .z-appearance-buttons{display:flex;gap:.45rem;flex-wrap:wrap}
+    #${ROOT_ID} .z-appearance-apply{border:0;border-radius:var(--radius,.5rem);padding:.58rem .78rem;color:#fff;background:linear-gradient(135deg,#047857,#065f46);font:inherit;font-size:.7rem;font-weight:850;cursor:pointer}
+    #${ROOT_ID} .z-appearance-reset{border:1px solid hsl(var(--border));border-radius:var(--radius,.5rem);padding:.56rem .72rem;color:hsl(var(--foreground));background:hsl(var(--background));font:inherit;font-size:.68rem;font-weight:760;cursor:pointer}
+    #${ROOT_ID} .z-appearance-apply:disabled,#${ROOT_ID} .z-appearance-reset:disabled{opacity:.55;cursor:wait}
+    #${ROOT_ID} .z-appearance-status{font-size:.66rem;color:hsl(var(--muted-foreground))}#${ROOT_ID} .z-appearance-status.ok{color:#059669}#${ROOT_ID} .z-appearance-status.err{color:#dc2626}
+    @media(max-width:760px){#${ROOT_ID} .z-color-grid{grid-template-columns:1fr}#${ROOT_ID} .z-color-plane{height:145px}}
+    @media(max-width:900px){#${ROOT_ID} .z-admin-card{grid-template-columns:1fr 1fr}#${ROOT_ID} .z-admin-meta,#${ROOT_ID} .z-admin-card .z-admin-save{grid-column:1/-1}}
+    #${ROOT_ID} .z-update-card{border-color:rgba(184,134,11,.26);background:linear-gradient(135deg,rgba(16,185,129,.055),rgba(184,134,11,.075))}
+    #${ROOT_ID} .z-update-row{display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap}
+    #${ROOT_ID} .z-update-sha{direction:ltr;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.66rem;color:hsl(var(--muted-foreground))}
+    #${ROOT_ID} .z-update-btn{border:0;border-radius:var(--radius,.5rem);padding:.62rem .92rem;font:inherit;font-size:.74rem;font-weight:850;color:#fff;background:linear-gradient(135deg,#047857,#065f46 65%,#9a6a17);cursor:pointer}
+    #${ROOT_ID} .z-update-btn:disabled{opacity:.55;cursor:wait}
+    #${UPDATE_NOTICE_ID}{position:fixed;z-index:2147482000;top:12px;left:50%;transform:translateX(-50%);width:min(560px,calc(100vw - 24px));direction:rtl;border:1px solid rgba(184,134,11,.34);border-radius:14px;background:hsl(var(--background));color:hsl(var(--foreground));box-shadow:0 12px 40px rgba(0,0,0,.16);padding:.72rem .8rem;display:flex;align-items:center;justify-content:space-between;gap:.7rem;font-family:inherit}
+    #${UPDATE_NOTICE_ID} .z-un-text{font-size:.73rem;line-height:1.65}#${UPDATE_NOTICE_ID} .z-un-text strong{display:block;font-size:.78rem}
+    #${UPDATE_NOTICE_ID} button{border:0;border-radius:9px;padding:.48rem .65rem;background:#047857;color:white;font:inherit;font-size:.68rem;font-weight:800;white-space:nowrap;cursor:pointer}
+  `;
+
+  if (!document.getElementById('mrm-special-style')) {
+    const style = document.createElement('style');
+    style.id = 'mrm-special-style';
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
+
+  const icons = {
+    gem: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6.5 3.5h11L22 9l-10 12L2 9l4.5-5.5Z"/><path d="M2 9h20M8 9l4 12 4-12M6.5 3.5 8 9m9.5-5.5L16 9"/></svg>',
+    sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M1 14h6m2-6h6m2 8h6"/></svg>',
+    link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>',
+    bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>',
+    users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+    palette: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 0 18h1.4a1.8 1.8 0 0 0 1.1-3.2 1.8 1.8 0 0 1 1.1-3.2H18a3 3 0 0 0 3-3C21 6.85 16.97 3 12 3Z"/><circle cx="7.5" cy="10" r=".8" fill="currentColor" stroke="none"/><circle cx="10" cy="6.8" r=".8" fill="currentColor" stroke="none"/><circle cx="14.2" cy="6.8" r=".8" fill="currentColor" stroke="none"/><circle cx="17" cy="9.8" r=".8" fill="currentColor" stroke="none"/></svg>',
+  };
+
+  const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
+  const normalizeHeaders = (headers) => Object.fromEntries(Object.entries(headers || {}).map(([k, v]) => [String(k).toLowerCase(), String(v ?? '')]));
+  const getHeader = (headers, key) => headers[`${HEADER_PREFIX}${key}`] ?? '';
+  const asBool = (value, fallback) => value == null || value === '' ? fallback : !['false', '0', 'off', 'no'].includes(String(value).toLowerCase());
+  const encodeUtf8Base64 = (value) => {
+    const bytes = new TextEncoder().encode(String(value ?? ''));
+    let binary = '';
+    bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+    return btoa(binary);
+  };
+  const decodeUtf8Base64 = (value) => {
+    if (!value) return '';
+    try {
+      const binary = atob(value);
+      return new TextDecoder().decode(Uint8Array.from(binary, (c) => c.charCodeAt(0)));
+    } catch { return ''; }
+  };
+  const removeHeader = (headers, key) => {
+    const expected = `${HEADER_PREFIX}${key}`.toLowerCase();
+    Object.keys(headers).forEach((name) => { if (name.toLowerCase() === expected) delete headers[name]; });
+  };
+  const setHeader = (headers, key, value) => { headers[`${HEADER_PREFIX}${key}`] = String(value); };
+  const field = (id) => document.getElementById(id);
+  const value = (id) => String(field(id)?.value ?? '').trim();
+  const checked = (id) => Boolean(field(id)?.checked);
+
+  const normalizeHex = (input, fallback) => {
+    const value = String(input || '').trim().toUpperCase();
+    return /^#[0-9A-F]{6}$/.test(value) ? value : fallback;
+  };
+  const hexToRgb = (hex) => {
+    const value = normalizeHex(hex, '#000000').slice(1);
+    return { r: parseInt(value.slice(0, 2), 16), g: parseInt(value.slice(2, 4), 16), b: parseInt(value.slice(4, 6), 16) };
+  };
+  const rgbToHex = (r, g, b) => '#' + [r, g, b].map((value) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0')).join('').toUpperCase();
+  const rgbToHsv = ({ r, g, b }) => {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min;
+    let h = 0;
+    if (delta) {
+      if (max === r) h = 60 * (((g - b) / delta) % 6);
+      else if (max === g) h = 60 * (((b - r) / delta) + 2);
+      else h = 60 * (((r - g) / delta) + 4);
+    }
+    if (h < 0) h += 360;
+    return { h, s: max ? (delta / max) * 100 : 0, v: max * 100 };
+  };
+  const hsvToHex = (h, s, v) => {
+    h = ((Number(h) % 360) + 360) % 360;
+    s /= 100; v /= 100;
+    const c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c;
+    let rgb = [0, 0, 0];
+    if (h < 60) rgb = [c, x, 0]; else if (h < 120) rgb = [x, c, 0]; else if (h < 180) rgb = [0, c, x];
+    else if (h < 240) rgb = [0, x, c]; else if (h < 300) rgb = [x, 0, c]; else rgb = [c, 0, x];
+    return rgbToHex(...rgb.map((channel) => (channel + m) * 255));
+  };
+  const supportDisplay = (input) => {
+    const raw = String(input || '').trim();
+    if (!raw) return '';
+    try {
+      const parsed = new URL(raw);
+      if (['t.me', 'www.t.me', 'telegram.me', 'www.telegram.me'].includes(parsed.hostname.toLowerCase())) {
+        const path = parsed.pathname.replace(/^\/+|\/+$/g, '');
+        if (path && !path.includes('/') && !path.startsWith('+')) return `@${path}`;
+      }
+    } catch (_) {}
+    return raw;
+  };
+
+  const supportUrl = (input) => {
+    const raw = String(input || '').trim();
+    if (!raw) return '';
+    const username = raw.startsWith('@') ? raw.slice(1) : raw;
+    if (/^[A-Za-z0-9_]{4,64}$/.test(username)) return `https://t.me/${username}`;
+    if (/^(?:https?:\/\/|tg:\/\/)/i.test(raw)) return raw;
+    throw new Error('آیدی پشتیبانی باید به شکل @username یا لینک معتبر باشد');
+  };
+
+  function currentPanelPath() {
+    const hashPath = String(location.hash || '').replace(/^#/, '').split('?')[0];
+    if (hashPath.startsWith('/')) return hashPath;
+    return location.pathname || '/';
+  }
+
+  function isSettingsRoute() {
+    return /^\/settings(?:\/|$)/.test(currentPanelPath());
+  }
+
+  async function api(path, options = {}) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      const headers = new Headers(options.headers || {});
+      headers.set('Accept', 'application/json');
+      if (options.body) headers.set('Content-Type', 'application/json');
+      const token = localStorage.getItem('token') || '';
+      if (token) headers.set('Authorization', `Bearer ${token}`);
+      headers.set('X-Client-Timezone', Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
+      headers.set('X-Client-Timezone-Offset-Minutes', String(-new Date().getTimezoneOffset()));
+      const response = await fetch(path, { ...options, headers, signal: controller.signal, cache: 'no-store' });
+      if (!response.ok) {
+        let detail = '';
+        try {
+          const body = await response.json();
+          detail = typeof body?.detail === 'string' ? body.detail : '';
+        } catch (_) {}
+        const error = new Error(detail || `HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+      if (response.status === 204) return null;
+      return await response.json();
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  function extractOwner(settings, profilePayload = null) {
+    const subscription = settings?.subscription || {};
+    const headers = normalizeHeaders(subscription.response_headers || {});
+    const legacy = {
+      storeName: decodeUtf8Base64(getHeader(headers, 'store-name-b64')) || getHeader(headers, 'store-name') || defaults.storeName,
+      supportId: decodeUtf8Base64(getHeader(headers, 'support-id-b64')) || supportDisplay(subscription.support_url) || defaults.supportId,
+      showConfigs: asBool(getHeader(headers, 'show-configs'), defaults.showConfigs),
+      showWireGuard: asBool(getHeader(headers, 'show-wireguard'), defaults.showWireGuard),
+      showPing: asBool(getHeader(headers, 'show-ping'), defaults.showPing),
+      showApps: asBool(getHeader(headers, 'show-apps'), defaults.showApps),
+      showAnnouncement: asBool(getHeader(headers, 'show-announcement'), defaults.showAnnouncement),
+      announcementMode: getHeader(headers, 'announcement-mode') === 'scheduled' ? 'scheduled' : 'always',
+      announcementTimes: getHeader(headers, 'announcement-times'),
+      announcementDuration: Number(getHeader(headers, 'announcement-duration')) || defaults.announcementDuration,
+      themePrimary: normalizeHex(getHeader(headers, 'theme-primary'), defaults.themePrimary),
+      themeSecondary: normalizeHex(getHeader(headers, 'theme-secondary'), defaults.themeSecondary),
+      announce: subscription.announce || '',
+      announceUrl: subscription.announce_url || '',
+      allowBrowserConfig: subscription.allow_browser_config !== false,
+      nativeLinks: subscription.manual_sub_request?.links !== false,
+      nativeWireGuard: subscription.manual_sub_request?.wireguard !== false,
+      apps: Array.isArray(subscription.applications) ? subscription.applications : [],
+    };
+    const scoped = extractReseller(profilePayload);
+    if (!profilePayload?.has_overrides) {
+      return { ...legacy, themePrimary: scoped.themePrimary, themeSecondary: scoped.themeSecondary };
+    }
+    return {
+      ...legacy,
+      storeName: scoped.storeName,
+      supportId: scoped.supportId,
+      showConfigs: scoped.showConfigs,
+      showWireGuard: scoped.showWireGuard,
+      showPing: scoped.showPing,
+      showApps: scoped.showApps,
+      showAnnouncement: scoped.showAnnouncement,
+      announcementMode: scoped.announcementMode,
+      announcementTimes: scoped.announcementTimes,
+      announcementDuration: scoped.announcementDuration,
+      themePrimary: scoped.themePrimary,
+      themeSecondary: scoped.themeSecondary,
+    };
+  }
+
+  function extractReseller(payload) {
+    const profile = payload?.profile || {};
+    return {
+      storeName: profile.store_name || currentAdmin?.profile_title || currentAdmin?.username || defaults.storeName,
+      supportId: profile.support_id || supportDisplay(profile.support_url) || '',
+      showConfigs: profile.show_configs ?? defaults.showConfigs,
+      showWireGuard: profile.show_wireguard ?? defaults.showWireGuard,
+      showPing: profile.show_ping ?? defaults.showPing,
+      showApps: profile.show_apps ?? defaults.showApps,
+      showAnnouncement: profile.show_announcement ?? defaults.showAnnouncement,
+      announcementMode: profile.announcement_mode === 'scheduled' ? 'scheduled' : 'always',
+      announcementTimes: profile.announcement_times || '',
+      announcementDuration: Number(profile.announcement_duration) || defaults.announcementDuration,
+      themePrimary: normalizeHex(profile.theme_primary, defaults.themePrimary),
+      themeSecondary: normalizeHex(profile.theme_secondary, defaults.themeSecondary),
+      announce: '',
+      announceUrl: '',
+      allowBrowserConfig: true,
+      nativeLinks: true,
+      nativeWireGuard: true,
+      apps: [],
+    };
+  }
+
+  function findSettingsTabBar() {
+    if (!isSettingsRoute()) return null;
+    const tabSelector = ':scope > button, :scope > a, :scope > [role="tab"]';
+    const isTabBar = (node) => node instanceof HTMLElement && node.querySelectorAll(tabSelector).length >= 1;
+
+    const preferred = document.querySelector('.scrollbar-hide.flex.overflow-x-auto.border-b');
+    if (isTabBar(preferred)) return preferred;
+
+    return [...document.querySelectorAll(
+      '[role="tablist"], .scrollbar-hide, [class*="overflow-x-auto"][class*="border-b"]'
+    )].find(isTabBar) || null;
+  }
+
+  function getOutlet(tabBar = findSettingsTabBar()) {
+    const outlet = tabBar?.nextElementSibling;
+    return outlet instanceof HTMLElement ? outlet : null;
+  }
+
+  function setTabState(enabled) {
+    const tabBar = findSettingsTabBar();
+    const tab = document.getElementById(NAV_ID);
+    if (tabBar) enabled ? tabBar.setAttribute('data-mrm-active', '1') : tabBar.removeAttribute('data-mrm-active');
+    if (tab) tab.dataset.zActive = enabled ? 'true' : 'false';
+  }
+
+  function hideNativeChildren(outlet) {
+    [...outlet.children].forEach((child) => {
+      if (!(child instanceof HTMLElement) || child.id === ROOT_ID) return;
+      if (!child.hasAttribute(OUTLET_MARK)) child.setAttribute(OUTLET_MARK, child.style.display || '');
+      if (child.style.display !== 'none') child.style.display = 'none';
+    });
+  }
+
+  function restoreNativeChildren() {
+    const outlet = getOutlet();
+    if (outlet) {
+      [...outlet.querySelectorAll(`[${OUTLET_MARK}]`)].forEach((child) => {
+        if (!(child instanceof HTMLElement)) return;
+        child.style.display = child.getAttribute(OUTLET_MARK) || '';
+        child.removeAttribute(OUTLET_MARK);
+      });
+    }
+    document.getElementById(ROOT_ID)?.remove();
+  }
+
+  function deactivate() {
+    active = false;
+    restoreNativeChildren();
+    setTabState(false);
+  }
+
+  function removeUi() {
+    if (active) deactivate();
+    document.getElementById(NAV_ID)?.remove();
+  }
+
+  function mountShell(html) {
+    const outlet = getOutlet();
+    if (!outlet) return null;
+    hideNativeChildren(outlet);
+    let root = document.getElementById(ROOT_ID);
+    if (!root) {
+      root = document.createElement('div');
+      root.id = ROOT_ID;
+      outlet.appendChild(root);
+    }
+    if (root.innerHTML !== html) root.innerHTML = html;
+    setTabState(true);
+    return root;
+  }
+
+  function renderLoading() {
+    mountShell('<div class="z-loading">Loading MRM settings…</div>');
+  }
+
+  function renderError(error) {
+    mountShell(`<div class="z-error">MRM could not load your settings.<br>${escapeHtml(error?.name === 'AbortError' ? 'Request timed out' : (error?.message || error))}</div>`);
+  }
+
+  function shortSha(value) { return typeof value === 'string' && value.length >= 8 ? value.slice(0, 8) : 'unknown'; }
+  function removeUpdateNotice() { document.getElementById(UPDATE_NOTICE_ID)?.remove(); }
+  function renderUpdateNotice() {
+    if (!isOwner || !cachedUpdate?.update_available) { removeUpdateNotice(); return; }
+    let node = document.getElementById(UPDATE_NOTICE_ID);
+    if (!node) { node = document.createElement('div'); node.id = UPDATE_NOTICE_ID; document.body.appendChild(node); }
+    node.innerHTML = `<div class="z-un-text"><strong>نسخه جدید MRM منتشر شده</strong>از Settings → MRM می‌توانید بروزرسانی را مستقیم از پنل انجام دهید.</div><button type="button">باز کردن MRM</button>`;
+    node.querySelector('button')?.addEventListener('click', () => { if (!isSettingsRoute()) { location.hash = '#/settings'; setTimeout(openPage, 350); } else openPage(); }, { once: true });
+  }
+  async function loadUpdateStatus(refresh = false) {
+    if (!isOwner) { cachedUpdate = null; removeUpdateNotice(); return null; }
+    try { cachedUpdate = await api(`/api/mrm/update-status${refresh ? '?refresh=true' : ''}`); renderUpdateNotice(); return cachedUpdate; } catch (_) { return cachedUpdate; }
+  }
+  function updateSection() {
+    if (!isOwner) return '';
+    if (!cachedUpdate) return `<section class="z-card"><div class="z-card-note">در حال بررسی بروزرسانی MRM…</div></section>`;
+    const status = cachedUpdate.status || 'idle', available = cachedUpdate.update_available === true, busy = status === 'queued' || status === 'running';
+    const stateText = busy ? 'بروزرسانی در حال اجراست…' : status === 'failed' ? `خطا: ${escapeHtml(cachedUpdate.message || 'Update failed')}` : available ? 'نسخه جدید آماده نصب است.' : 'MRM به‌روز است.';
+    return `<section class="z-card z-update-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.gem}</span>بروزرسانی MRM</h3><div class="z-card-note">بروزرسانی فقط توسط Owner انجام می‌شود و روی Host اجرا می‌شود.</div></div><span class="z-native">OWNER ONLY</span></div><div class="z-update-row"><div><div class="z-status ${status === 'failed' ? 'err' : (available || busy ? '' : 'ok')}">${stateText}</div><div class="z-update-sha">installed ${shortSha(cachedUpdate.installed_sha)} · latest ${shortSha(cachedUpdate.latest_sha)}</div></div><button type="button" id="z-update-now" class="z-update-btn" ${(!available || busy) ? 'disabled' : ''}>${busy ? 'Updating…' : available ? 'Update now' : 'Up to date'}</button></div></section>`;
+  }
+  function stopUpdatePolling() { if (updatePollTimer) clearInterval(updatePollTimer); updatePollTimer = null; }
+  function startUpdatePolling() {
+    stopUpdatePolling(); let attempts = 0;
+    updatePollTimer = setInterval(async () => { attempts += 1; try { const state = await loadUpdateStatus(true); if (active && isOwner && cachedSettings) renderOwner(cachedSettings); if (state?.status === 'success' || (!state?.update_available && state?.installed_sha && state?.latest_sha)) { stopUpdatePolling(); setTimeout(() => location.reload(), 1200); } else if (state?.status === 'failed' || attempts >= 100) stopUpdatePolling(); } catch (_) {} }, 3000);
+  }
+  function bindUpdateActions(root) {
+    if (!isOwner) return;
+    root?.querySelector('#z-update-now')?.addEventListener('click', async (event) => { const button = event.currentTarget; if (!(button instanceof HTMLButtonElement)) return; button.disabled = true; button.textContent = 'Queuing…'; try { await api('/api/mrm/update', { method: 'POST' }); await loadUpdateStatus(true); if (cachedSettings) renderOwner(cachedSettings); startUpdatePolling(); } catch (error) { alert(`MRM update: ${error?.message || error}`); button.disabled = false; button.textContent = 'Update now'; } });
+  }
+
+  function namespaceSection() {
+    if (!isOwner) return '';
+    if (namespaceError) {
+      const pending = namespaceError.status === 404
+        ? 'ماژول مسیرهای اختصاصی هنوز داخل پروسه PasarGuard لود نشده است. Installer جدید از restart امن خود PasarGuard استفاده می‌کند؛ یک Update موفق باید این Routeها را فعال کند.'
+        : `بخش مسیرهای اختصاصی در دسترس نیست: ${namespaceError.message || namespaceError}`;
+      return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>Admin Subscription Namespaces</h3><div class="z-card-note">فقط Owner اصلی PasarGuard به این بخش دسترسی دارد.</div></div><span class="z-native">OWNER ONLY</span></div><div class="z-pending">${escapeHtml(pending)}</div></section>`;
+    }
+
+    if (!cachedNamespaces) return '';
+    const admins = Array.isArray(cachedNamespaces.admins) ? cachedNamespaces.admins : [];
+    const routes = Array.isArray(cachedNamespaces.routes) ? cachedNamespaces.routes : [];
+    const options = admins.map((admin) => `<option value="${escapeHtml(admin.id)}" data-username="${escapeHtml(admin.username)}" data-user-count="${escapeHtml(Number(admin.user_count || 0))}">${escapeHtml(admin.username)} · ${escapeHtml(Number(admin.user_count || 0))} users</option>`).join('');
+    const rows = routes.length ? routes.map((route) => {
+      const example = `${location.origin}${route.path_prefix}/<subscription-hash>`;
+      const admin = admins.find((item) => Number(item.id) === Number(route.admin_id));
+      const userCount = Number(admin?.user_count || 0);
+      return `<div class="z-ns-row" data-z-route="${escapeHtml(route.slug)}"><div class="z-ns-admin">${escapeHtml(route.username)} <span class="z-native">${escapeHtml(userCount)} users</span></div><div class="z-ns-url" title="${escapeHtml(example)}">${escapeHtml(example)}</div>${userCount === 0 ? '<div class="z-pending">این ادمین فعلاً هیچ User تحت مالکیت خود ندارد؛ ابتدا در PasarGuard برای Userها Set Owner انجام دهید.</div>' : ''}<button type="button" class="z-mini-btn z-copy-ns" data-prefix="${escapeHtml(`${location.origin}${route.path_prefix}/`)}">Copy Prefix</button><button type="button" class="z-mini-btn z-danger z-delete-ns" data-slug="${escapeHtml(route.slug)}">Delete</button></div>`;
+    }).join('') : '<div class="z-help">هنوز برای هیچ ادمینی مسیر اختصاصی ساخته نشده است.</div>';
+
+    return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>Admin Subscription Namespaces</h3><div class="z-card-note">Owner مسیر هر نماینده را می‌سازد؛ تنظیمات شخصی همان نماینده فقط روی کاربران خودش اعمال می‌شود.</div></div><span class="z-native">OWNER ONLY</span></div>
+      <div class="z-ns-create">
+        <div class="z-field"><label for="z-ns-admin">ادمین</label><select id="z-ns-admin">${options}</select></div>
+        <div class="z-field"><label for="z-ns-slug">مسیر</label><input id="z-ns-slug" type="text" dir="ltr" maxlength="32" placeholder="pedram"></div>
+        <button type="button" class="z-mini-btn" id="z-create-ns">Create / Update</button>
+      </div>
+      <div class="z-help">مثال: /sub/pedram/&lt;subscription-hash&gt; — هش همان توکن امن Native پاسارگارد است.</div>
+      <div class="z-ns-list">${rows}</div>
+    </section>`;
+  }
+
+  function ownPathSection(profilePayload) {
+    const namespace = profilePayload?.namespace || null;
+    const fallbackSlug = String(currentAdmin?.username || `admin-${currentAdmin?.id || ''}`)
+      .toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^[-_]+|[-_]+$/g, '');
+    const slug = namespace?.slug || fallbackSlug;
+    const enabled = namespace?.enabled !== false;
+    const prefix = `${location.origin}/sub/${slug || fallbackSlug}/`;
+    return `<section class="z-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>مسیر اختصاصی فروشگاه</h3><div class="z-card-note">این مسیر فقط برای Subscription کاربران متعلق به همین ادمین استفاده می‌شود.</div></div><span class="z-role">${isOwner ? 'OWNER' : 'RESELLER'}</span></div>
+      <div class="z-grid">
+        <div class="z-field"><label for="z-own-slug">مسیر Subscription</label><input id="z-own-slug" type="text" dir="ltr" maxlength="32" value="${escapeHtml(slug)}" placeholder="${escapeHtml(fallbackSlug)}"><div class="z-help">فقط حروف کوچک انگلیسی، عدد، - و _</div></div>
+        <div class="z-toggle"><div><div class="z-toggle-title">فعال بودن مسیر اختصاصی</div><div class="z-toggle-sub">لینک کاربران این ادمین روی همین مسیر ساخته می‌شود.</div></div><input id="z-own-enabled" type="checkbox" ${enabled ? 'checked' : ''}></div>
+      </div>
+      <div class="z-path" style="margin-top:.7rem"><code id="z-own-prefix">${escapeHtml(prefix)}&lt;subscription-hash&gt;</code><button type="button" class="z-mini-btn" id="z-copy-own-prefix">Copy Prefix</button></div>
+    </section>`;
+  }
+
+  function adminProfilesSection() {
+    if (!isOwner) return '';
+    if (adminProfilesError) {
+      return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>مدیریت فروشگاه ادمین‌ها</h3></div><span class="z-native">OWNER ONLY</span></div><div class="z-error">${escapeHtml(adminProfilesError?.message || adminProfilesError)}</div></section>`;
+    }
+    const admins = Array.isArray(cachedAdminProfiles?.admins) ? cachedAdminProfiles.admins : [];
+    const managed = admins.filter((admin) => Number(admin.admin_id) !== Number(currentAdmin?.id));
+    const rows = managed.length ? managed.map((admin) => {
+      const profile = admin.profile || {};
+      const namespace = admin.namespace || {};
+      const fallbackSlug = String(admin.username || `admin-${admin.admin_id}`).toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^[-_]+|[-_]+$/g, '');
+      return `<div class="z-admin-card" data-admin-id="${escapeHtml(admin.admin_id)}">
+        <div class="z-admin-meta"><div class="z-admin-name">${escapeHtml(admin.username)}</div><div class="z-admin-count">${escapeHtml(Number(admin.user_count || 0))} users</div></div>
+        <div class="z-field"><label>نام فروشگاه</label><input class="z-admin-store" type="text" maxlength="80" value="${escapeHtml(profile.store_name || admin.username || defaults.storeName)}"></div>
+        <div class="z-field"><label>آیدی پشتیبانی</label><input class="z-admin-support" type="text" dir="ltr" maxlength="256" value="${escapeHtml(profile.support_id || '')}" placeholder="@support"></div>
+        <div class="z-field"><label>مسیر</label><input class="z-admin-slug" type="text" dir="ltr" maxlength="32" value="${escapeHtml(namespace.slug || fallbackSlug)}"></div>
+        <div><label class="z-toggle" style="min-height:40px"><span class="z-toggle-title">Path</span><input class="z-admin-enabled" type="checkbox" ${namespace.enabled !== false ? 'checked' : ''}></label><button type="button" class="z-mini-btn z-admin-save" style="margin-top:.4rem;width:100%">Save</button></div>
+        <div class="z-admin-status">/sub/${escapeHtml(namespace.slug || fallbackSlug)}/&lt;subscription-hash&gt;</div>
+      </div>`;
+    }).join('') : '<div class="z-help">ادمین دیگری برای مدیریت وجود ندارد.</div>';
+    return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>مدیریت فروشگاه ادمین‌ها</h3><div class="z-card-note">Owner می‌تواند نام فروشگاه، پشتیبانی و مسیر هر ادمین را جداگانه ببیند و تغییر دهد.</div></div><span class="z-native">OWNER ONLY</span></div><div class="z-admin-list">${rows}</div></section>`;
+  }
+
+  function bindNamespaceActions(root) {
+    if (!isOwner) return;
+    const select = root?.querySelector('#z-ns-admin');
+    const slug = root?.querySelector('#z-ns-slug');
+    const syncSlug = () => {
+      if (!(select instanceof HTMLSelectElement) || !(slug instanceof HTMLInputElement)) return;
+      const option = select.selectedOptions[0];
+      const username = option?.dataset.username || '';
+      slug.value = username.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^[-_]+|[-_]+$/g, '') || `admin-${select.value}`;
+    };
+    if (select instanceof HTMLSelectElement) {
+      select.addEventListener('change', syncSlug);
+      if (slug instanceof HTMLInputElement && !slug.value) syncSlug();
+    }
+
+    root?.querySelector('#z-create-ns')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      if (!(button instanceof HTMLButtonElement) || !(select instanceof HTMLSelectElement) || !(slug instanceof HTMLInputElement)) return;
+      button.disabled = true;
+      try {
+        const selectedAdmin = cachedNamespaces?.admins?.find((item) => Number(item.id) === Number(select.value));
+        await api('/api/mrm/admin-subscriptions', { method: 'POST', body: JSON.stringify({ admin_id: Number(select.value), slug: slug.value.trim(), enabled: true }) });
+        cachedNamespaces = await api('/api/mrm/admin-subscriptions');
+        namespaceError = null;
+        if (cachedSettings) renderOwner(cachedSettings);
+        if (Number(selectedAdmin?.user_count || 0) === 0) alert('Namespace ذخیره شد، اما این ادمین هیچ User تحت مالکیت خودش ندارد. ابتدا Userهای موردنظر را در PasarGuard با Set Owner به این ادمین منتقل کنید.');
+      } catch (error) {
+        alert(`MRM: ${error?.message || error}`);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    root?.querySelectorAll('.z-copy-ns').forEach((button) => button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(button.dataset.prefix || '');
+        const old = button.textContent;
+        button.textContent = 'Copied ✓';
+        setTimeout(() => { if (button.isConnected) button.textContent = old; }, 1400);
+      } catch (_) {}
+    }));
+
+    root?.querySelectorAll('.z-delete-ns').forEach((button) => button.addEventListener('click', async () => {
+      const routeSlug = button.dataset.slug || '';
+      if (!routeSlug || !confirm(`Delete /sub/${routeSlug}/ namespace?`)) return;
+      button.disabled = true;
+      try {
+        await api(`/api/mrm/admin-subscriptions/${encodeURIComponent(routeSlug)}`, { method: 'DELETE' });
+        cachedNamespaces = await api('/api/mrm/admin-subscriptions');
+        if (cachedSettings) renderOwner(cachedSettings);
+      } catch (error) {
+        alert(`MRM: ${error?.message || error}`);
+      } finally {
+        button.disabled = false;
+      }
+    }));
+  }
+
+  function bindOwnPath(root) {
+    const slugInput = root?.querySelector('#z-own-slug');
+    const prefixNode = root?.querySelector('#z-own-prefix');
+    const normalizedSlug = () => String(slugInput?.value || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^[-_]+|[-_]+$/g, '');
+    const syncPrefix = () => {
+      const slug = normalizedSlug();
+      if (prefixNode) prefixNode.textContent = `${location.origin}/sub/${slug}/<subscription-hash>`;
+    };
+    slugInput?.addEventListener('input', syncPrefix);
+    syncPrefix();
+    root?.querySelector('#z-copy-own-prefix')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      if (!(button instanceof HTMLButtonElement)) return;
+      const slug = normalizedSlug();
+      try {
+        await navigator.clipboard.writeText(`${location.origin}/sub/${slug}/`);
+        const old = button.textContent;
+        button.textContent = 'Copied ✓';
+        setTimeout(() => { if (button.isConnected) button.textContent = old; }, 1400);
+      } catch (_) {}
+    });
+  }
+
+  function bindAdminProfileActions(root) {
+    if (!isOwner) return;
+    root?.querySelectorAll('.z-admin-card').forEach((row) => {
+      const button = row.querySelector('.z-admin-save');
+      button?.addEventListener('click', async () => {
+        const adminId = Number(row.dataset.adminId || 0);
+        const statusNode = row.querySelector('.z-admin-status');
+        if (!adminId || !(button instanceof HTMLButtonElement)) return;
+        button.disabled = true;
+        if (statusNode) { statusNode.className = 'z-admin-status'; statusNode.textContent = 'در حال ذخیره…'; }
+        try {
+          const payload = {
+            store_name: String(row.querySelector('.z-admin-store')?.value || '').trim() || defaults.storeName,
+            support_id: String(row.querySelector('.z-admin-support')?.value || '').trim(),
+            namespace_slug: String(row.querySelector('.z-admin-slug')?.value || '').trim(),
+            namespace_enabled: Boolean(row.querySelector('.z-admin-enabled')?.checked),
+          };
+          supportUrl(payload.support_id);
+          const updated = await api(`/api/mrm/admin-profiles/${adminId}`, { method: 'PUT', body: JSON.stringify(payload) });
+          if (Array.isArray(cachedAdminProfiles?.admins)) {
+            const index = cachedAdminProfiles.admins.findIndex((item) => Number(item.admin_id) === adminId);
+            if (index >= 0) cachedAdminProfiles.admins[index] = updated;
+          }
+          const route = updated?.namespace?.path_prefix || `/sub/${payload.namespace_slug}`;
+          if (statusNode) { statusNode.className = 'z-admin-status ok'; statusNode.textContent = `ذخیره شد ✓  ${route}/<subscription-hash>`; }
+        } catch (error) {
+          if (statusNode) { statusNode.className = 'z-admin-status err'; statusNode.textContent = `خطا: ${error?.message || error}`; }
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+  }
+
+  let themePickerState = {};
+
+  function colorPickerMarkup(key, label, note, color) {
+    const safe = normalizeHex(color, key === 'primary' ? defaults.themePrimary : defaults.themeSecondary);
+    const hsv = rgbToHsv(hexToRgb(safe));
+    return `
+      <div class="z-color-card" data-color-key="${key}">
+        <div class="z-color-title"><span>${escapeHtml(label)}</span><span class="z-color-swatch" data-color-swatch="${key}" style="background:${safe}"></span></div>
+        <div class="z-color-plane" data-color-plane="${key}" style="--picker-hue:hsl(${hsv.h} 100% 50%)">
+          <span class="z-color-cursor" data-color-cursor="${key}" style="left:${hsv.s}%;top:${100 - hsv.v}%"></span>
+        </div>
+        <input class="z-color-hue" data-color-hue="${key}" type="range" min="0" max="360" step="1" value="${Math.round(hsv.h)}" aria-label="Hue ${escapeHtml(label)}">
+        <input class="z-color-hex" data-color-hex="${key}" type="text" dir="ltr" maxlength="7" value="${safe}" aria-label="HEX ${escapeHtml(label)}">
+        <div class="z-help">${escapeHtml(note)}</div>
+      </div>`;
+  }
+
+  function appearanceSection(cfg) {
+    const primary = normalizeHex(cfg.themePrimary, defaults.themePrimary);
+    const secondary = normalizeHex(cfg.themeSecondary, defaults.themeSecondary);
+    return `
+      <section class="z-card z-appearance-card">
+        <div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.palette}</span>ظاهر و رنگ‌بندی</h3><div class="z-card-note">فقط دو رنگ برند و کنترل‌های اصلی تغییر می‌کنند؛ رنگ خطا، موفقیت، هشدار، اطلاعات و پس‌زمینه ثابت می‌مانند.</div></div><span class="z-native">APPEARANCE</span></div>
+        <div id="z-theme-preview" class="z-theme-preview" style="--z-preview-primary:${primary};--z-preview-secondary:${secondary}">
+          <div class="z-theme-preview-main"><span class="z-theme-preview-logo"></span><div class="z-theme-preview-text"><strong>پیش‌نمایش تم</strong><span>رنگ‌ها را با Drag انتخاب کنید و سپس تأیید کنید.</span></div></div>
+          <button class="z-theme-preview-btn" type="button" tabindex="-1">Primary</button>
+        </div>
+        <div class="z-color-grid">
+          ${colorPickerMarkup('primary', 'رنگ اصلی', 'دکمه‌ها، Ring و Accent اصلی رابط', primary)}
+          ${colorPickerMarkup('secondary', 'رنگ مکمل', 'برند، آیکن‌ها و Accent مکمل', secondary)}
+        </div>
+        <div class="z-appearance-actions">
+          <span id="z-appearance-status" class="z-appearance-status">تغییر رنگ تا زمان تأیید فقط در پیش‌نمایش است.</span>
+          <div class="z-appearance-buttons"><button id="z-theme-reset" class="z-appearance-reset" type="button">بازگشت به پیش‌فرض</button><button id="z-theme-apply" class="z-appearance-apply" type="button">تأیید و اعمال رنگ‌ها</button></div>
+        </div>
+      </section>`;
+  }
+
+  function themeFormValues() {
+    const primary = normalizeHex(themePickerState.primary?.hex, '');
+    const secondary = normalizeHex(themePickerState.secondary?.hex, '');
+    if (!primary || !secondary) throw new Error('رنگ باید با فرمت HEX کامل مثل #C9992D باشد');
+    return { primary, secondary };
+  }
+
+  function paintThemePicker(root, key) {
+    const state = themePickerState[key];
+    if (!root || !state) return;
+    state.hex = hsvToHex(state.h, state.s, state.v);
+    const plane = root.querySelector(`[data-color-plane="${key}"]`);
+    const cursor = root.querySelector(`[data-color-cursor="${key}"]`);
+    const hue = root.querySelector(`[data-color-hue="${key}"]`);
+    const input = root.querySelector(`[data-color-hex="${key}"]`);
+    const swatch = root.querySelector(`[data-color-swatch="${key}"]`);
+    if (plane instanceof HTMLElement) plane.style.setProperty('--picker-hue', `hsl(${state.h} 100% 50%)`);
+    if (cursor instanceof HTMLElement) { cursor.style.left = `${state.s}%`; cursor.style.top = `${100 - state.v}%`; }
+    if (hue instanceof HTMLInputElement) hue.value = String(Math.round(state.h));
+    if (input instanceof HTMLInputElement) input.value = state.hex;
+    if (swatch instanceof HTMLElement) swatch.style.background = state.hex;
+    const preview = root.querySelector('#z-theme-preview');
+    if (preview instanceof HTMLElement) preview.style.setProperty(key === 'primary' ? '--z-preview-primary' : '--z-preview-secondary', state.hex);
+  }
+
+  function bindAppearance(root, cfg) {
+    if (!root) return;
+    themePickerState = {};
+    ['primary', 'secondary'].forEach((key) => {
+      const fallback = key === 'primary' ? defaults.themePrimary : defaults.themeSecondary;
+      const initial = normalizeHex(key === 'primary' ? cfg.themePrimary : cfg.themeSecondary, fallback);
+      const hsv = rgbToHsv(hexToRgb(initial));
+      themePickerState[key] = { ...hsv, hex: initial };
+      const plane = root.querySelector(`[data-color-plane="${key}"]`);
+      const cursor = root.querySelector(`[data-color-cursor="${key}"]`);
+      const hue = root.querySelector(`[data-color-hue="${key}"]`);
+      const input = root.querySelector(`[data-color-hex="${key}"]`);
+      const swatch = root.querySelector(`[data-color-swatch="${key}"]`);
+
+      const paint = () => paintThemePicker(root, key);
+
+      const syncHex = (hex) => {
+        const normalized = normalizeHex(hex, '');
+        if (!normalized) return false;
+        const next = rgbToHsv(hexToRgb(normalized));
+        themePickerState[key] = { ...next, hex: normalized };
+        paint();
+        return true;
+      };
+
+      const pointerToColor = (event) => {
+        if (!(plane instanceof HTMLElement)) return;
+        const rect = plane.getBoundingClientRect();
+        const x = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+        const y = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+        themePickerState[key].s = rect.width ? (x / rect.width) * 100 : 0;
+        themePickerState[key].v = rect.height ? 100 - (y / rect.height) * 100 : 0;
+        paint();
+      };
+
+      plane?.addEventListener('pointerdown', (event) => {
+        if (!(plane instanceof HTMLElement)) return;
+        plane.setPointerCapture?.(event.pointerId);
+        pointerToColor(event);
+      });
+      plane?.addEventListener('pointermove', (event) => {
+        if (!(plane instanceof HTMLElement) || !plane.hasPointerCapture?.(event.pointerId)) return;
+        pointerToColor(event);
+      });
+      hue?.addEventListener('input', () => {
+        if (hue instanceof HTMLInputElement) themePickerState[key].h = Number(hue.value) || 0;
+        paint();
+      });
+      input?.addEventListener('change', () => {
+        if (!(input instanceof HTMLInputElement) || syncHex(input.value)) return;
+        input.value = themePickerState[key].hex;
+        const status = root.querySelector('#z-appearance-status');
+        if (status) { status.className = 'z-appearance-status err'; status.textContent = 'HEX نامعتبر است؛ نمونه صحیح: #C9992D'; }
+      });
+      paint();
+    });
+
+    const persist = async (reset = false) => {
+      const applyButton = root.querySelector('#z-theme-apply');
+      const resetButton = root.querySelector('#z-theme-reset');
+      const status = root.querySelector('#z-appearance-status');
+      if (applyButton instanceof HTMLButtonElement) applyButton.disabled = true;
+      if (resetButton instanceof HTMLButtonElement) resetButton.disabled = true;
+      try {
+        if (reset) {
+          const p = rgbToHsv(hexToRgb(THEME_DEFAULTS.primary));
+          const s = rgbToHsv(hexToRgb(THEME_DEFAULTS.secondary));
+          themePickerState.primary = { ...p, hex: THEME_DEFAULTS.primary };
+          themePickerState.secondary = { ...s, hex: THEME_DEFAULTS.secondary };
+          paintThemePicker(root, 'primary');
+          paintThemePicker(root, 'secondary');
+          return persistAppearance(root, THEME_DEFAULTS.primary, THEME_DEFAULTS.secondary, true);
+        }
+        const theme = themeFormValues();
+        return persistAppearance(root, theme.primary, theme.secondary, false);
+      } finally {
+        const nextApply = root.querySelector('#z-theme-apply');
+        const nextReset = root.querySelector('#z-theme-reset');
+        if (nextApply instanceof HTMLButtonElement) nextApply.disabled = false;
+        if (nextReset instanceof HTMLButtonElement) nextReset.disabled = false;
+      }
+    };
+
+    root.querySelector('#z-theme-apply')?.addEventListener('click', () => persist(false));
+    root.querySelector('#z-theme-reset')?.addEventListener('click', () => {
+      if (window.confirm('رنگ‌های MRM به حالت پیش‌فرض برگردند؟')) persist(true);
+    });
+  }
+
+  async function persistAppearance(root, primary, secondary, reset = false) {
+    const status = root?.querySelector('#z-appearance-status');
+    if (status) { status.className = 'z-appearance-status'; status.textContent = reset ? 'در حال بازگردانی رنگ‌های پیش‌فرض…' : 'در حال ذخیره و اعمال رنگ‌ها…'; }
+    try {
+      const updated = await api('/api/mrm/appearance', {
+        method: 'PUT',
+        body: JSON.stringify({ theme_primary: primary, theme_secondary: secondary }),
+      });
+      cachedProfile = updated;
+      if (status) { status.className = 'z-appearance-status ok'; status.textContent = reset ? 'رنگ‌های پیش‌فرض بازگردانده شدند ✓' : 'رنگ‌ها ذخیره و روی تمپلیت کاربران اعمال شدند ✓'; }
+      return updated;
+    } catch (error) {
+      if (status) { status.className = 'z-appearance-status err'; status.textContent = `خطا: ${error?.name === 'AbortError' ? 'timeout' : (error?.message || error)}`; }
+      throw error;
+    }
+  }
+
+  function renderForm(cfg, profilePayload = null) {
+    const username = currentAdmin?.username || '';
+    const apps = isOwner
+      ? (cfg.apps.length ? cfg.apps.map((app) => `<span class="z-chip">${escapeHtml(app.name || '')}${app.platform ? ` · ${escapeHtml(app.platform)}` : ''}</span>`).join('') : '<span class="z-help">اپلیکیشنی در PasarGuard تعریف نشده است.</span>')
+      : '<span class="z-help">لیست Applications توسط Owner اصلی مدیریت می‌شود؛ شما فقط نمایش یا عدم نمایش آن را برای کاربران خودتان تعیین می‌کنید.</span>';
+    const ownerNativeConnections = isOwner ? `
+          <div class="z-toggle"><div><div class="z-toggle-title">Allow browser config</div></div><input id="z-native-browser" type="checkbox" ${cfg.allowBrowserConfig ? 'checked' : ''}></div>
+          <div class="z-toggle"><div><div class="z-toggle-title">Links format</div></div><input id="z-native-links" type="checkbox" ${cfg.nativeLinks ? 'checked' : ''}></div>
+          <div class="z-toggle"><div><div class="z-toggle-title">WireGuard native format</div></div><input id="z-native-wg" type="checkbox" ${cfg.nativeWireGuard ? 'checked' : ''}></div>` : '';
+    const ownerAnnouncementFields = isOwner ? `
+          <div class="z-field"><label for="z-ann-text">متن اعلان PasarGuard</label><textarea id="z-ann-text" maxlength="128">${escapeHtml(cfg.announce)}</textarea></div>
+          <div class="z-field"><label for="z-ann-url">لینک اعلان</label><input id="z-ann-url" type="url" dir="ltr" value="${escapeHtml(cfg.announceUrl)}"></div>` : '';
+    const subtitle = isOwner
+      ? 'تنظیمات اصلی MRM و کنترل Owner پنل'
+      : `تنظیمات فروشگاه نمایندگی ${escapeHtml(username)} — بدون دسترسی به بخش‌های Owner`;
+    const roleBadge = isOwner ? '<span class="z-role">OWNER</span>' : '<span class="z-role">RESELLER</span>';
+
+    const html = `
+      <section class="z-hero"><div class="z-hero-row"><div class="z-brand"><div class="z-logo">${icons.gem}</div><div><div class="z-title-row"><h2 class="z-title">MRM Template</h2><span class="z-special">SPECIAL</span>${roleBadge}</div><div class="z-subtitle">${subtitle}</div></div></div><span class="z-version">v${VERSION}</span></div></section>
+      <div class="z-content">
+        ${updateSection()}
+        ${adminProfilesSection()}
+        ${ownPathSection(profilePayload)}
+        ${appearanceSection(cfg)}
+        <section class="z-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.sliders}</span>تنظیمات فروشگاه</h3><div class="z-card-note">نام فروشگاه و پشتیبانی ${isOwner ? 'برای تنظیمات اصلی' : 'فقط برای کاربران همین نمایندگی'} استفاده می‌شوند.</div></div></div><div class="z-grid">
+          <div class="z-field"><label for="z-store">نام فروشگاه</label><input id="z-store" type="text" maxlength="80" value="${escapeHtml(cfg.storeName)}"></div>
+          <div class="z-field"><label for="z-support">آیدی پشتیبانی</label><input id="z-support" type="text" dir="ltr" maxlength="256" placeholder="@support" value="${escapeHtml(cfg.supportId)}"><div class="z-help">@username، username یا لینک t.me / https / tg قابل استفاده است.</div></div>
+          <div class="z-toggle"><div><div class="z-toggle-title">نمایش Ping</div><div class="z-toggle-sub">نمایش پینگ تخمینی فعلی تمپلیت</div></div><input id="z-show-ping" type="checkbox" ${cfg.showPing ? 'checked' : ''}></div>
+          <div class="z-toggle"><div><div class="z-toggle-title">نمایش اپلیکیشن‌ها</div><div class="z-toggle-sub">Applications تعریف‌شده در PasarGuard</div></div><input id="z-show-apps" type="checkbox" ${cfg.showApps ? 'checked' : ''}></div>
+          <div class="z-field"><label>اپلیکیشن‌ها</label><div class="z-apps">${apps}</div></div>
+        </div></section>
+        <section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.link}</span>Special Connections</h3><div class="z-card-note">${isOwner ? 'کنترل اصلی Subscription و فرمت‌های Native.' : 'فقط نمایش کانفیگ‌های کاربران خودتان؛ تنظیمات Native اصلی دست Owner باقی می‌ماند.'}</div></div><span class="z-native">SPECIAL</span></div><div class="z-grid">
+          <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش کانفیگ‌های معمولی</div><div class="z-toggle-sub">VLESS / VMess / Trojan / SS و سایر کانفیگ‌ها</div></div><input id="z-show-configs" type="checkbox" ${cfg.showConfigs ? 'checked' : ''}></div>
+          <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش WireGuard</div><div class="z-toggle-sub">فقط اگر WireGuard واقعاً داخل Subscription باشد</div></div><input id="z-show-wg" type="checkbox" ${cfg.showWireGuard ? 'checked' : ''}></div>
+          ${ownerNativeConnections}
+        </div></section>
+        <section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.bell}</span>Special Announcement</h3><div class="z-card-note">${isOwner ? 'اعلان Native پاسارگارد با استایل Emerald/Gold.' : 'متن اعلان را Owner اصلی تعیین می‌کند؛ شما نمایش، حالت و زمان‌بندی آن را برای کاربران خودتان کنترل می‌کنید.'}</div></div><span class="z-native">SPECIAL</span></div><div class="z-grid">
+          <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش اعلان ویژه</div><div class="z-toggle-sub">بدون متن اعلان، کارت ساختگی نمایش داده نمی‌شود</div></div><input id="z-show-ann" type="checkbox" ${cfg.showAnnouncement ? 'checked' : ''}></div>
+          <div class="z-field"><label for="z-ann-mode">حالت نمایش</label><select id="z-ann-mode"><option value="always" ${cfg.announcementMode === 'always' ? 'selected' : ''}>همیشه</option><option value="scheduled" ${cfg.announcementMode === 'scheduled' ? 'selected' : ''}>ساعت‌بندی‌شده</option></select></div>
+          <div class="z-field"><label for="z-ann-times">ساعت‌ها</label><input id="z-ann-times" type="text" dir="ltr" placeholder="09:00,14:30,21:00" value="${escapeHtml(cfg.announcementTimes)}"></div>
+          <div class="z-field"><label for="z-ann-duration">مدت هر نوبت (دقیقه)</label><input id="z-ann-duration" type="number" min="1" max="1440" value="${escapeHtml(cfg.announcementDuration)}"></div>
+          ${ownerAnnouncementFields}
+        </div></section>
+      </div>
+      <div class="z-actions"><span class="z-status" id="z-status">آماده ذخیره</span><button class="z-save" id="z-save">Save MRM Settings</button></div>`;
+
+    const root = mountShell(html);
+    root?.querySelector('#z-save')?.addEventListener('click', () => isOwner ? saveOwner(cachedSettings) : saveReseller());
+    bindUpdateActions(root);
+    bindOwnPath(root);
+    bindAdminProfileActions(root);
+    bindAppearance(root, cfg);
+  }
+
+  function renderOwner(settings, profilePayload = cachedProfile) {
+    cachedSettings = settings;
+    cachedProfile = profilePayload;
+    renderForm(extractOwner(settings, profilePayload), profilePayload);
+  }
+
+  function renderReseller(payload) {
+    cachedProfile = payload;
+    renderForm(extractReseller(payload), payload);
+  }
+
+  function validateTimes() {
+    const times = value('z-ann-times');
+    if (times && !times.split(',').every((item) => /^([01]\d|2[0-3]):[0-5]\d$/.test(item.trim()))) {
+      throw new Error('فرمت ساعت باید HH:MM باشد');
+    }
+    return times;
+  }
+
+  async function saveOwner(settings) {
+    const button = field('z-save');
+    const statusNode = field('z-status');
+    if (!button || !statusNode || !settings) return;
+    button.disabled = true;
+    statusNode.className = 'z-status';
+    statusNode.textContent = 'در حال ذخیره…';
+    try {
+      const times = validateTimes();
+      const support = value('z-support');
+      supportUrl(support);
+      const scopedPayload = {
+        store_name: value('z-store') || currentAdmin?.username || defaults.storeName,
+        support_id: support,
+        namespace_slug: value('z-own-slug'),
+        namespace_enabled: checked('z-own-enabled'),
+        show_configs: checked('z-show-configs'),
+        show_wireguard: checked('z-show-wg'),
+        show_ping: checked('z-show-ping'),
+        show_apps: checked('z-show-apps'),
+        show_announcement: checked('z-show-ann'),
+        announcement_mode: value('z-ann-mode') || 'always',
+        announcement_times: times,
+        announcement_duration: Math.max(1, Math.min(1440, Number(value('z-ann-duration')) || 60)),
+        theme_primary: themeFormValues().primary,
+        theme_secondary: themeFormValues().secondary,
+      };
+
+      settings.subscription ||= {};
+      const subscription = settings.subscription;
+      const responseHeaders = { ...(subscription.response_headers || {}) };
+      ['enabled','store-name','store-name-b64','support-id-b64','show-configs','show-wireguard','show-ping','show-apps','show-announcement','announcement-mode','announcement-times','announcement-duration','theme-primary','theme-secondary'].forEach((key) => removeHeader(responseHeaders, key));
+      subscription.response_headers = responseHeaders;
+      // Store/support are per-admin now; never keep a global support URL that leaks to every admin.
+      subscription.support_url = '';
+      subscription.announce = value('z-ann-text');
+      subscription.announce_url = value('z-ann-url');
+      subscription.allow_browser_config = checked('z-native-browser');
+      subscription.manual_sub_request ||= {};
+      subscription.manual_sub_request.links = checked('z-native-links');
+      subscription.manual_sub_request.wireguard = checked('z-native-wg');
+
+      const [updatedSettings, updatedProfile] = await Promise.all([
+        api('/api/settings', { method: 'PUT', body: JSON.stringify(settings) }),
+        api('/api/mrm/profile', { method: 'PUT', body: JSON.stringify(scopedPayload) }),
+      ]);
+      cachedSettings = updatedSettings;
+      cachedProfile = updatedProfile;
+      await loadAdminProfiles();
+      statusNode.className = 'z-status ok';
+      statusNode.textContent = 'تنظیمات اختصاصی Owner ذخیره شد ✓';
+    } catch (error) {
+      console.error('[MRM] owner save failed', error);
+      statusNode.className = 'z-status err';
+      statusNode.textContent = `خطا: ${error?.name === 'AbortError' ? 'timeout' : (error?.message || error)}`;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function saveReseller() {
+    const button = field('z-save');
+    const statusNode = field('z-status');
+    if (!button || !statusNode) return;
+    button.disabled = true;
+    statusNode.className = 'z-status';
+    statusNode.textContent = 'در حال ذخیره…';
+    try {
+      const times = validateTimes();
+      const support = value('z-support');
+      supportUrl(support);
+      const payload = {
+        store_name: value('z-store') || currentAdmin?.username || defaults.storeName,
+        support_id: support,
+        namespace_slug: value('z-own-slug'),
+        namespace_enabled: checked('z-own-enabled'),
+        show_configs: checked('z-show-configs'),
+        show_wireguard: checked('z-show-wg'),
+        show_ping: checked('z-show-ping'),
+        show_apps: checked('z-show-apps'),
+        show_announcement: checked('z-show-ann'),
+        announcement_mode: value('z-ann-mode') || 'always',
+        announcement_times: times,
+        announcement_duration: Math.max(1, Math.min(1440, Number(value('z-ann-duration')) || 60)),
+        theme_primary: themeFormValues().primary,
+        theme_secondary: themeFormValues().secondary,
+      };
+      cachedProfile = await api('/api/mrm/profile', { method: 'PUT', body: JSON.stringify(payload) });
+      statusNode.className = 'z-status ok';
+      statusNode.textContent = 'تنظیمات نمایندگی ذخیره شد ✓';
+    } catch (error) {
+      console.error('[MRM] reseller save failed', error);
+      statusNode.className = 'z-status err';
+      statusNode.textContent = `خطا: ${error?.name === 'AbortError' ? 'timeout' : (error?.message || error)}`;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function loadNamespaces() {
+    if (!isOwner) {
+      cachedNamespaces = null;
+      namespaceError = null;
+      return;
+    }
+    try {
+      cachedNamespaces = await api('/api/mrm/admin-subscriptions');
+      namespaceError = null;
+    } catch (error) {
+      cachedNamespaces = null;
+      namespaceError = error;
+    }
+  }
+
+  async function loadAdminProfiles() {
+    if (!isOwner) {
+      cachedAdminProfiles = null;
+      adminProfilesError = null;
+      return;
+    }
+    try {
+      cachedAdminProfiles = await api('/api/mrm/admin-profiles');
+      adminProfilesError = null;
+    } catch (error) {
+      cachedAdminProfiles = null;
+      adminProfilesError = error;
+    }
+  }
+
+  async function openPage() {
+    if (!accessAllowed) return;
+    active = true;
+    renderLoading();
+    try {
+      if (isOwner) {
+        const [settings, profile] = await Promise.all([api('/api/settings'), api('/api/mrm/profile'), loadAdminProfiles(), loadUpdateStatus()]);
+        if (!active) return;
+        renderOwner(settings, profile);
+      } else {
+        const profile = await api('/api/mrm/profile');
+        if (!active) return;
+        renderReseller(profile);
+      }
+    } catch (error) {
+      if (!active) return;
+      console.error('[MRM] settings load failed', error);
+      renderError(error);
+    }
+  }
+
+  function ensureTab() {
+    if (!isSettingsRoute() || !accessResolved || !accessAllowed) return;
+    const tabBar = findSettingsTabBar();
+    if (!tabBar) return;
+    if (!tabBar.dataset.mrmBound) {
+      tabBar.dataset.mrmBound = '1';
+      tabBar.addEventListener('click', (event) => {
+        const button = event.target instanceof Element ? event.target.closest('button, a, [role="tab"]') : null;
+        if (button && button.id !== NAV_ID && active) deactivate();
+      }, true);
+    }
+    if (document.getElementById(NAV_ID)) return;
+    const button = document.createElement('button');
+    button.id = NAV_ID;
+    button.type = 'button';
+    button.dataset.zActive = 'false';
+    button.className = 'relative flex-shrink-0 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors text-muted-foreground hover:text-foreground';
+    button.title = isOwner ? 'MRM Special — Owner controls' : 'MRM — Reseller store settings';
+    button.innerHTML = `<div class="z-tab">${icons.gem.replace('<svg ', '<svg class="z-tab-gem" ')}<span>MRM</span><span class="z-tab-badge">Special</span></div>`;
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openPage();
+    });
+    tabBar.appendChild(button);
+    if (active) setTabState(true);
+  }
+
+  function maintain() {
+    maintainQueued = false;
+    if (!isSettingsRoute()) {
+      active = false;
+      document.getElementById(ROOT_ID)?.remove();
+      document.getElementById(NAV_ID)?.remove();
+      return;
+    }
+    if (!accessResolved || !accessAllowed) {
+      removeUi();
+      return;
+    }
+    const tabBar = findSettingsTabBar();
+    if (!tabBar) {
+      if (active) deactivate();
+      return;
+    }
+    ensureTab();
+    if (active) {
+      const outlet = getOutlet(tabBar);
+      if (outlet) hideNativeChildren(outlet);
+      setTabState(true);
+      if (!document.getElementById(ROOT_ID)) {
+        if (isOwner && cachedSettings) renderOwner(cachedSettings);
+        else if (!isOwner && cachedProfile) renderReseller(cachedProfile);
+      }
+    }
+  }
+
+  function scheduleMaintain() {
+    if (maintainQueued) return;
+    maintainQueued = true;
+    requestAnimationFrame(maintain);
+  }
+
+  async function resolveAccess() {
+    try {
+      currentAdmin = await api('/api/admin');
+      accessAllowed = Boolean(currentAdmin?.id || currentAdmin?.username);
+      isOwner = currentAdmin?.role?.is_owner === true || currentAdmin?.is_owner === true;
+      if (isOwner) void loadUpdateStatus(); else removeUpdateNotice();
+    } catch (_) {
+      currentAdmin = null;
+      accessAllowed = false;
+      isOwner = false;
+    } finally {
+      accessResolved = true;
+      scheduleMaintain();
+    }
+  }
+
+  window.addEventListener('popstate', () => { if (active) deactivate(); scheduleMaintain(); });
+  window.addEventListener('hashchange', () => { if (!isSettingsRoute()) active = false; scheduleMaintain(); });
+  const observer = new MutationObserver(scheduleMaintain);
+  observer.observe(document.documentElement, { subtree: true, childList: true });
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => { resolveAccess(); scheduleMaintain(); }, { once: true });
+  } else {
+    resolveAccess();
+    scheduleMaintain();
+  }
+})();

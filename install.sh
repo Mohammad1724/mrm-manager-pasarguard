@@ -6,7 +6,7 @@ INSTALL_DIR="/opt/mrm-manager"
 # verified against checksums.txt (integrity). install.sh itself is bootstrapped
 # via the README curl command and therefore cannot self-verify.
 REPO_BASE_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard"
-REPO_REF="v1.1.25"
+REPO_REF="v1.2.0"
 MANAGER_REPO_URL="$REPO_BASE_URL/$REPO_REF"
 VERSION_REGISTRY_URL="$MANAGER_REPO_URL/versions.conf"
 CHECKSUMS_URL="$MANAGER_REPO_URL/checksums.txt"
@@ -38,7 +38,7 @@ rm -f "$VERSION_REGISTRY_FILE"
 
 # Fallback only if registry fetch failed
 if [ -z "$MRM_VERSION" ]; then
-    MRM_VERSION="1.1.25"
+    MRM_VERSION="1.2.0"
 fi
 
 echo -e "${CYAN}╔══════════════════════════════════════════════╗${NC}"
@@ -78,12 +78,19 @@ verify_download() {
 }
 
 echo -e "${BLUE}[1/4] Creating directories...${NC}"
-mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/backup"
+mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/backup" "$INSTALL_DIR/plugin"
 
 FILES=(
     "utils.sh" "ui.sh" "ssl.sh" "backup.sh" "domain_separator.sh"
-    "theme.sh" "diagnostics.sh" "offline.sh"
+    "theme.sh" "special.sh" "diagnostics.sh" "offline.sh"
     "safe_ops.sh" "monitor.sh" "pg_health.sh" "main.sh" "VERSION" "versions.conf"
+)
+
+PLUGIN_MODULES=(
+    "mrm-special.js" "mrm-runtime.js" "integrate-dashboard.sh"
+    "update-from-panel.sh" "sitecustomize.py" "mrm_admin_subscriptions.py"
+    "mrm-integrator.service" "mrm-integrator.path" "mrm-integrator.timer"
+    "mrm-panel-update.service" "mrm-panel-update.path"
 )
 
 # Remove deprecated/unused files
@@ -120,7 +127,7 @@ for FILE in "${FILES[@]}"; do
 MRM_VERSION="$MRM_VERSION"
 SSL_VERSION="1.0.3"
 BACKUP_VERSION="1.0.5"
-THEME_VERSION="1.0.1"
+THEME_VERSION="2.0.0"
 EOF
             echo -e " ${GREEN}✔${NC} Created locally: $FILE"
         else
@@ -147,6 +154,23 @@ for MODULE in "${BACKUP_MODULES[@]}"; do
         fi
     else
         echo -e " ${RED}✘${NC} Failed: backup/$MODULE"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+done
+
+for MODULE in "${PLUGIN_MODULES[@]}"; do
+    URL="$MANAGER_REPO_URL/plugin/$MODULE"
+    if "${CURL_BASE[@]}" -o "$INSTALL_DIR/plugin/$MODULE" "$URL" 2>/dev/null; then
+        if verify_download "$INSTALL_DIR/plugin/$MODULE" "plugin/$MODULE"; then
+            case "$MODULE" in
+                *.sh) chmod +x "$INSTALL_DIR/plugin/$MODULE" 2>/dev/null ;;
+            esac
+            echo -e " ${GREEN}✔${NC} Downloaded: plugin/$MODULE"
+        else
+            echo -e " ${RED}✘${NC} Rejected: plugin/$MODULE (bad checksum)"
+        fi
+    else
+        echo -e " ${RED}✘${NC} Failed: plugin/$MODULE"
         FAIL_COUNT=$((FAIL_COUNT + 1))
     fi
 done
@@ -182,7 +206,7 @@ cat > /usr/local/bin/mrm << 'EOF'
 #!/bin/bash
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then
     [ -r /opt/mrm-manager/versions.conf ] && source /opt/mrm-manager/versions.conf
-    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.1.25")}"
+    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.2.0")}"
     exit 0
 fi
 exec bash /opt/mrm-manager/main.sh "$@"

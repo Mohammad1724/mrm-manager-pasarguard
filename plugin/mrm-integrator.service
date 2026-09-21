@@ -1,0 +1,25 @@
+[Unit]
+Description=Resource-bounded MRM reconciliation guard for PasarGuard
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash -lc 'set -u; while true; do found=0; if command -v docker >/dev/null 2>&1; then for cid in $(docker ps -q 2>/dev/null); do image=$(docker inspect -f "{{.Config.Image}}" "$cid" 2>/dev/null || true); case "$image" in *pasarguard/panel*) found=1; project=$(docker inspect -f "{{ index .Config.Labels \"com.docker.compose.project\" }}" "$cid" 2>/dev/null || true); [ -n "$project" ] || project=pasarguard; echo "[MRM Guard] reconciling ${cid:0:12} compose-project=$project"; if [ -x /opt/mrm-manager/plugin/integrate-dashboard.sh ]; then PASARGUARD_COMPOSE_PROJECT="$project" /opt/mrm-manager/plugin/integrate-dashboard.sh || true; fi ;; esac; done; fi; if [ "$found" -eq 0 ] && [ -x /opt/mrm-manager/plugin/integrate-dashboard.sh ]; then /opt/mrm-manager/plugin/integrate-dashboard.sh || true; fi; sleep 60; done'
+Restart=on-failure
+RestartSec=10s
+TimeoutStartSec=45s
+Nice=10
+IOSchedulingClass=idle
+CPUAccounting=true
+CPUQuota=15%
+CPUWeight=10
+MemoryAccounting=true
+MemoryHigh=128M
+MemoryMax=192M
+TasksMax=32
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

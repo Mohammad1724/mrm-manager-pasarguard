@@ -755,6 +755,14 @@ while IFS= read -r F; do
 done < <(sed -n '/^BACKUP_MODULES=(/,/^)/p' "$PROJECT_DIR/install.sh" | grep -oE '"[^"]+"' | tr -d '"')
 [ "$MISSING" -eq 0 ] && pass "install.sh BACKUP_MODULES list matches repo"
 
+# 10.2b: every plugin module listed in install.sh must exist in the repo
+MISSING=0
+while IFS= read -r F; do
+    [ -z "$F" ] && continue
+    [ -f "$PROJECT_DIR/plugin/$F" ] || { fail "install.sh lists plugin/$F but it is missing"; MISSING=1; }
+done < <(sed -n '/^PLUGIN_MODULES=(/,/^)/p' "$PROJECT_DIR/install.sh" | grep -oE '"[^"]+"' | tr -d '"')
+[ "$MISSING" -eq 0 ] && pass "install.sh PLUGIN_MODULES list matches repo"
+
 # 10.3: checksums.txt exists and every entry points to a real file
 if [ -f "$PROJECT_DIR/checksums.txt" ]; then
     MISSING=0
@@ -783,6 +791,7 @@ done < <({
         esac
     done
     sed -n '/^BACKUP_MODULES=(/,/^)/p' "$PROJECT_DIR/install.sh" | grep -oE '"[^"]+"' | tr -d '"' | sed 's#^#manager/backup/#'
+    sed -n '/^PLUGIN_MODULES=(/,/^)/p' "$PROJECT_DIR/install.sh" | grep -oE '"[^"]+"' | tr -d '"' | sed 's#^#plugin/#'
     echo "templates/subscription/index.html"
 })
 [ "$MISSING" -eq 0 ] && pass "all install.sh downloads are covered by checksums.txt"
