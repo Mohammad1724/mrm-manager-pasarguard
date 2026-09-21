@@ -1,11 +1,19 @@
 #!/bin/bash
 # MRM Manager Theme
 
-if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
+# utils.sh must load whenever its functions are missing — a parent process may
+# export PANEL_DIR while bash functions do not cross the process boundary
+# (standalone runs from install/update used to hit "command not found").
+if ! declare -f detect_active_panel >/dev/null 2>&1; then
+    for _mrm_utils in /opt/mrm-manager/utils.sh "$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/utils.sh"; do
+        [ -r "${_mrm_utils}" ] && { source "${_mrm_utils}"; break; }
+    done
+    unset _mrm_utils
+fi
 if ! declare -f ui_header >/dev/null 2>&1 && [ -r /opt/mrm-manager/ui.sh ]; then source /opt/mrm-manager/ui.sh; fi
 if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manager/safe_ops.sh ]; then source /opt/mrm-manager/safe_ops.sh; fi
 [ -r "/opt/mrm-manager/versions.conf" ] && source /opt/mrm-manager/versions.conf
-THEME_VERSION="${THEME_VERSION:-2.2.0}"
+THEME_VERSION="${THEME_VERSION:-2.2.1}"
 
 # ✅ اطمینان از تشخیص پنل و تنظیم DATA_DIR
 detect_active_panel > /dev/null

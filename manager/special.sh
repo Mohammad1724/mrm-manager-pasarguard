@@ -21,7 +21,7 @@
 # Data layout:   /var/lib/pasarguard/mrm/
 # Profile map:   profiles/profiles.json  (admins.json is created by sitecustomize)
 # ============================================================================
-SPECIAL_VERSION="1.2.0"
+SPECIAL_VERSION="1.2.1"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
@@ -66,6 +66,32 @@ UNITS=(mrm-integrator.service mrm-integrator.path mrm-integrator.timer mrm-panel
 UNIT_SRC="$SPECIAL_DIR/plugin"
 
 special_pause() { read -r -p "Press Enter to continue..." _; }
+
+special_find_dashboard_build() {
+    # Host dashboard build (the integrator injects the tab here). Falls back to
+    # PANEL_DIR from detect_active_panel, then a bounded find like the
+    # integrate-dashboard.sh finder so status sees whatever the integrator found.
+    local candidate
+    for candidate in \
+        "${PASARGUARD_ROOT}/dashboard/build" \
+        "${PASARGUARD_ROOT}/panel/dashboard/build" \
+        "${PANEL_DIR}/dashboard/build"
+    do
+        if [ -f "${candidate}/index.html" ]; then printf '%s\n' "${candidate}"; return 0; fi
+    done
+    if [ -n "${PASARGUARD_ROOT:-}" ] && [ -d "${PASARGUARD_ROOT}" ]; then
+        candidate="$(find "${PASARGUARD_ROOT}" -maxdepth 5 -type f -path '*/dashboard/build/index.html' -print -quit 2>/dev/null | sed 's#/index.html$##')"
+        [ -n "${candidate}" ] && { printf '%s\n' "${candidate}"; return 0; }
+    fi
+    return 1
+}
+
+special_container_id() {
+    local cid
+    cid="$(docker ps -q --filter "ancestor=pasarguard/panel" 2>/dev/null | head -1)"
+    [ -z "${cid}" ] && cid="$(docker ps --format '{{.ID}} {{.Image}}' 2>/dev/null | awk '/pasarguard\/panel/ {print $1; exit}')"
+    [ -n "${cid}" ] && printf '%s\n' "${cid}"
+}
 
 # ----------------------------------------------------------------------------
 # Templated piped shell scripts (sourced files use ${VAR} which must resolve at
@@ -424,13 +450,18 @@ special_status() {
     else
         echo -e "Template runtime:   ${RED}○ Missing${NC}"
     fi
-    # dashboard
-    local bd
+    # dashboard (host build first, then the panel container build)
+    local bd cid
     bd="$(special_find_dashboard_build || true)"
     if [ -n "$bd" ] && grep -q "$MARKER_ADMIN" "$bd/index.html" 2>/dev/null; then
         echo -e "Dashboard tab:      ${GREEN}● Installed${NC}"
     else
-        echo -e "Dashboard tab:      ${RED}○ Missing${NC}"
+        cid="$(special_container_id || true)"
+        if [ -n "$cid" ] && docker exec "$cid" sh -c "grep -qs \"${MARKER_ADMIN}\" /code/dashboard/build/index.html /app/dashboard/build/index.html /opt/pasarguard/dashboard/build/index.html" 2>/dev/null; then
+            echo -e "Dashboard tab:      ${GREEN}● Installed${NC}  (container)"
+        else
+            echo -e "Dashboard tab:      ${RED}○ Missing${NC}"
+        fi
     fi
     # backend
     if [ -f "$BACKEND_PY/sitecustomize.py" ] && [ -f "$BACKEND_PY/mrm_admin_subscriptions.py" ]; then

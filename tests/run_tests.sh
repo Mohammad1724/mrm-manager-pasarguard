@@ -1102,6 +1102,20 @@ else
     fail "[162] zero emoji in template source + plugin UI"
 fi
 
+# ─── v1.4.1: standalone-safety — manager scripts define what they call ───────
+if grep -q 'special_find_dashboard_build()' "$PROJECT_DIR/manager/special.sh" && \
+   grep -q 'special_container_id()' "$PROJECT_DIR/manager/special.sh"; then
+    pass "[163] special helper functions are defined (find_dashboard_build, container_id)" || fail "[163] special helper functions are defined (find_dashboard_build, container_id)"
+else
+    fail "[163] special helper functions are defined (find_dashboard_build, container_id)"
+fi
+_out164="$(cd "$PROJECT_DIR" && PANEL_DIR=/nonexistent bash manager/theme.sh --current-template 2>&1 || true)"
+if ! printf '%s' "$_out164" | grep -q 'command not found'; then
+    pass "[164] theme.sh standalone run has no missing functions" || fail "[164] theme.sh standalone run has no missing functions"
+else
+    fail "[164] theme.sh standalone run has no missing functions"
+fi
+
 if [ "$FAIL" -eq 0 ]; then
     echo -e "  ${GREEN}✔ All tests passed!${NC}"
     echo ""
