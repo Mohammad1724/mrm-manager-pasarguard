@@ -127,7 +127,7 @@ for FILE in "${FILES[@]}"; do
 MRM_VERSION="$MRM_VERSION"
 SSL_VERSION="1.0.3"
 BACKUP_VERSION="1.0.5"
-THEME_VERSION="2.0.0"
+THEME_VERSION="2.0.1"
 EOF
             echo -e " ${GREEN}✔${NC} Created locally: $FILE"
         else

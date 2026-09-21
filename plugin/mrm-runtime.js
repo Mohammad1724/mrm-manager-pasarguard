@@ -6,6 +6,7 @@
   const THEME_STYLE_ID = 'mrm-theme-style';
   const THEME_DEFAULTS = { primary: '#C9992D', secondary: '#064C38' };
   const DEFAULTS = {
+    enabled: true,
     storeName: 'MRM',
     supportId: '',
     showConfigs: true,
@@ -261,6 +262,7 @@
     const headers = normalizeHeaders(raw?.headers);
     const encodedSupport = decodeUtf8Base64(header(headers, 'support-id-b64').trim());
     return {
+      enabled: bool(header(headers, 'enabled'), DEFAULTS.enabled),
       storeName: decodeUtf8Base64(header(headers, 'store-name-b64').trim()) || header(headers, 'store-name').trim() || DEFAULTS.storeName,
       supportId: encodedSupport || supportLabelFromUrl(headers['support-url']) || DEFAULTS.supportId,
       showConfigs: bool(header(headers, 'show-configs'), DEFAULTS.showConfigs),
@@ -438,6 +440,10 @@
     if (!state.loaded) return;
 
     const config = state.config;
+    if (!config.enabled) {
+      restoreOriginalUi();
+      return;
+    }
     applyTheme(config);
     updateBrand(config.storeName);
     applySupport(config.supportId);

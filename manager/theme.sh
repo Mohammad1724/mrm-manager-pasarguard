@@ -5,7 +5,7 @@ if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
 if ! declare -f ui_header >/dev/null 2>&1 && [ -r /opt/mrm-manager/ui.sh ]; then source /opt/mrm-manager/ui.sh; fi
 if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manager/safe_ops.sh ]; then source /opt/mrm-manager/safe_ops.sh; fi
 [ -r "/opt/mrm-manager/versions.conf" ] && source /opt/mrm-manager/versions.conf
-THEME_VERSION="${THEME_VERSION:-2.0.0}"
+THEME_VERSION="${THEME_VERSION:-2.0.1}"
 
 # ✅ اطمینان از تشخیص پنل و تنظیم DATA_DIR
 detect_active_panel > /dev/null
@@ -438,36 +438,93 @@ is_theme_active() {
     return 1
 }
 
+# Detect what is installed in the single template slot.
+theme_template_label() {
+    local f="$DATA_DIR/templates/subscription/index.html"
+    if [ -s "$f" ]; then
+        if grep -q "treasury-shell" "$f" 2>/dev/null; then
+            if is_theme_active; then
+                echo -e "Template : ${GREEN}●${NC} MRM Template v2 — Active"
+            else
+                echo -e "Template : ${YELLOW}●${NC} MRM Template v2 — Installed (Inactive)"
+            fi
+        else
+            echo -e "Template : ${YELLOW}⚠${NC} Old/unknown template version installed"
+        fi
+    else
+        echo -e "Template : ${RED}○${NC} Not installed"
+    fi
+}
+
+theme_special_label() {
+    if grep -q "mrm-runtime-inline" "$DATA_DIR/templates/subscription/index.html" 2>/dev/null; then
+        echo -e "Special  : ${GREEN}●${NC} Installed (ON/OFF switch inside panel → Settings → MRM)"
+    else
+        echo -e "Special  : ${RED}○${NC} Not installed"
+    fi
+}
+
+theme_conflicts_label() {
+    if bash /opt/mrm-manager/special.sh --detect-quiet 2>/dev/null; then
+        echo -e "Conflicts: ${RED}⚠${NC} zomorod/other integration detected → use option 4"
+    else
+        echo -e "Conflicts: ${GREEN}✓${NC} Clean (single integration)"
+    fi
+}
+
+theme_toggle() {
+    clear
+    detect_active_panel > /dev/null
+    if is_theme_active; then
+        echo -e "Template is currently: ${GREEN}ON${NC} (active)"
+        read -p "Turn it OFF (vanilla PasarGuard page)? (y/n): " C
+        [[ "$C" =~ ^[Yy]$ ]] || return
+        theme_clear_env && theme_restart_panel && echo -e "${GREEN}✔ Template is now OFF${NC}"
+    else
+        if [ ! -s "$DATA_DIR/templates/subscription/index.html" ]; then
+            echo "Template is not installed yet — use option 1 first."
+            read -n 1 -s -r -p "Press any key..."; echo; return
+        fi
+        echo -e "Template is currently: ${RED}OFF${NC}"
+        read -p "Turn it ON? (y/n): " C
+        [[ "$C" =~ ^[Yy]$ ]] || return
+        theme_apply_env && theme_restart_panel && echo -e "${GREEN}✔ Template is now ON${NC}"
+    fi
+    read -n 1 -s -r -p "Press any key..."; echo
+}
+
 theme_menu() {
     while true; do
         clear
         detect_active_panel > /dev/null
-        
+
         echo -e "${BLUE}===========================================${NC}"
         echo -e "${YELLOW}      THEME MANAGER v${THEME_VERSION}               ${NC}"
         echo -e "${BLUE}===========================================${NC}"
         echo -e "Panel: ${CYAN}$PANEL_DIR${NC}"
         echo -e "Data:  ${CYAN}$DATA_DIR${NC}"
-        if is_theme_active; then 
-            echo -e "Status: ${GREEN}● Active${NC}"
-        else 
-            echo -e "Status: ${RED}● Inactive${NC}"
-        fi
         echo ""
-        echo "1) Install / Update Theme"
-        echo "2) Activate Theme"
-        echo "3) Deactivate Theme"
-        echo "4) Uninstall Theme"
-        echo "5) ◆ MRM Special (in-panel settings tab)"
+        echo -e "${YELLOW}ℹ PasarGuard has only ONE subscription-template slot.${NC}"
+        echo -e "${YELLOW}  (Install always replaces the previous template)${NC}"
+        echo ""
+        theme_template_label
+        theme_special_label
+        theme_conflicts_label
+        echo ""
+        echo "1) 📦 Install / Update MRM Template"
+        echo "2) 🔛 Template: ON / OFF"
+        echo "3) ◆ MRM Special manager"
+        echo "4) 🧹 Fix conflicts (remove zomorod / other integrations)"
+        echo "5) 🗑️ Uninstall Template"
         echo "0) Back"
         echo -e "${BLUE}===========================================${NC}"
         read -p "Select: " T_OPT
         case $T_OPT in
             1) install_theme_wizard ;;
-            2) activate_theme ;;
-            3) deactivate_theme ;;
-            4) uninstall_theme ;;
-            5) bash /opt/mrm-manager/special.sh || echo "MRM Special could not be started" ;;
+            2) theme_toggle ;;
+            3) bash /opt/mrm-manager/special.sh || echo "MRM Special could not be started" ;;
+            4) bash /opt/mrm-manager/special.sh --clean-others || true ;;
+            5) uninstall_theme ;;
             0) return ;;
             *) theme_invalid_option ;;
         esac

@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '4.8.1';
+  const VERSION = '5.0.0';
   const HEADER_PREFIX = 'x-mrm-';
   const NAV_ID = 'mrm-special-nav';
   const ROOT_ID = 'mrm-special-root';
@@ -25,6 +25,7 @@
   let currentAdmin = null;
 
   const defaults = {
+    enabled: true,
     storeName: 'MRM',
     supportId: '',
     showConfigs: true,
@@ -287,6 +288,7 @@
     const subscription = settings?.subscription || {};
     const headers = normalizeHeaders(subscription.response_headers || {});
     const legacy = {
+      enabled: asBool(getHeader(headers, 'enabled'), defaults.enabled),
       storeName: decodeUtf8Base64(getHeader(headers, 'store-name-b64')) || getHeader(headers, 'store-name') || defaults.storeName,
       supportId: decodeUtf8Base64(getHeader(headers, 'support-id-b64')) || supportDisplay(subscription.support_url) || defaults.supportId,
       showConfigs: asBool(getHeader(headers, 'show-configs'), defaults.showConfigs),
@@ -330,6 +332,7 @@
   function extractReseller(payload) {
     const profile = payload?.profile || {};
     return {
+      enabled: true,
       storeName: profile.store_name || currentAdmin?.profile_title || currentAdmin?.username || defaults.storeName,
       supportId: profile.support_id || supportDisplay(profile.support_url) || '',
       showConfigs: profile.show_configs ?? defaults.showConfigs,
@@ -835,6 +838,7 @@
       <section class="z-hero"><div class="z-hero-row"><div class="z-brand"><div class="z-logo">${icons.gem}</div><div><div class="z-title-row"><h2 class="z-title">MRM Template</h2><span class="z-special">SPECIAL</span>${roleBadge}</div><div class="z-subtitle">${subtitle}</div></div></div><span class="z-version">v${VERSION}</span></div></section>
       <div class="z-content">
         ${updateSection()}
+        ${isOwner ? `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.sliders}</span>کنترل ویژه MRM</h3><div class="z-card-note">خاموش = صفحه اشتراک بدون هیچ دستکاری MRM (حالت خام پاسارگارد)</div></div><span class="z-native">MASTER</span></div><div class="z-grid"><div class="z-toggle is-special"><div><div class="z-toggle-title">MRM Special فعال</div><div class="z-toggle-sub">روشن/خاموش کلیِ همه قابلیت‌های ویژه صفحه اشتراک برای همه کاربران</div></div><input id="z-enabled" type="checkbox" ${cfg.enabled ? 'checked' : ''}></div></div></section>` : `<section class="z-card"><div class="z-card-note">کلید روشن/خاموش MRM Special در دست Owner اصلی است.</div></section>`}
         ${adminProfilesSection()}
         ${ownPathSection(profilePayload)}
         ${appearanceSection(cfg)}
@@ -919,6 +923,7 @@
       const subscription = settings.subscription;
       const responseHeaders = { ...(subscription.response_headers || {}) };
       ['enabled','store-name','store-name-b64','support-id-b64','show-configs','show-wireguard','show-ping','show-apps','show-announcement','announcement-mode','announcement-times','announcement-duration','theme-primary','theme-secondary'].forEach((key) => removeHeader(responseHeaders, key));
+      setHeader(responseHeaders, 'enabled', checked('z-enabled') ? '1' : '0');
       subscription.response_headers = responseHeaders;
       // Store/support are per-admin now; never keep a global support URL that leaks to every admin.
       subscription.support_url = '';

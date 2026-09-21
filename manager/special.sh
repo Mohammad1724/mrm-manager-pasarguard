@@ -1,315 +1,577 @@
-#!/bin/bash
-# MRM Special — PasarGuard panel integration (Settings tab + subscription runtime)
-# Part of the MRM Theme module family. Manages the two-layer integration:
-#   1) Subscription runtime  → x-mrm-* headers control the subscription page
-#   2) "MRM · Special" tab   → in-panel settings editor (GET/PUT /api/settings)
+#!/usr/bin/env bash
+# ============================================================================
+# MRM SPECIAL MANAGER — In-Panel Special integration
+# ============================================================================
+# MRM Manager — Maral Rahmani
+# Instagram: https://instagram.com/maral.rahmani.7
+# Telegram:  https://t.me/MaralRahmani
 #
-# Owned files (safe to remove on uninstall):
-#   /var/lib/pasarguard/mrm/                     namespace data (updates, profiles)
-#   /etc/systemd/system/mrm-*.{path,service,timer}
-#   <dashboard>/statics/mrm-special.js           admin control plane
-#   injected markers in template/dashboard HTML  (mrm-runtime-inline,
-#                                                mrm-special-loader,
-#                                                mrm-pasarguard-theme-guard)
-
-if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
-if ! declare -f ui_header >/dev/null 2>&1 && [ -r /opt/mrm-manager/ui.sh ]; then source /opt/mrm-manager/ui.sh; fi
-if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manager/safe_ops.sh ]; then source /opt/mrm-manager/safe_ops.sh; fi
-[ -r "/opt/mrm-manager/versions.conf" ] && source /opt/mrm-manager/versions.conf
-
+# Installs "MRM Special" (Zomorod-style feature parity):
+#   - subscription runtime hook  (mrm-runtime.js → page JS on /raw)
+#   - in-panel settings tab     (mrm-special.js + /api/mrm/profile bridge)
+#   - profile storage           (per-admin custom variables — survives updates)
+#   - theme CSS injection       (primary/secondary via template theme engine)
+#   - systemd watchers          (self-healing: dashboard rebuilds/restarts)
+#
+# Marker convention (copied from zomorod v2 strategy — the dumbest reliable
+# one): every injected string wrapped in literal markers so injection is fully
+# idempotent and reversible. DO NOT change without bumping SPECIAL_VERSION and
+# keeping legacy markers recognized (legacy imports must stay cleanable).
+#
+# Data layout:   /var/lib/pasarguard/mrm/
+# Profile map:   profiles/profiles.json  (admins.json is created by sitecustomize)
+# ============================================================================
 SPECIAL_VERSION="1.0.0"
-MRM_ROOT="${MRM_ROOT:-/opt/mrm-manager}"
-PLUGIN_DIR="${MRM_ROOT}/plugin"
-DATA_NS="${MRM_DATA_DIR:-/var/lib/pasarguard/mrm}"
-INTEGRATE="${PLUGIN_DIR}/integrate-dashboard.sh"
-SUB_TEMPLATE="${SUB_TEMPLATE:-/var/lib/pasarguard/templates/subscription/index.html}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/utils.sh"
+source "$SCRIPT_DIR/domain_separator.sh"
+
+# --- Patched PasarGuard source tree (via detect_active_panel) ---------------
+# Panel Docker integration (optional — used only if the PasarGuard panel runs
+# in a Docker container) — copied from zomorod installer.
+PASARGUARD_CONTAINER="${PASARGUARD_CONTAINER:-}"
+DOCKER_BIN="${DOCKER_BIN:-$(command -v docker 2>/dev/null || true)}"
+CONTAINERS=("pasarguard" "pasarguard-panel" "pasarguard-panel-1")
+
+# --- Constants ---------------------------------------------------------------
+# The PasarGuard source tree root (host-side checkout that matches the running
+# container). Falls back to PANEL_DIR from detect_active_panel.
+PASARGUARD_ROOT="${PASARGUARD_ROOT:-${PANEL_DIR:-/opt/pasarguard}}"
+
+# Single source of truth for ALL paths and marker names (mrm-admin-subscriptions.py
+# has its own identical copy — keep both in sync when changing).
+SPECIAL_DIR="/opt/mrm-manager"
+PANEL_DIR="${PANEL_DIR:-/opt/pasarguard}"
+BACKEND_PY="$SPECIAL_DIR/plugin"
+DATA_NS="/var/lib/pasarguard/mrm"
+PROFILES_DIR="$DATA_NS/profiles"
+LOG_DIR="/var/log/mrm"
+API_ROUTE="/api/mrm/profile"
+INTEGRATE="$SPECIAL_DIR/plugin/integrate-dashboard.sh"
+
+# Marker names — injected into target HTML files. The FIRST two MUST match the
+# literals inside the python bootstrap snippet (they are searched as raw text);
+# the third MUST match the literal inside the theme-guard shell snippet.
 MARKER_RUNTIME="mrm-runtime-inline"
 MARKER_ADMIN="mrm-special-loader"
 MARKER_THEME="mrm-pasarguard-theme-guard"
 ROUTER_MARKER="mrm-admin-subscriptions"
-UNITS=(mrm-integrator.service mrm-integrator.path mrm-panel-update.path)
 
-detect_active_panel > /dev/null 2>&1 || true
+# Competing integrations (other subscription-template systems) — cleaned up on
+# request. PasarGuard has ONE template slot: two guards fighting over the same
+# files is why the page breaks every minute.
+COMPETING_MARKER_RUNTIME="zomorod-runtime-inline"
+COMPETING_MARKER_ADMIN="zomorod-special-loader"
+COMPETING_MARKER_THEME="zomorod-pasarguard-theme-guard"
+COMPETING_ROUTER_MARKER="zomorod-admin-subscriptions"
+COMPETING_UNITS=(zomorod-integrator.service zomorod-integrator.path zomorod-integrator.timer zomorod-panel-update.service zomorod-panel-update.path)
 
-special_pause() { read -r -p "Press Enter..." _; }
+SUB_TEMPLATE="$DATA_DIR/templates/subscription/index.html"
 
-special_ok()   { echo -e " ${GREEN}●${NC} $1"; }
-special_miss() { echo -e " ${RED}○${NC} $1"; }
+UNITS=(mrm-integrator.service mrm-integrator.path mrm-panel-update.service mrm-panel-update.path)
+UNIT_SRC="$SPECIAL_DIR/plugin"
 
-special_find_dashboard_build() {
-    local candidate
-    for candidate in \
-        "${PASARGUARD_ROOT}/dashboard/build" \
-        "${PASARGUARD_ROOT}/panel/dashboard/build" \
-        "${PANEL_DIR}/dashboard/build"
-    do
-        if [ -f "${candidate}/index.html" ]; then printf '%s\n' "${candidate}"; return 0; fi
+special_pause() { read -r -p "Press Enter to continue..." _; }
+
+# ----------------------------------------------------------------------------
+# Templated piped shell scripts (sourced files use ${VAR} which must resolve at
+# generation time on the host — DO NOT convert these heredocs to 'quoted' form)
+# ----------------------------------------------------------------------------
+_generate_integrator() {
+    mkdir -p /usr/local/bin
+    cat > /usr/local/bin/mrm-integrator <<EOF
+#!/usr/bin/env bash
+# MRM Special Integrator — generated by MRM Manager (idempotent)
+exec >> $LOG_DIR/integrate.log 2>&1
+echo "[\$(date)] integrate start"
+bash $INTEGRATE || echo "integrate FAILED"
+echo "[\$(date)] done"
+EOF
+    chmod +x /usr/local/bin/mrm-integrator
+}
+
+_generate_panel_update() {
+    mkdir -p /usr/local/bin
+    cat > /usr/local/bin/mrm-panel-update <<EOF
+#!/usr/bin/env bash
+# MRM Special Panel Update Trigger — generated by MRM Manager (idempotent)
+# The dashboard rebuild takes ~1-2 minutes. During that window the web server
+# has no index.html and PasarGuard's own build_path watcher ALSO fires (it
+# watches build/). Two rebuilds collide and the build fails. So: trigger once,
+# then sleep 3 minutes — the path unit is Restart=no and exits after us,
+# keeping build/ "quiet" while the rebuild runs. Following changes are picked
+# up by the NEXT path event after we exit.
+exec >> $LOG_DIR/panel-update.log 2>&1
+echo "[\$(date)] panel change detected — scheduling integrate"
+sleep 5
+bash $INTEGRATE || echo "integrate FAILED"
+echo "[\$(date)] sleeping 180s to let dashboard rebuild settle"
+sleep 180
+echo "[\$(date)] trigger unit exiting"
+EOF
+    chmod +x /usr/local/bin/mrm-panel-update
+}
+
+_generate_units() {
+    mkdir -p /etc/systemd/system
+    cat > /etc/systemd/system/mrm-integrator.service <<'EOF'
+[Unit]
+Description=MRM Special Integration (one-shot)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mrm-integrator
+EOF
+    cat > /etc/systemd/system/mrm-integrator.path <<EOF
+[Unit]
+Description=Watch PasarGuard core for MRM re-integration
+
+[Path]
+PathChanged=$PASARGUARD_ROOT/app/routers
+PathChanged=$PASARGUARD_ROOT/app/services
+PathChanged=$PASARGUARD_ROOT/main.py
+Unit=mrm-integrator.service
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    cat > /etc/systemd/system/mrm-panel-update.service <<'EOF'
+[Unit]
+Description=MRM Panel Update Trigger
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mrm-panel-update
+Restart=no
+EOF
+    cat > /etc/systemd/system/mrm-panel-update.path <<EOF
+[Unit]
+Description=Watch dashboard build for MRM re-injection
+
+[Path]
+PathChanged=$PASARGUARD_ROOT/dashboard/build/index.html
+PathChanged=$PASARGUARD_ROOT/dashboard/build/404.html
+PathChanged=$PASARGUARD_ROOT/panel/dashboard/build/index.html
+PathChanged=$PASARGUARD_ROOT/panel/dashboard/build/404.html
+Unit=mrm-panel-update.service
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+special_install_units() {
+    _generate_integrator
+    _generate_panel_update
+    _generate_units
+    systemctl daemon-reload
+    systemctl enable --now mrm-integrator.path mrm-panel-update.path >/dev/null 2>&1
+    echo "systemd watchers installed (self-healing ON)"
+}
+
+special_remove_units() {
+    for u in "${UNITS[@]}"; do systemctl disable --now "$u" 2>/dev/null; done
+    rm -f /etc/systemd/system/mrm-integrator.service /etc/systemd/system/mrm-integrator.path \
+          /etc/systemd/system/mrm-panel-update.service /etc/systemd/system/mrm-panel-update.path
+    rm -f /usr/local/bin/mrm-integrator /usr/local/bin/mrm-panel-update
+    systemctl daemon-reload
+}
+
+special_check_requirements() {
+    echo "--- Checking Requirements ---"
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "python3 not found — aborting"; exit 1
+    fi
+    [ -s "$SUB_TEMPLATE" ] || {
+        echo "Template not found at $SUB_TEMPLATE"
+        echo "Install the theme first:  Manager Menu → Theme Manager → 1"
+        exit 1
+    }
+    detect_active_panel || true
+    [ -n "$PANEL_DIR" ] && [ -d "$PANEL_DIR" ] || {
+        echo "PasarGuard source directory not found (PANEL_DIR='$PANEL_DIR') — aborting"; exit 1
+    }
+    if [ ! -f "$INTEGRATE" ]; then
+        echo "integrate-dashboard.sh not found at $INTEGRATE — aborting"; exit 1
+    fi
+    mkdir -p "$DATA_NS" "$PROFILES_DIR" "$LOG_DIR"
+    echo "OK: python3, template, source tree, data dirs"
+    echo ""
+}
+
+# --- Injection / stripping (literal-marker based) ----------------------------
+# $1=target html file; $2=runtime marker $3=admin marker $4=theme marker
+special_strip_markers() {
+    [ -n "$1" ] && [ -f "$1" ] || return 0
+    python3 - "$1" "$2" "$3" "$4" <<'PY'
+import sys
+p, m_rt, m_adm, m_thm = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+s = open(p, encoding='utf-8', errors='ignore').read()
+o = s
+def cut(m, s):
+    i = s.find(m)
+    if i >= 0:
+        j = s.find('</script>', i)
+        return s[:i] + s[j+9:] if j >= 0 else s[:i]
+    return s
+for m in (m_adm, m_rt):
+    s = cut(m, s)
+i = s.find(m_thm)
+if i >= 0:
+    j = s.find('</style>', i)
+    s = s[:i] + s[j+8:] if j >= 0 else s[:i]
+if s != o:
+    open(p, 'w', encoding='utf-8').write(s)
+    print(f"  stripped markers from {p}")
+PY
+}
+
+# Container variant of the strip above (used by the competing-integration
+# cleaner; runs the same python inside the container).
+special_strip_markers_container() {
+    local cid="$1" file="$2" m_rt="$3" m_adm="$4" m_thm="$5"
+    docker exec -i "$cid" python3 - "$file" "$m_rt" "$m_adm" "$m_thm" <<'PY' 2>/dev/null
+import sys
+p, m_rt, m_adm, m_thm = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+try:
+    s = open(p, encoding='utf-8', errors='ignore').read()
+except OSError:
+    sys.exit(0)
+o = s
+def cut(m, s):
+    i = s.find(m)
+    if i >= 0:
+        j = s.find('</script>', i)
+        return s[:i] + s[j+9:] if j >= 0 else s[:i]
+    return s
+for m in (m_adm, m_rt):
+    s = cut(m, s)
+i = s.find(m_thm)
+if i >= 0:
+    j = s.find('</style>', i)
+    s = s[:i] + s[j+8:] if j >= 0 else s[:i]
+if s != o:
+    open(p, 'w', encoding='utf-8').write(s)
+PY
+}
+
+# $1=__init__.py  $2=router marker  $3=router py filename
+special_revert_router() {
+    local file="$1" marker="$2" pyname="$3"
+    [ -n "$file" ] && [ -f "$file" ] || return 0
+    python3 - "$file" "$marker" <<'PY'
+import sys
+p, mk = sys.argv[1], sys.argv[2]
+s = open(p, encoding='utf-8', errors='ignore').read()
+o = s
+i = s.find(mk)
+while i >= 0:
+    j = s.find('\n', i)
+    s = s[:i] + s[j+1:] if j >= 0 else s[:i]
+    i = s.find(mk)
+if s != o:
+    open(p, 'w', encoding='utf-8').write(s)
+    print(f"  reverted router patch: {p}")
+PY
+    rm -f "$(dirname "$file")/$pyname"
+}
+
+special_competing_present() {
+    local u
+    for u in "${COMPETING_UNITS[@]}"; do
+        [ -f "/etc/systemd/system/$u" ] && return 0
     done
+    [ -d /opt/zomorod ] && return 0
+    [ -d /var/lib/pasarguard/zomorod ] && return 0
+    [ -s "$SUB_TEMPLATE" ] && grep -qs "$COMPETING_MARKER_RUNTIME" "$SUB_TEMPLATE" && return 0
+    local bd
+    bd="$(special_find_dashboard_build || true)"
+    [ -n "$bd" ] && grep -qs "$COMPETING_MARKER_ADMIN" "$bd/index.html" 2>/dev/null && return 0
     return 1
 }
 
-special_container_id() {
-    local cid
-    cid="$(docker ps -q --filter "ancestor=pasarguard/panel" 2>/dev/null | head -1)"
-    [ -z "${cid}" ] && cid="$(docker ps --format '{{.ID}} {{.Image}}' 2>/dev/null | awk '/pasarguard\/panel/ {print $1; exit}')"
-    [ -n "${cid}" ] && printf '%s\n' "${cid}"
+special_clean_competing() {
+    clear
+    echo -e "${CYAN}=== Remove competing integrations (zomorod / leftovers) ===${NC}"
+    echo ""
+    echo "PasarGuard has only ONE subscription-template slot. Zomorod and MRM"
+    echo "Special both hook the template + dashboard and their guards fight"
+    echo "every minute (each restores its own version of the file)."
+    echo ""
+    echo "This tool removes zomorod COMPLETELY (units, hooks, tabs, data) and"
+    echo "re-asserts MRM Special. Result: only one integration remains."
+    echo ""
+    if ! special_competing_present; then
+        echo "Nothing detected — no competing integrations found."
+        special_pause; return 0
+    fi
+    read -r -p "Type REMOVE to clean zomorod/other integrations: " C
+    [ "$C" != "REMOVE" ] && { echo "Cancelled."; special_pause; return 1; }
+    detect_active_panel >/dev/null 2>&1
+    local bd cid
+    bd="$(special_find_dashboard_build || true)"
+    cid="$(special_container_id || true)"
+    echo "[1/5] Disabling zomorod systemd units..."
+    systemctl disable --now "${COMPETING_UNITS[@]}" >/dev/null 2>&1
+    rm -f /etc/systemd/system/zomorod-integrator.* /etc/systemd/system/zomorod-panel-update.*
+    rm -f /usr/local/bin/zomorod-integrator /usr/local/bin/zomorod-panel-update
+    systemctl daemon-reload
+    echo "[2/5] Stripping zomorod hooks from subscription template..."
+    special_strip_markers "$SUB_TEMPLATE" "$COMPETING_MARKER_RUNTIME" "$COMPETING_MARKER_ADMIN" "$COMPETING_MARKER_THEME"
+    echo "[3/5] Removing zomorod dashboard tab/statics/router..."
+    if [ -n "$bd" ]; then
+        special_strip_markers "$bd/index.html" "$COMPETING_MARKER_RUNTIME" "$COMPETING_MARKER_ADMIN" "$COMPETING_MARKER_THEME"
+        special_strip_markers "$bd/404.html" "$COMPETING_MARKER_RUNTIME" "$COMPETING_MARKER_ADMIN" "$COMPETING_MARKER_THEME"
+        rm -f "$bd/statics/zomorod-special.js"
+    fi
+    if [ -n "$cid" ]; then
+        local html
+        for html in /code/dashboard/build/index.html /code/dashboard/build/404.html \
+                    /app/dashboard/build/index.html /app/dashboard/build/404.html; do
+            docker exec "$cid" test -f "$html" 2>/dev/null && \
+                special_strip_markers_container "$cid" "$html" "$COMPETING_MARKER_RUNTIME" "$COMPETING_MARKER_ADMIN" "$COMPETING_MARKER_THEME"
+        done
+        docker exec "$cid" sh -c 'rm -f /code/dashboard/build/statics/zomorod-special.js /app/dashboard/build/statics/zomorod-special.js' 2>/dev/null
+        docker exec "$cid" sh -c 'rm -f /code/app/routers/zomorod_admin_subscriptions.py /app/app/routers/zomorod_admin_subscriptions.py' 2>/dev/null
+    fi
+    local candidate
+    for candidate in \
+        "$PASARGUARD_ROOT/app/routers/__init__.py" \
+        "$PASARGUARD_ROOT/panel/app/routers/__init__.py" \
+        "$PANEL_DIR/app/routers/__init__.py" \
+        "$PANEL_DIR/panel/app/routers/__init__.py"; do
+        [ -f "$candidate" ] && special_revert_router "$candidate" "$COMPETING_ROUTER_MARKER" "zomorod_admin_subscriptions.py"
+    done
+    echo "[4/5] Removing zomorod data..."
+    rm -rf /var/lib/pasarguard/zomorod
+    if [ -d /opt/zomorod ]; then
+        read -r -p "Remove /opt/zomorod source dir too? (y/n): " C2
+        [[ "$C2" =~ ^[Yy]$ ]] && rm -rf /opt/zomorod
+    fi
+    echo "[5/5] Re-asserting MRM Special integration..."
+    if [ -x "$INTEGRATE" ]; then
+        MRM_ROOT="$SPECIAL_DIR" bash "$INTEGRATE" || true
+    fi
+    echo ""
+    echo -e "${GREEN}✔ Done — only MRM Special remains.${NC}"
+    special_pause
 }
 
-# ─── Status ─────────────────────────────────────────────────────────────────
+# ----------------------------------------------------------------------------
+special_install() {
+    clear
+    echo -e "${CYAN}=== Install MRM Special (in-panel settings) ===${NC}"
+    echo ""
+    detect_active_panel >/dev/null 2>&1
+    special_check_requirements
+
+    # 1) data namespace + default profiles map
+    echo "[1/5] data namespace…"
+    mkdir -p "$PROFILES_DIR"
+    if [ ! -s "$PROFILES_DIR/profiles.json" ]; then
+        cat > "$PROFILES_DIR/profiles.json" <<'EOF'
+{
+  "version": 1,
+  "admins": {}
+}
+EOF
+    fi
+    chmod 644 "$PROFILES_DIR/profiles.json"
+    chown -R nobody:nogroup "$DATA_NS" 2>/dev/null
+    echo "  $PROFILES_DIR/profiles.json ready"
+
+    # 2) backend bridge (python dir — downloaded as PLUGIN module)
+    echo "[2/5] backend bridge…"
+    mkdir -p "$BACKEND_PY"
+    if [ ! -f "$BACKEND_PY/sitecustomize.py" ] || [ ! -f "$BACKEND_PY/mrm_admin_subscriptions.py" ]; then
+        echo "  ERR: plugin sources missing under $BACKEND_PY"; exit 1
+    fi
+    chmod 644 "$BACKEND_PY"/*.py
+    echo "  bridge ready at $API_ROUTE"
+
+    # 3) inject (idempotent) — self-contained, no python bootstrap needed
+    echo "[3/5] template + dashboard integration…"
+    if [ ! -f "$INTEGRATE" ]; then
+        echo "  ERR: integrate-dashboard.sh missing — cannot continue"; exit 1
+    fi
+    MRM_ROOT="$SPECIAL_DIR" bash "$INTEGRATE"
+
+    # 4) systemd self-healing watchers
+    echo "[4/5] watchers…"
+    special_install_units
+
+    # 5) summary
+    echo ""
+    echo -e "${CYAN}=== Install Complete ===${NC}"
+    echo "MRM Special (v$SPECIAL_VERSION) is active."
+    echo "Open panel → Settings → MRM tab  (on/off switch lives there)"
+    echo "Storage:   $PROFILES_DIR  (profile data — survives updates)"
+    echo "Logs:      $LOG_DIR"
+    echo ""
+    special_pause
+}
+
+special_uninstall() {
+    clear
+    echo -e "${CYAN}=== Uninstall MRM Special ===${NC}"
+    echo "Removes: hooks (template+dashboard), backend bridge, watchers."
+    echo "Keeps:   $DATA_NS/profiles (your saved settings) until you say otherwise."
+    echo ""
+    read -r -p "Type REMOVE to confirm: " C
+    [ "$C" != "REMOVE" ] && { echo "Cancelled."; special_pause; return; }
+    detect_active_panel >/dev/null 2>&1
+    special_remove_units
+    # strip our markers from template
+    special_strip_markers "${SUB_TEMPLATE}" "${MARKER_RUNTIME}" "${MARKER_ADMIN}" "${MARKER_THEME}"
+    # strip our markers from dashboard build (host + container)
+    local bd cid
+    bd="$(special_find_dashboard_build || true)"
+    if [ -n "$bd" ]; then
+        special_strip_markers "$bd/index.html" "${MARKER_RUNTIME}" "${MARKER_ADMIN}" "${MARKER_THEME}"
+        special_strip_markers "$bd/404.html" "${MARKER_RUNTIME}" "${MARKER_ADMIN}" "${MARKER_THEME}"
+        rm -f "$bd/statics/mrm-special.js"
+    fi
+    cid="$(special_container_id || true)"
+    if [ -n "$cid" ]; then
+        local html
+        for html in /code/dashboard/build/index.html /code/dashboard/build/404.html \
+                    /app/dashboard/build/index.html /app/dashboard/build/404.html; do
+            docker exec "$cid" test -f "$html" 2>/dev/null && \
+                special_strip_markers_container "$cid" "$html" "${MARKER_RUNTIME}" "${MARKER_ADMIN}" "${MARKER_THEME}"
+        done
+        docker exec "$cid" sh -c 'rm -f /code/dashboard/build/statics/mrm-special.js /app/dashboard/build/statics/mrm-special.js' 2>/dev/null
+        docker exec "$cid" sh -c 'rm -f /code/app/routers/mrm_admin_subscriptions.py /app/app/routers/mrm_admin_subscriptions.py' 2>/dev/null
+    fi
+    local candidate
+    for candidate in \
+        "${PASARGUARD_ROOT}/app/routers/__init__.py" \
+        "${PASARGUARD_ROOT}/panel/app/routers/__init__.py" \
+        "${PANEL_DIR}/app/routers/__init__.py" \
+        "${PANEL_DIR}/panel/app/routers/__init__.py"; do
+        [ -f "$candidate" ] && special_revert_router "$candidate" "${ROUTER_MARKER}" "mrm_admin_subscriptions.py"
+    done
+    # remove backend bridge
+    rm -f "$BACKEND_PY/sitecustomize.py" "$BACKEND_PY/mrm_admin_subscriptions.py"
+    read -r -p "Also delete saved profiles in $DATA_NS ? (y/n): " P
+    [[ "$P" =~ ^[Yy]$ ]] && rm -rf "$DATA_NS"
+    echo -e "${GREEN}✔ MRM Special removed.${NC}"
+    echo ""
+    special_pause
+}
 
 special_status() {
     clear
-    echo -e "${BLUE}===========================================${NC}"
-    echo -e "${YELLOW}   ◆ MRM SPECIAL — Panel Integration v${SPECIAL_VERSION}${NC}"
-    echo -e "${BLUE}===========================================${NC}"
-    echo "Panel: ${CYAN}${PANEL_DIR:-unknown}${NC}"
-    echo "Data:  ${CYAN}${DATA_DIR:-unknown}${NC}"
+    echo -e "${CYAN}=== MRM Special Status (v$SPECIAL_VERSION) ===${NC}"
     echo ""
-
-    if [ -s "${SUB_TEMPLATE}" ]; then
-        if grep -q "${MARKER_RUNTIME}" "${SUB_TEMPLATE}" 2>/dev/null; then
-            special_ok "Subscription runtime injected (x-mrm-* active)"
-        else
-            special_miss "Subscription template found but runtime NOT injected"
-        fi
+    # template
+    if grep -q "$MARKER_RUNTIME" "$SUB_TEMPLATE" 2>/dev/null; then
+        echo -e "Template runtime:   ${GREEN}● Installed${NC}"
     else
-        special_miss "Subscription template not installed (Theme Manager → Install first)"
+        echo -e "Template runtime:   ${RED}○ Missing${NC}"
     fi
-
-    local build_dir
-    build_dir="$(special_find_dashboard_build || true)"
-    if [ -n "${build_dir}" ] && grep -q "${MARKER_ADMIN}" "${build_dir}/index.html" 2>/dev/null; then
-        special_ok "Dashboard tab \"MRM · Special\" present (${build_dir})"
+    # dashboard
+    local bd
+    bd="$(special_find_dashboard_build || true)"
+    if [ -n "$bd" ] && grep -q "$MARKER_ADMIN" "$bd/index.html" 2>/dev/null; then
+        echo -e "Dashboard tab:      ${GREEN}● Installed${NC}"
     else
-        local cid
-        cid="$(special_container_id || true)"
-        if [ -n "${cid}" ] && docker exec "${cid}" sh -c 'grep -qs "mrm-special-loader" /code/dashboard/build/index.html /app/dashboard/build/index.html 2>/dev/null'; then
-            special_ok "Dashboard tab \"MRM · Special\" present (inside container)"
-        else
-            special_miss "Dashboard tab not injected"
-        fi
+        echo -e "Dashboard tab:      ${RED}○ Missing${NC}"
     fi
-
-    if systemctl is-active --quiet mrm-integrator.service 2>/dev/null; then
-        special_ok "Reintegration guard (mrm-integrator.service) active"
+    # backend
+    if [ -f "$BACKEND_PY/sitecustomize.py" ] && [ -f "$BACKEND_PY/mrm_admin_subscriptions.py" ]; then
+        echo -e "Backend bridge:     ${GREEN}● Installed${NC}  ($API_ROUTE)"
     else
-        special_miss "Reintegration guard not running (survives panel upgrades without it)"
+        echo -e "Backend bridge:     ${RED}○ Missing${NC}"
     fi
-
-    if systemctl is-enabled --quiet mrm-integrator.path 2>/dev/null; then
-        special_ok "Dashboard build watcher (mrm-integrator.path) enabled"
+    # units
+    if systemctl is-active --quiet mrm-panel-update.path 2>/dev/null; then
+        echo -e "Watchers:           ${GREEN}● Running${NC}"
     else
-        special_miss "Dashboard build watcher not enabled"
+        echo -e "Watchers:           ${RED}○ Stopped${NC}"
     fi
-
-    if systemctl is-enabled --quiet mrm-panel-update.path 2>/dev/null; then
-        special_ok "In-panel updater bridge (mrm-panel-update.path) enabled"
+    # data
+    if [ -s "$PROFILES_DIR/profiles.json" ]; then
+        local n
+        n=$(python3 -c "import json;print(len(json.load(open('$PROFILES_DIR/profiles.json')).get('admins',{})))" 2>/dev/null || echo 0)
+        echo -e "Profiles stored:    ${GREEN}$n admin(s)${NC}  ($DATA_NS)"
     else
-        special_miss "In-panel updater bridge not enabled"
+        echo -e "Profiles stored:    ${RED}none${NC}"
     fi
-
     echo ""
-}
-
-# ─── Install / Repair ───────────────────────────────────────────────────────
-
-special_install_units() {
-    local unit
-    for unit in "${UNITS[@]}"; do
-        if [ ! -f "${PLUGIN_DIR}/${unit}" ]; then
-            echo -e "${RED}✘ Missing unit source: ${PLUGIN_DIR}/${unit}${NC}"
-            return 1
-        fi
-        install -m 0644 "${PLUGIN_DIR}/${unit}" "/etc/systemd/system/${unit}"
-    done
-    systemctl daemon-reload
-    systemctl enable --now mrm-integrator.service mrm-integrator.path mrm-panel-update.path >/dev/null 2>&1
-    echo -e " ${GREEN}✔${NC} systemd guard, watcher and updater bridge installed"
-}
-
-special_install() {
-    clear
-    echo -e "${BLUE}=== ◆ Install / Repair MRM Special Integration ===${NC}"
-    echo ""
-
-    if [ ! -x "${INTEGRATE}" ]; then
-        echo -e "${RED}✘ integrate-dashboard.sh not found at ${INTEGRATE}${NC}"
-        echo -e "${YELLOW}  Reinstall MRM (mrm update) to fetch plugin files.${NC}"
-        special_pause; return
-    fi
-
-    # Restore point over everything the integration touches
-    if declare -f mrm_create_restore_point >/dev/null 2>&1; then
-        local RESTORE_POINT_ID
-        RESTORE_POINT_ID="$(mrm_create_restore_point "special-install" "panel" \
-            "${SUB_TEMPLATE}" "${DATA_NS}" 2>/dev/null || true)"
-        [ -n "${RESTORE_POINT_ID}" ] && echo -e "${GREEN}Restore point:${NC} ${RESTORE_POINT_ID}"
-    fi
-
-    mkdir -p "${DATA_NS}"
-    chmod 700 "${DATA_NS}" 2>/dev/null
-
-    echo -e "${CYAN}[1/2] Installing systemd units...${NC}"
-    special_install_units || { special_pause; return; }
-
-    echo -e "${CYAN}[2/2] Running dashboard integration...${NC}"
-    if MRM_ROOT="${MRM_ROOT}" bash "${INTEGRATE}"; then
-        echo ""
-        echo -e "${GREEN}✔ MRM Special integration is healthy.${NC}"
-        echo -e "${YELLOW}Note:${NC} /api/mrm/* routes activate after the next normal panel start"
-        echo -e "     (Panel Control → Restart Panel). The Settings tab itself works now."
+    # competition
+    if special_competing_present; then
+        echo -e "Conflicts:          ${YELLOW}⚠ zomorod/other integration detected${NC}"
+        echo "                    → use 'Fix conflicts' to keep only one (recommended)"
     else
-        echo ""
-        echo -e "${YELLOW}⚠ Integration partially applied — the guard will keep retrying automatically.${NC}"
-        echo -e "  (PasarGuard container/dashboard may not be built yet.)"
+        echo -e "Conflicts:          ${GREEN}✓ none (single integration)${NC}"
     fi
+    echo ""
+    echo "Paths:"
+    echo "  Template: $SUB_TEMPLATE"
+    echo "  Data:     $DATA_NS"
+    echo "  Logs:     $LOG_DIR  (integrate.log, panel-update.log)"
+    echo ""
     special_pause
 }
 
 special_reintegrate() {
     clear
-    echo -e "${BLUE}=== ◆ Re-run Integration (self-heal) ===${NC}"
-    if [ -x "${INTEGRATE}" ]; then
-        MRM_ROOT="${MRM_ROOT}" bash "${INTEGRATE}"
-    else
-        echo -e "${RED}✘ integrate-dashboard.sh missing${NC}"
+    echo "Re-running integration (idempotent)…"
+    if [ ! -f "$INTEGRATE" ]; then
+        echo "  ERR: integrate-dashboard.sh missing at $INTEGRATE"; special_pause; return 1
     fi
+    MRM_ROOT="$SPECIAL_DIR" bash "$INTEGRATE"
     special_pause
 }
 
-# ─── Uninstall ──────────────────────────────────────────────────────────────
-
-special_strip_markers() {
-    # $1 = html file (host path). Removes every MRM-injected marker block.
-    [ -f "$1" ] || return 0
-    python3 - "$1" "${MARKER_RUNTIME}" "${MARKER_ADMIN}" "${MARKER_THEME}" <<'PY'
-from pathlib import Path
-import re, sys
-path = Path(sys.argv[1])
-m_runtime, m_admin, m_theme = sys.argv[2], sys.argv[3], sys.argv[4]
-original = path.read_text(encoding='utf-8')
-html = original
-html = re.sub(rf'\s*<script id="{re.escape(m_runtime)}">.*?</script>\s*', '\n', html, flags=re.S)
-html = re.sub(rf'\s*<script\s+id="{re.escape(m_admin)}"[^>]*>\s*</script>\s*', '\n', html, flags=re.I)
-html = re.sub(rf'\s*<script id="{re.escape(m_theme)}">.*?</script>\s*', '\n', html, flags=re.S)
-if html != original:
-    path.write_text(html, encoding='utf-8')
-    print(f'  cleaned: {path}')
-PY
-}
-
-special_revert_router() {
-    # $1 = app/routers/__init__.py (host path)
-    [ -f "$1" ] || return 0
-    python3 - "$1" "${ROUTER_MARKER}" <<'PY'
-from pathlib import Path
-import re, sys
-path = Path(sys.argv[1]); marker = sys.argv[2]
-original = path.read_text(encoding='utf-8'); text = original
-text = re.sub(rf'\n?# {re.escape(marker)}-start.*?# {re.escape(marker)}-end\n?', '\n', text, flags=re.S)
-text = text.replace(
-    'for router in (([mrm_admin_subscriptions.router] if mrm_admin_subscriptions else []) + routers):',
-    'for router in routers:')
-if text != original:
-    path.write_text(text, encoding='utf-8')
-    print(f'  cleaned: {path}')
-PY
-    rm -f "$(dirname "$1")/mrm_admin_subscriptions.py"
-}
-
-special_uninstall() {
+special_backup() {
     clear
-    echo -e "${BLUE}=== ◆ Remove MRM Special Integration ===${NC}"
-    echo "Removes: Settings tab, subscription runtime hooks, guard units."
-    echo "Your theme template itself is kept (use Theme Manager to remove it)."
-    echo ""
-    read -r -p "Type REMOVE to confirm: " C
-    [ "${C}" != "REMOVE" ] && { echo "Cancelled."; special_pause; return; }
-
-    if declare -f mrm_create_restore_point >/dev/null 2>&1; then
-        local RESTORE_POINT_ID
-        RESTORE_POINT_ID="$(mrm_create_restore_point "special-uninstall" "panel" \
-            "${SUB_TEMPLATE}" "${DATA_NS}" 2>/dev/null || true)"
-        [ -n "${RESTORE_POINT_ID}" ] && echo -e "${GREEN}Restore point:${NC} ${RESTORE_POINT_ID}"
-    fi
-
-    echo -e "${CYAN}[1/4] Stopping systemd units...${NC}"
-    systemctl disable --now "${UNITS[@]}" >/dev/null 2>&1
-    rm -f /etc/systemd/system/mrm-integrator.service \
-          /etc/systemd/system/mrm-integrator.path \
-          /etc/systemd/system/mrm-integrator.timer \
-          /etc/systemd/system/mrm-panel-update.path \
-          /etc/systemd/system/mrm-panel-update.service
-    systemctl daemon-reload
-    echo -e " ${GREEN}✔${NC} Units removed"
-
-    echo -e "${CYAN}[2/4] Cleaning subscription template hooks...${NC}"
-    special_strip_markers "${SUB_TEMPLATE}"
-
-    echo -e "${CYAN}[3/4] Cleaning dashboard tab + backend...${NC}"
-    local build_dir cid
-    build_dir="$(special_find_dashboard_build || true)"
-    if [ -n "${build_dir}" ]; then
-        special_strip_markers "${build_dir}/index.html"
-        special_strip_markers "${build_dir}/404.html"
-        rm -f "${build_dir}/statics/mrm-special.js"
-    fi
-    for candidate in \
-        "${PASARGUARD_ROOT}/app/routers/__init__.py" \
-        "${PASARGUARD_ROOT}/panel/app/routers/__init__.py"
-    do
-        special_revert_router "${candidate}"
-    done
-    cid="$(special_container_id || true)"
-    if [ -n "${cid}" ]; then
-        docker exec "${cid}" sh -c 'rm -f /code/dashboard/build/statics/mrm-special.js /app/dashboard/build/statics/mrm-special.js' 2>/dev/null || true
-        docker exec "${cid}" sh -c 'rm -f /code/app/routers/mrm_admin_subscriptions.py /app/app/routers/mrm_admin_subscriptions.py' 2>/dev/null || true
-        echo -e " ${GREEN}✔${NC} Container leftovers removed (restart panel to unload routes)"
-    fi
-
-    echo -e "${CYAN}[4/4] Removing namespace data...${NC}"
-    rm -rf "${DATA_NS}"
-    echo -e " ${GREEN}✔${NC} Done. Settings tab and runtime are fully detached."
+    echo "Backing up MRM Special data…"
+    local out="/root/mrm-special-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
+    tar -czf "$out" -C /var/lib pasarguard/mrm 2>/dev/null
+    echo "Backup written to $out"
     special_pause
 }
-
-special_logs() {
-    clear
-    echo -e "${BLUE}=== ◆ MRM Special Logs ===${NC}"
-    echo ""
-    echo "--- integrator (last 40) ---"
-    journalctl -u mrm-integrator.service --no-pager -n 40 2>/dev/null || echo "(no logs)"
-    echo ""
-    echo "--- bootstrap log ---"
-    tail -n 40 "${DATA_NS}/bootstrap.log" 2>/dev/null || echo "(no logs yet)"
-    echo ""
-    special_pause
-}
-
-# ─── Menu ───────────────────────────────────────────────────────────────────
 
 special_menu() {
     while true; do
-        special_status
-        echo "1) 🔌 Install / Repair Integration"
-        echo "2) 🔁 Re-run Integration (self-heal now)"
-        echo "3) 📜 Logs"
-        echo "4) 🗑️  Remove Integration"
+        clear
+        echo -e "${CYAN}===========================================${NC}"
+        echo -e "${CYAN}  MRM SPECIAL — In-Panel Settings (v$SPECIAL_VERSION)${NC}"
+        echo -e "${CYAN}===========================================${NC}"
+        echo "  Subscription page features + Settings→MRM tab"
+        echo "  (store branding, support chip, theme, announcements,"
+        echo "   fa/en/ru/zh, hide-telegram, on/off switch)"
         echo ""
-        echo "0) ↩️ Back"
-        echo -e "${BLUE}===========================================${NC}"
+        echo "1) Install / Update"
+        echo "2) Status"
+        echo "3) Re-run integration (repair hooks)"
+        echo "4) Fix conflicts (remove zomorod / other integrations)"
+        echo "5) Backup settings data"
+        echo "6) Uninstall"
+        echo "0) Back"
+        echo -e "${CYAN}===========================================${NC}"
         read -r -p "Select: " S_OPT
-        case ${S_OPT} in
+        case $S_OPT in
             1) special_install ;;
-            2) special_reintegrate ;;
-            3) special_logs ;;
-            4) special_uninstall ;;
+            2) special_status ;;
+            3) special_reintegrate ;;
+            4) special_clean_competing ;;
+            5) special_backup ;;
+            6) special_uninstall ;;
             0) return ;;
             *) echo -e "${RED}Invalid option${NC}"; sleep 1 ;;
         esac
     done
 }
 
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    special_menu
-fi
+# --- Non-interactive CLI (used by Theme Manager) -----------------------------
+case "${1:-}" in
+    --clean-others)  special_clean_competing; exit $? ;;
+    --detect-quiet)  special_competing_present && exit 0 || exit 1 ;;
+    --reintegrate)   special_reintegrate; exit 0 ;;
+esac
+
+special_menu
