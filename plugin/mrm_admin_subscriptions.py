@@ -72,6 +72,8 @@ LOCK_FILE = DATA_DIR / ".admin-subscriptions.lock"
 INSTALL_STATE_FILE = DATA_DIR / "install-state.json"
 UPDATE_REQUEST_FILE = DATA_DIR / "update-request.json"
 UPDATE_STATUS_FILE = DATA_DIR / "update-status.json"
+TEMPLATE_REQUEST_FILE = DATA_DIR / "template-request.json"
+TEMPLATE_STATUS_FILE = DATA_DIR / "template-status.json"
 UPDATE_REPO_API = "https://api.github.com/repos/PEDIHS/mrm-template/commits/main"
 UPDATE_CACHE_TTL = 300
 _UPDATE_CACHE: dict[str, object] = {"checked_at": 0.0, "latest_sha": None, "error": None}
@@ -666,6 +668,44 @@ async def queue_mrm_update(_owner: AdminDetails = Depends(_require_owner)):
     _atomic_json_write(UPDATE_REQUEST_FILE, {"requested_at": now, "requested_by": _owner.username, "target_sha": latest_sha})
     _atomic_json_write(UPDATE_STATUS_FILE, {"status": "queued", "message": "Update queued on the host", "started_at": now, "finished_at": None, "target_sha": latest_sha})
     return {"status": "queued", "latest_sha": latest_sha, "installed_sha": installed_sha}
+
+
+class TemplateSwitch(BaseModel):
+    template: str = Field(min_length=1, max_length=16)
+
+
+@router.get("/api/mrm/template")
+async def mrm_template_state(_admin: AdminDetails = Depends(_require_admin)) -> dict:
+    """Which subscription template is active (classic|special) + switch state."""
+    status = _read_json_file(TEMPLATE_STATUS_FILE)
+    request = _read_json_file(TEMPLATE_REQUEST_FILE)
+    active = str(status.get("active") or "").strip()
+    if active not in {"classic", "special"}:
+        active = "special"
+    pending = bool(request) or status.get("status") in {"queued", "running"}
+    return {
+        "active": active,
+        "pending": pending,
+        "status": str(status.get("status") or ""),
+        "message": str(status.get("message") or ""),
+    }
+
+
+@router.put("/api/mrm/template", status_code=status.HTTP_202_ACCEPTED)
+async def mrm_template_switch(
+    payload: TemplateSwitch,
+    _owner: AdminDetails = Depends(_require_owner),
+) -> dict:
+    """Queue a template switch on the host (owner-only). The systemd bridge
+    (mrm-template-switch.path) applies it and restarts the panel."""
+    name = str(payload.template or "").strip().lower()
+    if name not in {"classic", "special"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="template must be 'classic' or 'special'")
+    now = datetime.now(UTC).isoformat()
+    previous = str(_read_json_file(TEMPLATE_STATUS_FILE).get("active") or "")
+    _atomic_json_write(TEMPLATE_REQUEST_FILE, {"template": name, "requested_at": now, "requested_by": _owner.username})
+    _atomic_json_write(TEMPLATE_STATUS_FILE, {"status": "queued", "active": previous, "message": "Template switch queued on the host", "started_at": now, "finished_at": None})
+    return {"ok": True, "queued": True, "template": name}
 
 
 @router.get("/api/mrm/profile")

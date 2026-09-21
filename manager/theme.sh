@@ -5,7 +5,7 @@ if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
 if ! declare -f ui_header >/dev/null 2>&1 && [ -r /opt/mrm-manager/ui.sh ]; then source /opt/mrm-manager/ui.sh; fi
 if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manager/safe_ops.sh ]; then source /opt/mrm-manager/safe_ops.sh; fi
 [ -r "/opt/mrm-manager/versions.conf" ] && source /opt/mrm-manager/versions.conf
-THEME_VERSION="${THEME_VERSION:-2.0.1}"
+THEME_VERSION="${THEME_VERSION:-2.1.0}"
 
 # ✅ اطمینان از تشخیص پنل و تنظیم DATA_DIR
 detect_active_panel > /dev/null
@@ -28,12 +28,125 @@ theme_get_local_template() {
     return 1
 }
 
+theme_get_local_classic_template() {
+    local CANDIDATE
+    for CANDIDATE in \
+        "./templates/subscription-classic/index.html" \
+        "/opt/mrm-manager/templates/subscription-classic/index.html"
+    do
+        if [ -f "$CANDIDATE" ]; then
+            printf '%s\n' "$CANDIDATE"
+            return 0
+        fi
+    done
+    return 1
+}
+
+theme_mrm_data_dir() {
+    printf '%s\n' "${MRM_DATA_DIR:-/var/lib/pasarguard/mrm}"
+}
+
+theme_write_template_status() {
+    # $1=state (running|success|failed)  $2=active (classic|special|empty)  $3=message
+    local dir
+    dir="$(theme_mrm_data_dir)"
+    mkdir -p "$dir" 2>/dev/null
+    python3 - "$dir/template-status.json" "${1:-}" "${2:-}" "${3:-}" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+from pathlib import Path
+p = Path(sys.argv[1]); state = sys.argv[2]; active = sys.argv[3]; message = sys.argv[4]
+try:
+    old = json.loads(p.read_text(encoding='utf-8'))
+except Exception:
+    old = {}
+now = datetime.now(timezone.utc).isoformat()
+payload = {
+    'status': state,
+    'active': active or old.get('active'),
+    'message': message,
+    'started_at': old.get('started_at') or now,
+    'finished_at': now if state != 'running' else None,
+}
+tmp = p.with_suffix('.json.tmp')
+tmp.write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
+try:
+    tmp.chmod(0o600)
+except OSError:
+    pass
+tmp.replace(p)
+PY
+}
+
+theme_current_template() {
+    # Prints: classic | special | none
+    local rel="" dir st
+    rel="$(grep -E "^[[:space:]]*SUBSCRIPTION_PAGE_TEMPLATE[[:space:]]*=" "$PANEL_ENV" 2>/dev/null | tail -1 | cut -d'"' -f2)"
+    case "$rel" in
+        subscription-classic/*) echo "classic"; return 0 ;;
+        subscription/*) echo "special"; return 0 ;;
+    esac
+    dir="$(theme_mrm_data_dir)"
+    st="$(python3 -c "import json;print(json.load(open('$dir/template-status.json')).get('active') or '')" 2>/dev/null || true)"
+    case "$st" in
+        classic|special) echo "$st"; return 0 ;;
+    esac
+    if [ -s "$DATA_DIR/templates/subscription/index.html" ]; then echo "special"; return 0; fi
+    if [ -s "$DATA_DIR/templates/subscription-classic/index.html" ]; then echo "classic"; return 0; fi
+    echo "none"
+}
+
+theme_set_template() {
+    # $1 = classic | special  — switch the active subscription template
+    local key="${1:-}" rel
+    case "$key" in
+        classic) rel="subscription-classic/index.html" ;;
+        special) rel="subscription/index.html" ;;
+        *) echo "unknown template '$key' (use: classic | special)"; return 1 ;;
+    esac
+    detect_active_panel > /dev/null
+    if [ ! -s "$DATA_DIR/templates/$rel" ]; then
+        theme_write_template_status failed "$key" "Template file missing: templates/$rel"
+        echo "Template file missing: $DATA_DIR/templates/$rel"
+        return 1
+    fi
+    theme_write_template_status running "$key" "Switching subscription template to $key"
+    if ! theme_apply_env "$rel"; then
+        theme_write_template_status failed "$key" "Failed to update panel environment"
+        return 1
+    fi
+    theme_restart_panel || true
+    theme_write_template_status success "$key" "Template switched to $key"
+    echo "✔ Active template: $key ($rel)"
+    return 0
+}
+
+theme_choose_template() {
+    clear
+    detect_active_panel > /dev/null
+    echo -e "${CYAN}=== Choose active subscription template ===${NC}"
+    echo ""
+    echo "Currently active: $(theme_current_template)"
+    echo ""
+    echo "1) 🧩 Classic MRM — the original template (اتصال مستقیم)"
+    echo "2) 💎 Zomorod-style (MRM Special) — emerald/gold + full extras"
+    echo "0) Cancel"
+    read -p "Select: " C
+    case $C in
+        1) theme_set_template classic; read -n 1 -s -r -p "Press any key..."; echo ;;
+        2) theme_set_template special; read -n 1 -s -r -p "Press any key..."; echo ;;
+        0) ;;
+        *) theme_invalid_option ;;
+    esac
+}
+
 theme_apply_env() {
+    local TPL_REL="${1:-subscription/index.html}"
     [ -f "$PANEL_ENV" ] || touch "$PANEL_ENV" 2>/dev/null || return 1
     sed -i '/CUSTOM_TEMPLATES_DIRECTORY/d' "$PANEL_ENV" || return 1
     sed -i '/SUBSCRIPTION_PAGE_TEMPLATE/d' "$PANEL_ENV" || return 1
     echo "CUSTOM_TEMPLATES_DIRECTORY=\"$DATA_DIR/templates/\"" >> "$PANEL_ENV" || return 1
-    echo 'SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"' >> "$PANEL_ENV" || return 1
+    echo "SUBSCRIPTION_PAGE_TEMPLATE=\"$TPL_REL\"" >> "$PANEL_ENV" || return 1
     return 0
 }
 
@@ -83,6 +196,9 @@ install_theme_wizard() {
     local LOCAL_TEMPLATE
     local FILE_SIZE
     local PY_EXIT_CODE
+    local CLASSIC_FILE
+    local CLASSIC_DL
+    local CLASSIC_LOCAL
 
     clear
     echo -e "${CYAN}=============================================${NC}"
@@ -110,6 +226,8 @@ install_theme_wizard() {
     fi
 
     TEMPLATE_FILE="$DATA_DIR/templates/subscription/index.html"
+    CLASSIC_FILE="$DATA_DIR/templates/subscription-classic/index.html"
+    CLASSIC_DL="$TMP_DIR/classic_dl.html"
     TEMPLATE_DIR=$(dirname "$TEMPLATE_FILE")
     OLD_FILE="$TMP_DIR/index_old.html"
     TEMP_DL="$TMP_DIR/index_dl.html"
@@ -121,9 +239,10 @@ install_theme_wizard() {
         [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point created: $RESTORE_POINT_ID${NC}"
     fi
 
-    mkdir -p "$TEMPLATE_DIR"
+    mkdir -p "$TEMPLATE_DIR" "$(dirname "$CLASSIC_FILE")"
 
     echo -e "${BLUE}Template Path: $TEMPLATE_FILE${NC}"
+    echo -e "${BLUE}Classic Path:  $CLASSIC_FILE${NC}"
 
     # 1. Backup old file
     if [ -s "$TEMPLATE_FILE" ]; then
@@ -169,12 +288,31 @@ install_theme_wizard() {
     fi
     echo -e "${GREEN}✔ File size OK: $FILE_SIZE bytes${NC}"
 
+    # 2b. Classic template (both templates always install together)
+    rm -f "$CLASSIC_DL"
+    CLASSIC_LOCAL="$(theme_get_local_classic_template 2>/dev/null || true)"
+    if [ -n "$CLASSIC_LOCAL" ]; then
+        cp "$CLASSIC_LOCAL" "$CLASSIC_DL"
+        echo -e "${GREEN}✔ Found local classic source. Using it.${NC}"
+    else
+        echo -e "${BLUE}Downloading Classic template...${NC}"
+        echo -e "${BLUE}URL: $THEME_CLASSIC_HTML_URL${NC}"
+        if curl -sL -f -o "$CLASSIC_DL" "$THEME_CLASSIC_HTML_URL" 2>/dev/null && ! grep -q "404: Not Found" "$CLASSIC_DL" 2>/dev/null; then
+            echo -e "${GREEN}✔ Classic downloaded.${NC}"
+        else
+            echo -e "${YELLOW}⚠ Classic download failed — continuing with Zomorod-style only.${NC}"
+            rm -f "$CLASSIC_DL"
+        fi
+    fi
+
     # 3. Processing
     echo -e "${BLUE}Processing configuration...${NC}"
 
     export OLD_FILE
     export NEW_FILE="$TEMP_DL"
     export FINAL_FILE="$TEMPLATE_FILE"
+    export CLASSIC_NEW_FILE="$CLASSIC_DL"
+    export CLASSIC_FINAL_FILE="$CLASSIC_FILE"
 
     cat > "$PY_SCRIPT" << 'PYEOF'
 import html
@@ -188,8 +326,11 @@ GREEN = '\033[0;32m'
 NC = '\033[0m'
 
 old_path = os.environ.get('OLD_FILE')
-new_path = os.environ.get('NEW_FILE')
-final_path = os.environ.get('FINAL_FILE')
+pairs = [(os.environ.get('NEW_FILE'), os.environ.get('FINAL_FILE'))]
+classic_new = os.environ.get('CLASSIC_NEW_FILE')
+classic_final = os.environ.get('CLASSIC_FINAL_FILE')
+if classic_new and classic_final and os.path.exists(classic_new):
+    pairs.append((classic_new, classic_final))
 
 defaults = {
     'brand': 'FarsNetVIP',
@@ -284,16 +425,18 @@ new_sup = clean_handle(get_input('Support ID (No @)', 'sup'), defaults['sup'])
 new_news = html.escape(clean_text(get_input('News Text', 'news'), defaults['news']), quote=False)
 
 try:
-    with open(new_path, 'r', encoding='utf-8', errors='ignore') as f:
-        content = f.read()
+    for new_path, final_path in pairs:
+        with open(new_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
 
-    content = content.replace('__BRAND__', new_brand)
-    content = content.replace('__BOT__', new_bot)
-    content = content.replace('__SUP__', new_sup)
-    content = content.replace('__NEWS__', new_news)
+        content = content.replace('__BRAND__', new_brand)
+        content = content.replace('__BOT__', new_bot)
+        content = content.replace('__SUP__', new_sup)
+        content = content.replace('__NEWS__', new_news)
 
-    with open(final_path, 'w', encoding='utf-8') as f:
-        f.write(content)
+        with open(final_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        print(f'{GREEN}✔ Written: {final_path}{NC}')
 
     print(f'\n{GREEN}✔ Settings saved successfully.{NC}')
 except Exception as e:
@@ -312,24 +455,18 @@ PYEOF
             pause; return
         fi
 
-        if ! theme_apply_env; then
-            echo -e "${RED}✘ Failed to update panel environment for theme.${NC}"
-            rm -rf "$TMP_DIR"
-            pause; return
-        fi
-
         echo ""
         echo -e "${CYAN}=== Final Configuration ===${NC}"
-        echo -e "Template: $TEMPLATE_FILE"
-        echo -e "File Size: $(stat -c%s "$TEMPLATE_FILE") bytes"
-        grep -E "CUSTOM_TEMPLATES|SUBSCRIPTION_PAGE" "$PANEL_ENV"
+        echo -e "Zomorod-style : $TEMPLATE_FILE ($(stat -c%s "$TEMPLATE_FILE" 2>/dev/null) bytes)"
+        echo -e "Classic       : $CLASSIC_FILE ($(stat -c%s "$CLASSIC_FILE" 2>/dev/null || echo 0) bytes)"
         echo ""
 
-        echo -e "${BLUE}Restarting panel...${NC}"
-        if theme_restart_panel; then
-            echo -e "${GREEN}✔ Theme Updated & Panel Restarted.${NC}"
+        echo -e "${BLUE}Activating Zomorod-style template + restarting panel...${NC}"
+        if theme_set_template "special"; then
+            echo -e "${GREEN}✔ Both templates installed & panel restarted.${NC}"
+            echo -e "${GREEN}  (switch anytime: menu option 2 or panel → Settings → MRM)${NC}"
         else
-            echo -e "${YELLOW}⚠ Theme updated, but panel restart failed. Please restart manually.${NC}"
+            echo -e "${YELLOW}⚠ Templates installed, but activation failed. Use menu option 2.${NC}"
         fi
         rm -rf "$TMP_DIR"
     else
@@ -407,7 +544,8 @@ uninstall_theme() {
             [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point created: $RESTORE_POINT_ID${NC}"
         fi
 
-        rm -rf "$DATA_DIR/templates/subscription"
+        rm -rf "$DATA_DIR/templates/subscription" "$DATA_DIR/templates/subscription-classic"
+        rm -f "$(theme_mrm_data_dir)/template-status.json"
         if [ -f "$PANEL_ENV" ]; then
             if ! theme_clear_env; then
                 echo -e "${RED}Failed to clean theme settings from panel environment.${NC}"
@@ -438,37 +576,43 @@ is_theme_active() {
     return 1
 }
 
-# Detect what is installed in the single template slot.
 theme_template_label() {
-    local f="$DATA_DIR/templates/subscription/index.html"
-    if [ -s "$f" ]; then
-        if grep -q "treasury-shell" "$f" 2>/dev/null; then
-            if is_theme_active; then
-                echo -e "Template : ${GREEN}●${NC} MRM Template v2 — Active"
-            else
-                echo -e "Template : ${YELLOW}●${NC} MRM Template v2 — Installed (Inactive)"
-            fi
+    local cur sp cl
+    cur="$(theme_current_template)"
+    sp="$DATA_DIR/templates/subscription/index.html"
+    cl="$DATA_DIR/templates/subscription-classic/index.html"
+    if [ -s "$cl" ]; then
+        if [ "$cur" = "classic" ]; then
+            echo -e "Classic MRM  : ${GREEN}●${NC} Installed — \e[1mACTIVE\e[0m"
         else
-            echo -e "Template : ${YELLOW}⚠${NC} Old/unknown template version installed"
+            echo -e "Classic MRM  : ${YELLOW}●${NC} Installed"
         fi
     else
-        echo -e "Template : ${RED}○${NC} Not installed"
+        echo -e "Classic MRM  : ${RED}○${NC} Not installed"
+    fi
+    if [ -s "$sp" ]; then
+        if [ "$cur" = "special" ]; then
+            echo -e "Zomorod-style: ${GREEN}●${NC} Installed — \e[1mACTIVE\e[0m"
+        else
+            echo -e "Zomorod-style: ${YELLOW}●${NC} Installed"
+        fi
+    else
+        echo -e "Zomorod-style: ${RED}○${NC} Not installed"
     fi
 }
 
 theme_special_label() {
     if grep -q "mrm-runtime-inline" "$DATA_DIR/templates/subscription/index.html" 2>/dev/null; then
-        echo -e "Special  : ${GREEN}●${NC} Installed (ON/OFF switch inside panel → Settings → MRM)"
+        echo -e "MRM Special  : ${GREEN}●${NC} Installed (ON/OFF + template picker inside panel)"
     else
-        echo -e "Special  : ${RED}○${NC} Not installed"
+        echo -e "MRM Special  : ${RED}○${NC} Not installed"
     fi
 }
 
 theme_conflicts_label() {
+    # Informational only — MRM never removes other products.
     if bash /opt/mrm-manager/special.sh --detect-quiet 2>/dev/null; then
-        echo -e "Conflicts: ${RED}⚠${NC} zomorod/other integration detected → use option 4"
-    else
-        echo -e "Conflicts: ${GREEN}✓${NC} Clean (single integration)"
+        echo -e "Other        : ${YELLOW}ℹ${NC} zomorod integration also present (we never remove other products)"
     fi
 }
 
@@ -476,19 +620,22 @@ theme_toggle() {
     clear
     detect_active_panel > /dev/null
     if is_theme_active; then
-        echo -e "Template is currently: ${GREEN}ON${NC} (active)"
+        echo -e "Template is currently: ${GREEN}ON${NC} (active: $(theme_current_template))"
         read -p "Turn it OFF (vanilla PasarGuard page)? (y/n): " C
         [[ "$C" =~ ^[Yy]$ ]] || return
         theme_clear_env && theme_restart_panel && echo -e "${GREEN}✔ Template is now OFF${NC}"
     else
-        if [ ! -s "$DATA_DIR/templates/subscription/index.html" ]; then
-            echo "Template is not installed yet — use option 1 first."
+        if [ ! -s "$DATA_DIR/templates/subscription/index.html" ] && [ ! -s "$DATA_DIR/templates/subscription-classic/index.html" ]; then
+            echo "Templates are not installed yet — use option 1 first."
             read -n 1 -s -r -p "Press any key..."; echo; return
         fi
         echo -e "Template is currently: ${RED}OFF${NC}"
         read -p "Turn it ON? (y/n): " C
         [[ "$C" =~ ^[Yy]$ ]] || return
-        theme_apply_env && theme_restart_panel && echo -e "${GREEN}✔ Template is now ON${NC}"
+        local cur
+        cur="$(theme_current_template)"
+        [ "$cur" = "none" ] && cur="special"
+        theme_set_template "$cur" && echo -e "${GREEN}✔ Template is now ON (active: $cur)${NC}"
     fi
     read -n 1 -s -r -p "Press any key..."; echo
 }
@@ -504,32 +651,37 @@ theme_menu() {
         echo -e "Panel: ${CYAN}$PANEL_DIR${NC}"
         echo -e "Data:  ${CYAN}$DATA_DIR${NC}"
         echo ""
-        echo -e "${YELLOW}ℹ PasarGuard has only ONE subscription-template slot.${NC}"
-        echo -e "${YELLOW}  (Install always replaces the previous template)${NC}"
+        echo -e "${YELLOW}ℹ PasarGuard shows ONE template at a time — both stay installed.${NC}"
+        echo -e "${YELLOW}  Choose the active one here or inside the panel (Settings → MRM).${NC}"
         echo ""
         theme_template_label
         theme_special_label
         theme_conflicts_label
         echo ""
-        echo "1) 📦 Install / Update MRM Template"
-        echo "2) 🔛 Template: ON / OFF"
-        echo "3) ◆ MRM Special manager"
-        echo "4) 🧹 Fix conflicts (remove zomorod / other integrations)"
-        echo "5) 🗑️ Uninstall Template"
+        echo "1) 📦 Install / Update Templates (Classic + Zomorod-style)"
+        echo "2) 🎨 Choose active template (Classic / Zomorod-style)"
+        echo "3) 🔛 Template: ON / OFF"
+        echo "4) ◆ MRM Special manager"
+        echo "5) 🗑️ Uninstall MRM Templates"
         echo "0) Back"
         echo -e "${BLUE}===========================================${NC}"
         read -p "Select: " T_OPT
         case $T_OPT in
             1) install_theme_wizard ;;
-            2) theme_toggle ;;
-            3) bash /opt/mrm-manager/special.sh || echo "MRM Special could not be started" ;;
-            4) bash /opt/mrm-manager/special.sh --clean-others || true ;;
+            2) theme_choose_template ;;
+            3) theme_toggle ;;
+            4) bash /opt/mrm-manager/special.sh || echo "MRM Special could not be started" ;;
             5) uninstall_theme ;;
             0) return ;;
             *) theme_invalid_option ;;
         esac
     done
 }
+
+case "${1:-}" in
+    --set-template)     shift; theme_set_template "$@"; exit $? ;;
+    --current-template) theme_current_template; exit 0 ;;
+esac
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     theme_menu

@@ -3,6 +3,9 @@ Description=Watch PasarGuard dashboard for MRM reintegration
 
 [Path]
 PathChanged=/opt/pasarguard/dashboard/build/index.html
+PathChanged=/opt/pasarguard/dashboard/build/404.html
+PathChanged=/opt/pasarguard/panel/dashboard/build/index.html
+PathChanged=/opt/pasarguard/panel/dashboard/build/404.html
 Unit=mrm-integrator.service
 
 [Install]

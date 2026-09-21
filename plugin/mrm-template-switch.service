@@ -1,0 +1,10 @@
+[Unit]
+Description=Apply a subscription-template switch requested from PasarGuard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/mrm-manager/plugin/mrm-template-switch.sh
+TimeoutStartSec=5min
+Nice=5

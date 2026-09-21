@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch for MRM template switch requests
+
+[Path]
+PathExists=/var/lib/pasarguard/mrm/template-request.json
+Unit=mrm-template-switch.service
+
+[Install]
+WantedBy=multi-user.target

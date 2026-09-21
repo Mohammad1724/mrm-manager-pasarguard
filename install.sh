@@ -6,7 +6,7 @@ INSTALL_DIR="/opt/mrm-manager"
 # verified against checksums.txt (integrity). install.sh itself is bootstrapped
 # via the README curl command and therefore cannot self-verify.
 REPO_BASE_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard"
-REPO_REF="v1.2.0"
+REPO_REF="v1.3.0"
 MANAGER_REPO_URL="$REPO_BASE_URL/$REPO_REF"
 VERSION_REGISTRY_URL="$MANAGER_REPO_URL/versions.conf"
 CHECKSUMS_URL="$MANAGER_REPO_URL/checksums.txt"
@@ -38,7 +38,7 @@ rm -f "$VERSION_REGISTRY_FILE"
 
 # Fallback only if registry fetch failed
 if [ -z "$MRM_VERSION" ]; then
-    MRM_VERSION="1.2.0"
+    MRM_VERSION="1.3.0"
 fi
 
 echo -e "${CYAN}╔══════════════════════════════════════════════╗${NC}"
@@ -91,6 +91,7 @@ PLUGIN_MODULES=(
     "update-from-panel.sh" "sitecustomize.py" "mrm_admin_subscriptions.py"
     "mrm-integrator.service" "mrm-integrator.path" "mrm-integrator.timer"
     "mrm-panel-update.service" "mrm-panel-update.path"
+    "mrm-template-switch.sh" "mrm-template-switch.service" "mrm-template-switch.path"
 )
 
 # Remove deprecated/unused files
@@ -127,7 +128,7 @@ for FILE in "${FILES[@]}"; do
 MRM_VERSION="$MRM_VERSION"
 SSL_VERSION="1.0.3"
 BACKUP_VERSION="1.0.5"
-THEME_VERSION="2.0.1"
+THEME_VERSION="2.1.0"
 EOF
             echo -e " ${GREEN}✔${NC} Created locally: $FILE"
         else
@@ -206,7 +207,7 @@ cat > /usr/local/bin/mrm << 'EOF'
 #!/bin/bash
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then
     [ -r /opt/mrm-manager/versions.conf ] && source /opt/mrm-manager/versions.conf
-    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.2.0")}"
+    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.3.0")}"
     exit 0
 fi
 exec bash /opt/mrm-manager/main.sh "$@"

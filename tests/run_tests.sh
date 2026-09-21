@@ -953,6 +953,89 @@ fi
 
 echo ""
 
+# ─── v1.3.0: dual templates + in-panel picker + professional coexistence ─────
+
+# Classic template ships alongside the Zomorod-style one
+if [ -s "$PROJECT_DIR/templates/subscription-classic/index.html" ] && \
+   grep -q "__BRAND__" "$PROJECT_DIR/templates/subscription-classic/index.html" && \
+   grep -q "اتصال مستقیم\|v2rayng://\|hiddify://" "$PROJECT_DIR/templates/subscription-classic/index.html"; then
+    pass "classic template ships with placeholders + Direct Connect"
+else
+    fail "templates/subscription-classic/index.html missing or incomplete"
+fi
+
+# theme.sh: dual-template switcher (env-parameterized + CLI)
+if grep -q 'theme_set_template()' "$PROJECT_DIR/manager/theme.sh" && \
+   grep -q -- '--set-template' "$PROJECT_DIR/manager/theme.sh" && \
+   grep -q 'TPL_REL=' "$PROJECT_DIR/manager/theme.sh" && \
+   grep -q 'subscription-classic/index.html' "$PROJECT_DIR/manager/theme.sh"; then
+    pass "theme.sh has dual-template switcher (theme_set_template + CLI)"
+else
+    fail "theme.sh missing theme_set_template / --set-template / TPL_REL"
+fi
+
+# Classic download URL is pinned to the installed release tag
+if grep -q 'THEME_CLASSIC_HTML_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v$(get_mrm_version)/templates/subscription-classic/index.html"' "$PROJECT_DIR/manager/utils.sh"; then
+    pass "utils.sh THEME_CLASSIC_HTML_URL pinned to release tag"
+else
+    fail "utils.sh THEME_CLASSIC_HTML_URL missing or unpinned"
+fi
+
+# Backend: template state/switch endpoints + host bridge files
+if grep -q '@router.get("/api/mrm/template")' "$PROJECT_DIR/plugin/mrm_admin_subscriptions.py" && \
+   grep -q '@router.put("/api/mrm/template"' "$PROJECT_DIR/plugin/mrm_admin_subscriptions.py" && \
+   grep -q 'TEMPLATE_REQUEST_FILE = DATA_DIR / "template-request.json"' "$PROJECT_DIR/plugin/mrm_admin_subscriptions.py" && \
+   grep -q 'class TemplateSwitch' "$PROJECT_DIR/plugin/mrm_admin_subscriptions.py"; then
+    pass "backend exposes GET/PUT /api/mrm/template with host bridge"
+else
+    fail "backend missing /api/mrm/template endpoints"
+fi
+
+# Panel tab: template picker card + master switch kept
+if grep -q 'z-tpl-apply' "$PROJECT_DIR/plugin/mrm-special.js" && \
+   grep -q 'name="z-template"' "$PROJECT_DIR/plugin/mrm-special.js" && \
+   grep -q "PUT', body: JSON.stringify({ template:" "$PROJECT_DIR/plugin/mrm-special.js" && \
+   grep -q 'z-enabled' "$PROJECT_DIR/plugin/mrm-special.js"; then
+    pass "mrm-special.js has in-panel template picker + master switch"
+else
+    fail "mrm-special.js missing template picker or master switch"
+fi
+
+# Professional coexistence: MRM never removes competing products
+if ! grep -q 'special_clean_competing' "$PROJECT_DIR/manager/special.sh" && \
+   ! grep -q -- '--clean-others' "$PROJECT_DIR/manager/special.sh" && \
+   ! grep -q 'zomorod-integrator' "$PROJECT_DIR/manager/theme.sh"; then
+    pass "no competitor-removal tooling (professional coexistence)"
+else
+    fail "special.sh/theme.sh still remove competing integrations"
+fi
+
+# Template-switch host bridge units
+if [ -f "$PROJECT_DIR/plugin/mrm-template-switch.sh" ] && \
+   grep -q 'PathExists=/var/lib/pasarguard/mrm/template-request.json' "$PROJECT_DIR/plugin/mrm-template-switch.path" && \
+   grep -q 'ExecStart=/opt/mrm-manager/plugin/mrm-template-switch.sh' "$PROJECT_DIR/plugin/mrm-template-switch.service"; then
+    pass "mrm-template-switch host bridge is complete"
+else
+    fail "mrm-template-switch.sh/.path/.service incomplete"
+fi
+
+# The update bridge must own mrm-panel-update.* (un-hijacked)
+if grep -q 'PathExists=/var/lib/pasarguard/mrm/update-request.json' "$PROJECT_DIR/plugin/mrm-panel-update.path" && \
+   grep -q 'update-from-panel.sh' "$PROJECT_DIR/plugin/mrm-panel-update.service" && \
+   grep -q 'PathExists=/var/lib/pasarguard/mrm/update-request.json' "$PROJECT_DIR/manager/special.sh"; then
+    pass "mrm-panel-update.* is the update bridge (not hijacked)"
+else
+    fail "mrm-panel-update.* units do not match the update bridge"
+fi
+
+# Guard units stay canonical (60s reconciliation loop)
+if grep -q 'sleep 60' "$PROJECT_DIR/plugin/mrm-integrator.service" && \
+   grep -q 'sleep 60' "$PROJECT_DIR/manager/special.sh"; then
+    pass "mrm-integrator guard keeps the canonical 60s loop"
+else
+    fail "mrm-integrator guard loop missing"
+fi
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 echo "═══════════════════════════════════════════════════════════"
 echo "  Test Results"

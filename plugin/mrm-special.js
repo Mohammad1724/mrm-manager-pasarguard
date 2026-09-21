@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '5.0.0';
+  const VERSION = '5.1.0';
   const HEADER_PREFIX = 'x-mrm-';
   const NAV_ID = 'mrm-special-nav';
   const ROOT_ID = 'mrm-special-root';
@@ -16,6 +16,8 @@
   let cachedAdminProfiles = null;
   let adminProfilesError = null;
   let cachedUpdate = null;
+  let cachedTemplate = null;
+  let templatePollTimer = null;
   let updatePollTimer = null;
   const UPDATE_NOTICE_ID = 'mrm-update-notice';
   let maintainQueued = false;
@@ -463,6 +465,64 @@
     root?.querySelector('#z-update-now')?.addEventListener('click', async (event) => { const button = event.currentTarget; if (!(button instanceof HTMLButtonElement)) return; button.disabled = true; button.textContent = 'Queuing…'; try { await api('/api/mrm/update', { method: 'POST' }); await loadUpdateStatus(true); if (cachedSettings) renderOwner(cachedSettings); startUpdatePolling(); } catch (error) { alert(`MRM update: ${error?.message || error}`); button.disabled = false; button.textContent = 'Update now'; } });
   }
 
+  function templateSection() {
+    if (!isOwner) {
+      return `<section class="z-card"><div class="z-card-note">قالب فعال صفحه اشتراک را Owner اصلی انتخاب می‌کند.</div></section>`;
+    }
+    const active = (cachedTemplate && cachedTemplate.active) || 'special';
+    const tstat = (cachedTemplate && cachedTemplate.message) ? escapeHtml(cachedTemplate.message) : '';
+    return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.palette}</span>قالب صفحه اشتراک</h3><div class="z-card-note">هر دو قالب MRM نصب‌اند؛ فقط یکی نمایش داده می‌شود. بعد از «اعمال» پنل چند لحظه ری‌استارت می‌شود.</div></div><span class="z-native">TEMPLATE</span></div>
+      <div class="z-grid">
+        <label class="z-toggle is-special"><div><div class="z-toggle-title">🧩 کلاسیک MRM</div><div class="z-toggle-sub">همان قالب قدیمی خودمان با دکمه «اتصال مستقیم»</div></div><input type="radio" name="z-template" value="classic" ${active === 'classic' ? 'checked' : ''}></label>
+        <label class="z-toggle is-special"><div><div class="z-toggle-title">💎 زمرد ویژه (MRM Special)</div><div class="z-toggle-sub">قالب جدید با ظاهر زمرد/طلایی و همه قابلیت‌های ویژه</div></div><input type="radio" name="z-template" value="special" ${active === 'special' ? 'checked' : ''}></label>
+      </div>
+      <div class="z-field"><button class="z-save" id="z-tpl-apply">اعمال قالب</button> <span class="z-help" id="z-tpl-status">${tstat}</span></div>
+    </section>`;
+  }
+
+  async function refreshTemplateCard() {
+    if (!isOwner) return;
+    try {
+      cachedTemplate = await api('/api/mrm/template');
+    } catch { return; }
+    const node = field('z-tpl-status');
+    const pick = document.querySelector(`input[name="z-template"][value="${cachedTemplate.active}"]`);
+    if (pick) pick.checked = true;
+    if (node && !cachedTemplate.pending) node.textContent = cachedTemplate.message ? `✔ ${cachedTemplate.message}` : '';
+  }
+
+  function stopTemplatePolling() { if (templatePollTimer) clearInterval(templatePollTimer); templatePollTimer = null; }
+
+  function bindTemplateActions(root) {
+    root?.querySelector('#z-tpl-apply')?.addEventListener('click', async () => {
+      const button = field('z-tpl-apply');
+      const node = field('z-tpl-status');
+      const pick = document.querySelector('input[name="z-template"]:checked');
+      if (!pick) return;
+      button.disabled = true;
+      stopTemplatePolling();
+      let attempts = 0;
+      try {
+        await api('/api/mrm/template', { method: 'PUT', body: JSON.stringify({ template: pick.value }) });
+        if (node) node.textContent = 'در صف اعمال… (ری‌استارت پنل چند لحظه طول می‌کشد)';
+        templatePollTimer = setInterval(async () => {
+          attempts += 1;
+          try {
+            cachedTemplate = await api('/api/mrm/template');
+            if (node) node.textContent = cachedTemplate.pending ? `در حال اعمال… (${cachedTemplate.status || 'running'})` : `✔ ${cachedTemplate.message || 'قالب فعال شد'}`;
+            if (!cachedTemplate.pending) { stopTemplatePolling(); button.disabled = false; }
+          } catch {
+            if (node) node.textContent = 'پنل در حال ری‌استارت…';
+          }
+          if (attempts >= 45) { stopTemplatePolling(); button.disabled = false; if (node) node.textContent = 'مهلت اعمال تمام شد — وضعیت را دوباره بررسی کنید'; }
+        }, 2000);
+      } catch (error) {
+        if (node) node.textContent = `خطا: ${error?.message || error}`;
+        button.disabled = false;
+      }
+    });
+  }
+
   function namespaceSection() {
     if (!isOwner) return '';
     if (namespaceError) {
@@ -839,6 +899,7 @@
       <div class="z-content">
         ${updateSection()}
         ${isOwner ? `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.sliders}</span>کنترل ویژه MRM</h3><div class="z-card-note">خاموش = صفحه اشتراک بدون هیچ دستکاری MRM (حالت خام پاسارگارد)</div></div><span class="z-native">MASTER</span></div><div class="z-grid"><div class="z-toggle is-special"><div><div class="z-toggle-title">MRM Special فعال</div><div class="z-toggle-sub">روشن/خاموش کلیِ همه قابلیت‌های ویژه صفحه اشتراک برای همه کاربران</div></div><input id="z-enabled" type="checkbox" ${cfg.enabled ? 'checked' : ''}></div></div></section>` : `<section class="z-card"><div class="z-card-note">کلید روشن/خاموش MRM Special در دست Owner اصلی است.</div></section>`}
+        ${templateSection()}
         ${adminProfilesSection()}
         ${ownPathSection(profilePayload)}
         ${appearanceSection(cfg)}
@@ -867,6 +928,8 @@
     const root = mountShell(html);
     root?.querySelector('#z-save')?.addEventListener('click', () => isOwner ? saveOwner(cachedSettings) : saveReseller());
     bindUpdateActions(root);
+    bindTemplateActions(root);
+    refreshTemplateCard();
     bindOwnPath(root);
     bindAdminProfileActions(root);
     bindAppearance(root, cfg);

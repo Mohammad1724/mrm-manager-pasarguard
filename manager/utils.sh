@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager utils.sh v1.2.0
+# MRM Manager utils.sh v1.3.0
 
 export RED='\033[0;31m'
 export GREEN='\033[0;32m'
@@ -13,7 +13,7 @@ export NC='\033[0m'
 CONFIG_FILE="/opt/mrm-manager/panel.conf"
 MRM_VERSION_FILE="/opt/mrm-manager/VERSION"
 # FIX: Default version matches current release (was "1.0.3")
-MRM_DEFAULT_VERSION="1.2.0"
+MRM_DEFAULT_VERSION="1.3.0"
 
 ensure_mrm_config_dir() {
     mkdir -p "$(dirname "$CONFIG_FILE")"
@@ -162,6 +162,7 @@ get_mrm_version() {
 
 # FIX: pin to the installed release tag — mutable "main" could serve untrusted content
 export THEME_HTML_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v$(get_mrm_version)/templates/subscription/index.html"
+export THEME_CLASSIC_HTML_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v$(get_mrm_version)/templates/subscription-classic/index.html"
 
 # Initialize - NON-BLOCKING, no prompt
 load_panel_config >/dev/null 2>&1 || apply_panel_config "pasarguard" >/dev/null 2>&1 || true
