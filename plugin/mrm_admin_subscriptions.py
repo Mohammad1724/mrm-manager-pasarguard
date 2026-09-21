@@ -269,10 +269,23 @@ def _admin_is_owner(current_admin: AdminDetails) -> bool:
     panel tab and owner-only endpoints never downgrade a real Owner.
     """
     role = getattr(current_admin, "role", None)
+    if isinstance(role, str):
+        role_names = {role.strip().lower()}
+    elif role is not None:
+        role_names = {
+            str(getattr(role, "name", "") or "").strip().lower(),
+            str(getattr(role, "title", "") or "").strip().lower(),
+            str(getattr(role, "slug", "") or "").strip().lower(),
+        }
+    else:
+        role_names = set()
+    role_names.discard("")
     return bool(
-        (role is not None and getattr(role, "is_owner", False))
+        (role is not None and not isinstance(role, str) and getattr(role, "is_owner", False))
         or getattr(current_admin, "is_owner", False)
         or getattr(current_admin, "is_sudo", False)
+        or getattr(current_admin, "superuser", False)
+        or role_names & {"owner", "superadmin", "super admin"}
     )
 
 

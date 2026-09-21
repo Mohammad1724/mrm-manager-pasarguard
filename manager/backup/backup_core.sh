@@ -3,7 +3,7 @@
 # Main backup logic: export DB, backup files, create archive, send to Telegram
 
 # ==========================================
-# Backup v1.4.2
+# Backup v1.4.3
 # ==========================================
 do_backup() {
     local MODE="${1:-manual}"

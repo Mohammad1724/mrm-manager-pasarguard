@@ -1126,11 +1126,28 @@ fi
 
 # ─── v1.4.2: owner detection fallbacks (role.is_owner / is_owner / is_sudo / profile) ─
 if grep -qF "is_sudo" plugin/mrm-special.js &&
-   grep -qF "apiProfile?.is_owner === true" plugin/mrm-special.js &&
+   grep -qF "flag(apiProfile?.is_owner)" plugin/mrm-special.js &&
    grep -qF "_admin_is_owner" plugin/mrm_admin_subscriptions.py; then
     pass "[166] owner detection fallbacks (is_sudo + profile) wired" || fail "[166] owner detection fallbacks (is_sudo + profile) wired"
 else
     fail "[166] owner detection fallbacks (is_sudo + profile) wired"
+fi
+
+# ─── v1.4.3: owner detection case/shape tolerance (Owner vs owner, int/string flags) ─
+if grep -qF "superadmin" plugin/mrm-special.js &&
+   grep -qF "String(v).toLowerCase()" plugin/mrm-special.js &&
+   grep -qF "superadmin" plugin/mrm_admin_subscriptions.py; then
+    pass "[167] owner detection accepts Title-Case roles + truthy string/int flags" || fail "[167] owner detection accepts Title-Case roles + truthy string/int flags"
+else
+    fail "[167] owner detection accepts Title-Case roles + truthy string/int flags"
+fi
+
+# ─── v1.4.3: in-tab role diagnostics (works without console access) ──────────
+if grep -qF "z-debug-open" plugin/mrm-special.js &&
+   grep -qF "openRoleDebug" plugin/mrm-special.js; then
+    pass "[168] in-tab role diagnostics button wired" || fail "[168] in-tab role diagnostics button wired"
+else
+    fail "[168] in-tab role diagnostics button wired"
 fi
 
 if [ "$FAIL" -eq 0 ]; then

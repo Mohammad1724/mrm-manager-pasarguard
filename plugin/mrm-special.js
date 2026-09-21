@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '6.0.1';
+  const VERSION = '6.0.2';
   const HEADER_PREFIX = 'x-mrm-';
   const NAV_ID = 'mrm-special-nav';
   const ROOT_ID = 'mrm-special-root';
@@ -895,7 +895,7 @@
     const roleBadge = isOwner ? '<span class="z-role">OWNER</span>' : '<span class="z-role">RESELLER</span>';
 
     const html = `
-      <section class="z-hero"><div class="z-hero-row"><div class="z-brand"><div class="z-logo">${icons.gem}</div><div><div class="z-title-row"><h2 class="z-title">MRM Template</h2><span class="z-special">SPECIAL</span>${roleBadge}</div><div class="z-subtitle">${subtitle}</div></div></div><span class="z-version">v${VERSION}</span></div></section>
+      <section class="z-hero"><div class="z-hero-row"><div class="z-brand"><div class="z-logo">${icons.gem}</div><div><div class="z-title-row"><h2 class="z-title">MRM Template</h2><span class="z-special">SPECIAL</span>${roleBadge}</div><div class="z-subtitle">${subtitle}</div></div></div><span class="z-version">v${VERSION}</span><button type="button" class="z-debug-btn" id="z-debug-open">تشخیص نقش</button></div></section>
       <div class="z-content">
         ${updateSection()}
         ${isOwner ? `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.sliders}</span>کنترل ویژه MRM</h3><div class="z-card-note">خاموش = صفحه اشتراک بدون هیچ دستکاری MRM (حالت خام پاسارگارد)</div></div><span class="z-native">MASTER</span></div><div class="z-grid"><div class="z-toggle is-special"><div><div class="z-toggle-title">MRM Special فعال</div><div class="z-toggle-sub">روشن/خاموش کلیِ همه قابلیت‌های ویژه صفحه اشتراک برای همه کاربران</div></div><input id="z-enabled" type="checkbox" ${cfg.enabled ? 'checked' : ''}></div></div></section>` : `<section class="z-card"><div class="z-card-note">کلید روشن/خاموش MRM Special در دست Owner اصلی است.</div></section>`}
@@ -933,6 +933,7 @@
     bindOwnPath(root);
     bindAdminProfileActions(root);
     bindAppearance(root, cfg);
+    bindRoleDebug(root);
   }
 
   function renderOwner(settings, profilePayload = cachedProfile) {
@@ -944,6 +945,64 @@
   function renderReseller(payload) {
     cachedProfile = payload;
     renderForm(extractReseller(payload), payload);
+  }
+
+  function bindRoleDebug(root) {
+    if (!document.getElementById('z-debug-css')) {
+      const style = document.createElement('style');
+      style.id = 'z-debug-css';
+      style.textContent = '#z-debug-overlay{position:fixed;inset:0;background:rgba(4,48,46,.55);display:none;align-items:center;justify-content:center;z-index:99999;padding:16px}#z-debug-overlay.is-open{display:flex}.z-debug-card{background:#0B2422;color:#EAF7F5;border:1px solid rgba(45,183,178,.45);border-radius:14px;width:min(560px,94vw);max-height:86vh;overflow:auto;padding:14px;font-size:12px;box-shadow:0 18px 50px rgba(0,0,0,.45)}.z-debug-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}.z-debug-head button{background:transparent;border:1px solid rgba(45,183,178,.5);color:#59E0D8;border-radius:999px;padding:4px 12px;font-size:11px;cursor:pointer}.z-debug-card pre{white-space:pre-wrap;word-break:break-all;background:rgba(4,48,46,.6);border:1px solid rgba(45,183,178,.25);border-radius:10px;padding:10px;font-size:11px;line-height:1.7;direction:ltr;text-align:left}.z-debug-note{margin-top:8px;color:#9FD6D1;font-size:11px}.z-debug-btn{margin-inline-start:8px;padding:4px 10px;border-radius:999px;border:1px solid rgba(45,183,178,.5);background:transparent;color:inherit;font-size:11px;cursor:pointer;opacity:.8;vertical-align:middle}';
+      document.head.appendChild(style);
+    }
+    root?.querySelector('#z-debug-open')?.addEventListener('click', () => { void openRoleDebug(); });
+  }
+
+  async function openRoleDebug() {
+    const token = localStorage.getItem('token') || '';
+    const raw = async (path) => {
+      try {
+        const headers = { Accept: 'application/json' };
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const response = await fetch(path, { headers, cache: 'no-store' });
+        return { status: response.status, text: await response.text() };
+      } catch (error) {
+        return { status: 0, text: String((error && error.message) || error) };
+      }
+    };
+    const admin = await raw('/api/admin');
+    const profile = await raw('/api/mrm/profile');
+    let adminJson = null;
+    let profileJson = null;
+    try { adminJson = JSON.parse(admin.text); } catch (_) {}
+    try { profileJson = JSON.parse(profile.text); } catch (_) {}
+    const role = adminJson ? adminJson.role : null;
+    const roleObj = role && typeof role === 'object' ? role : null;
+    const typeOf = (v) => (v === null ? 'null' : typeof v);
+    const show = (v) => JSON.stringify(v === undefined ? null : v);
+    const lines = [
+      `GET /api/admin -> ${admin.status}`,
+      admin.text.slice(0, 1600),
+      '',
+      `GET /api/mrm/profile -> ${profile.status}`,
+      profile.text.slice(0, 900),
+      '',
+      '--- computed by tab ---',
+      `role (typeof ${typeOf(role)}): ${show(role)}`,
+      `role.name: ${show(roleObj ? roleObj.name : null)}   role.slug: ${show(roleObj ? roleObj.slug : null)}`,
+      `admin.is_owner (typeof ${typeOf(adminJson && adminJson.is_owner)}): ${show(adminJson ? adminJson.is_owner : null)}`,
+      `admin.is_sudo (typeof ${typeOf(adminJson && adminJson.is_sudo)}): ${show(adminJson ? adminJson.is_sudo : null)}`,
+      `profile.is_owner: ${show(profileJson ? profileJson.is_owner : null)}`,
+      `isOwner (tab result): ${isOwner}`,
+    ];
+    let overlay = document.getElementById('z-debug-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'z-debug-overlay';
+      document.body.appendChild(overlay);
+    }
+    overlay.innerHTML = `<div class="z-debug-card" dir="rtl"><div class="z-debug-head"><b>تشخیص نقش</b><button type="button" id="z-debug-close">بستن</button></div><pre dir="ltr">${escapeHtml(lines.join('\n'))}</pre><div class="z-debug-note">این خروجی را اسکرین‌شات بگیر و بفرست تا تشخیص نقش دقیق شود.</div></div>`;
+    overlay.classList.add('is-open');
+    overlay.querySelector('#z-debug-close')?.addEventListener('click', () => overlay.classList.remove('is-open'));
   }
 
   function validateTimes() {
@@ -1173,16 +1232,22 @@
       currentAdmin = await api('/api/admin');
       accessAllowed = Boolean(currentAdmin?.id || currentAdmin?.username);
       const role = currentAdmin?.role;
+      const flag = (v) => v === true || v === 1 || v === '1' || String(v).toLowerCase() === 'true';
+      const roleObj = role && typeof role === 'object' ? role : null;
+      const roleName = String(roleObj ? (roleObj.name ?? roleObj.title ?? '') : (typeof role === 'string' ? role : '')).trim().toLowerCase();
+      const roleSlug = String(roleObj?.slug ?? '').trim().toLowerCase();
       isOwner =
-        role?.is_owner === true ||
-        currentAdmin?.is_owner === true ||
-        currentAdmin?.is_sudo === true ||
-        role === 'owner' ||
-        role?.name === 'owner' ||
-        role?.slug === 'owner';
+        flag(roleObj?.is_owner) ||
+        flag(currentAdmin?.is_owner) ||
+        flag(currentAdmin?.is_sudo) ||
+        flag(currentAdmin?.superuser) ||
+        roleName === 'owner' ||
+        roleSlug === 'owner' ||
+        roleName === 'superadmin' ||
+        roleName === 'super admin';
       try {
         const apiProfile = await api('/api/mrm/profile');
-        if (apiProfile?.is_owner === true) isOwner = true;
+        if (flag(apiProfile?.is_owner)) isOwner = true;
       } catch (_) {}
       if (isOwner) void loadUpdateStatus(); else removeUpdateNotice();
     } catch (_) {
