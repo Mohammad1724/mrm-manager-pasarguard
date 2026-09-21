@@ -260,8 +260,24 @@ def _require_admin(current_admin: AdminDetails | None = Depends(get_current)) ->
     return current_admin
 
 
+def _admin_is_owner(current_admin: AdminDetails) -> bool:
+    """Owner check tolerant of both role-based and is_sudo panel builds.
+
+    Newer PasarGuard builds flag ownership with ``role.is_owner``; classic
+    Marzban-family builds expose ``is_sudo`` instead (plus a flat ``is_owner``
+    on some serialisations). Any of these marks the account as Owner so the
+    panel tab and owner-only endpoints never downgrade a real Owner.
+    """
+    role = getattr(current_admin, "role", None)
+    return bool(
+        (role is not None and getattr(role, "is_owner", False))
+        or getattr(current_admin, "is_owner", False)
+        or getattr(current_admin, "is_sudo", False)
+    )
+
+
 def _require_owner(current_admin: AdminDetails = Depends(_require_admin)) -> AdminDetails:
-    if not current_admin.role or not current_admin.role.is_owner:
+    if not _admin_is_owner(current_admin):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner access required")
     return current_admin
 
@@ -714,7 +730,7 @@ async def get_my_mrm_profile(
     current_admin: AdminDetails = Depends(_require_admin),
 ):
     db_admin = await _get_db_admin(db, int(current_admin.id))
-    return _profile_payload(db_admin, is_owner=bool(current_admin.role and current_admin.role.is_owner))
+    return _profile_payload(db_admin, is_owner=_admin_is_owner(current_admin))
 
 
 @router.put("/api/mrm/profile")
@@ -726,7 +742,7 @@ async def update_my_mrm_profile(
     db_admin = await _get_db_admin(db, int(current_admin.id))
     await _save_full_profile(db, db_admin, model)
     _upsert_namespace_for_admin(db_admin, model.namespace_slug, model.namespace_enabled)
-    return _profile_payload(db_admin, is_owner=bool(current_admin.role and current_admin.role.is_owner))
+    return _profile_payload(db_admin, is_owner=_admin_is_owner(current_admin))
 
 
 @router.put("/api/mrm/appearance")
@@ -737,7 +753,7 @@ async def update_my_mrm_appearance(
 ):
     db_admin = await _get_db_admin(db, int(current_admin.id))
     await _save_appearance(db, db_admin, model)
-    return _profile_payload(db_admin, is_owner=bool(current_admin.role and current_admin.role.is_owner))
+    return _profile_payload(db_admin, is_owner=_admin_is_owner(current_admin))
 
 
 @router.get("/api/mrm/admin-profiles")

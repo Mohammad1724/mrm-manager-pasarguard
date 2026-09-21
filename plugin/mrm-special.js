@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '6.0.0';
+  const VERSION = '6.0.1';
   const HEADER_PREFIX = 'x-mrm-';
   const NAV_ID = 'mrm-special-nav';
   const ROOT_ID = 'mrm-special-root';
@@ -1172,7 +1172,18 @@
     try {
       currentAdmin = await api('/api/admin');
       accessAllowed = Boolean(currentAdmin?.id || currentAdmin?.username);
-      isOwner = currentAdmin?.role?.is_owner === true || currentAdmin?.is_owner === true;
+      const role = currentAdmin?.role;
+      isOwner =
+        role?.is_owner === true ||
+        currentAdmin?.is_owner === true ||
+        currentAdmin?.is_sudo === true ||
+        role === 'owner' ||
+        role?.name === 'owner' ||
+        role?.slug === 'owner';
+      try {
+        const apiProfile = await api('/api/mrm/profile');
+        if (apiProfile?.is_owner === true) isOwner = true;
+      } catch (_) {}
       if (isOwner) void loadUpdateStatus(); else removeUpdateNotice();
     } catch (_) {
       currentAdmin = null;

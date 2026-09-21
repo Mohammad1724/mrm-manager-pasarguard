@@ -1124,6 +1124,15 @@ else
     fail "[165] wizard brand cleanup strips {{ user.username }} title-suffix accumulation"
 fi
 
+# ─── v1.4.2: owner detection fallbacks (role.is_owner / is_owner / is_sudo / profile) ─
+if grep -qF "is_sudo" plugin/mrm-special.js &&
+   grep -qF "apiProfile?.is_owner === true" plugin/mrm-special.js &&
+   grep -qF "_admin_is_owner" plugin/mrm_admin_subscriptions.py; then
+    pass "[166] owner detection fallbacks (is_sudo + profile) wired" || fail "[166] owner detection fallbacks (is_sudo + profile) wired"
+else
+    fail "[166] owner detection fallbacks (is_sudo + profile) wired"
+fi
+
 if [ "$FAIL" -eq 0 ]; then
     echo -e "  ${GREEN}✔ All tests passed!${NC}"
     echo ""
