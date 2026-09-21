@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '5.1.0';
+  const VERSION = '5.1.1';
   const HEADER_PREFIX = 'x-mrm-';
   const NAV_ID = 'mrm-special-nav';
   const ROOT_ID = 'mrm-special-root';
@@ -473,8 +473,8 @@
     const tstat = (cachedTemplate && cachedTemplate.message) ? escapeHtml(cachedTemplate.message) : '';
     return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.palette}</span>قالب صفحه اشتراک</h3><div class="z-card-note">هر دو قالب MRM نصب‌اند؛ فقط یکی نمایش داده می‌شود. بعد از «اعمال» پنل چند لحظه ری‌استارت می‌شود.</div></div><span class="z-native">TEMPLATE</span></div>
       <div class="z-grid">
-        <label class="z-toggle is-special"><div><div class="z-toggle-title">🧩 کلاسیک MRM</div><div class="z-toggle-sub">همان قالب قدیمی خودمان با دکمه «اتصال مستقیم»</div></div><input type="radio" name="z-template" value="classic" ${active === 'classic' ? 'checked' : ''}></label>
-        <label class="z-toggle is-special"><div><div class="z-toggle-title">💎 زمرد ویژه (MRM Special)</div><div class="z-toggle-sub">قالب جدید با ظاهر زمرد/طلایی و همه قابلیت‌های ویژه</div></div><input type="radio" name="z-template" value="special" ${active === 'special' ? 'checked' : ''}></label>
+        <label class="z-toggle is-special"><div><div class="z-toggle-title">🧩 نسخه قدیمی تم</div><div class="z-toggle-sub">همان قالب قدیمی خودمان با دکمه «اتصال مستقیم»</div></div><input type="radio" name="z-template" value="classic" ${active === 'classic' ? 'checked' : ''}></label>
+        <label class="z-toggle is-special"><div><div class="z-toggle-title">💎 MRM Special</div><div class="z-toggle-sub">قالب جدید با ظاهر زمرد و طلایی + همه قابلیت‌های ویژه</div></div><input type="radio" name="z-template" value="special" ${active === 'special' ? 'checked' : ''}></label>
       </div>
       <div class="z-field"><button class="z-save" id="z-tpl-apply">اعمال قالب</button> <span class="z-help" id="z-tpl-status">${tstat}</span></div>
     </section>`;

@@ -21,7 +21,7 @@
 # Data layout:   /var/lib/pasarguard/mrm/
 # Profile map:   profiles/profiles.json  (admins.json is created by sitecustomize)
 # ============================================================================
-SPECIAL_VERSION="1.1.0"
+SPECIAL_VERSION="1.1.1"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
@@ -454,9 +454,14 @@ special_status() {
     fi
     echo ""
     # active template (both can be installed; one is live)
-    local _cur
+    local _cur _lbl
     _cur="$(bash /opt/mrm-manager/theme.sh --current-template 2>/dev/null || echo none)"
-    echo -e "Active template:    ${CYAN}${_cur}${NC}  (switch: Theme Manager → 2 or panel)"
+    case "$_cur" in
+        classic) _lbl="نسخه قدیمی تم" ;;
+        special) _lbl="MRM Special" ;;
+        *) _lbl="—" ;;
+    esac
+    echo -e "Active template:    ${CYAN}${_lbl}${NC}  (select in panel → Settings → MRM)"
     # other products — informational only (never removed)
     if special_competing_present; then
         echo -e "Other products:     ${YELLOW}ℹ zomorod also present${NC} (we never remove other products)"
