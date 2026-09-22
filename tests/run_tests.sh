@@ -1195,6 +1195,18 @@ else
     fail "[172] store official app from panel Applications drives the connect button"
 fi
 
+# ─── v1.4.8: app import profile name = user's name (not the brand) ──────────
+if grep -qF 'encode_title(username or profile["store_name"])' plugin/mrm_admin_subscriptions.py &&
+   grep -qF 'db_admin, sub_username = await _validate_namespace' plugin/mrm_admin_subscriptions.py &&
+   grep -qF 'db_admin, sub_username = await _admin_for_token' plugin/mrm_admin_subscriptions.py &&
+   grep -qF 'userInfo?.username' templates/subscription-src/src/components/quick-connect.tsx &&
+   grep -qF 'buildDeepLink(subscriptionUrl, connectName)' templates/subscription-src/src/components/quick-connect.tsx &&
+   grep -qF 'b64url(`${u}#${n}`)' templates/subscription-src/src/components/quick-connect.tsx; then
+    pass "[173] app import profile-title and deep-link name follow the user's name" || fail "[173] app import profile-title and deep-link name follow the user's name"
+else
+    fail "[173] app import profile-title and deep-link name follow the user's name"
+fi
+
 if [ "$FAIL" -eq 0 ]; then
     echo -e "  ${GREEN}✔ All tests passed!${NC}"
     echo ""

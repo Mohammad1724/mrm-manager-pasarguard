@@ -603,7 +603,7 @@ def _has_theme_overrides(admin: Admin) -> bool:
     return any(key in variables for key in MRM_THEME_VARIABLE_KEYS)
 
 
-def _overlay_headers(headers: dict, admin: Admin) -> dict:
+def _overlay_headers(headers: dict, admin: Admin, username: str = "") -> dict:
     result = dict(headers or {})
     profile_overrides = _has_profile_overrides(admin)
     theme_overrides = _has_theme_overrides(admin)
@@ -614,13 +614,15 @@ def _overlay_headers(headers: dict, admin: Admin) -> dict:
     if profile_overrides:
         profile = _profile_from_admin(admin)
         result.update(_profile_headers(admin))
-        result["profile-title"] = encode_title(profile["store_name"])
+        # VPN apps (Happ/Hiddify/…) name the imported profile from this header —
+        # put the user's name here so each import is labeled with the account.
+        result["profile-title"] = encode_title(username or profile["store_name"])
         if profile["support_url"]:
             result["support-url"] = profile["support_url"]
     return result
 
 
-def _overlay_response(response: Response, admin: Admin) -> Response:
+def _overlay_response(response: Response, admin: Admin, username: str = "") -> Response:
     profile_overrides = _has_profile_overrides(admin)
     theme_overrides = _has_theme_overrides(admin)
     if not profile_overrides and not theme_overrides:
@@ -632,7 +634,7 @@ def _overlay_response(response: Response, admin: Admin) -> Response:
         profile = _profile_from_admin(admin)
         for key, value in _profile_headers(admin).items():
             response.headers[key] = value
-        response.headers["profile-title"] = encode_title(profile["store_name"])
+        response.headers["profile-title"] = encode_title(username or profile["store_name"])
         if profile["support_url"]:
             response.headers["support-url"] = profile["support_url"]
     return response
@@ -852,7 +854,7 @@ async def delete_admin_namespace(
     return {"ok": True, "slug": normalized}
 
 
-async def _validate_namespace(db: AsyncSession, admin_slug: str, token: str) -> Admin:
+async def _validate_namespace(db: AsyncSession, admin_slug: str, token: str) -> tuple[Admin, str]:
     state = _load_state()
     mapping = state.get("routes", {}).get(admin_slug.lower())
     if not mapping or not mapping.get("enabled", True):
@@ -865,7 +867,7 @@ async def _validate_namespace(db: AsyncSession, admin_slug: str, token: str) -> 
     db_admin = getattr(db_user, "admin", None)
     if db_admin is None:
         db_admin = await _get_db_admin(db, int(mapping["admin_id"]))
-    return db_admin
+    return db_admin, str(getattr(db_user, "username", "") or "")
 
 
 SUB_PREFIX = f"/{subscription_env_settings.path}"
@@ -882,7 +884,7 @@ async def namespaced_subscription(
     user_agent: str = Header(default=""),
     headers=Depends(get_subscription_headers),
 ):
-    db_admin = await _validate_namespace(db, admin_slug, token)
+    db_admin, sub_username = await _validate_namespace(db, admin_slug, token)
     response = await subscription_operator.user_subscription(
         db,
         token=token,
@@ -892,7 +894,7 @@ async def namespaced_subscription(
         request_url=str(request.url),
         **headers.model_dump(),
     )
-    return _overlay_response(response, db_admin)
+    return _overlay_response(response, db_admin, sub_username)
 
 
 @router.head(f"{SUB_PREFIX}/{SCOPE}/{{token}}/")
@@ -904,7 +906,7 @@ async def namespaced_subscription_headers(
     db: AsyncSession = Depends(get_db),
     user_agent: str = Header(default=""),
 ):
-    db_admin = await _validate_namespace(db, admin_slug, token)
+    db_admin, sub_username = await _validate_namespace(db, admin_slug, token)
     response_headers = await subscription_operator.user_subscription_headers(
         db,
         token=token,
@@ -912,7 +914,7 @@ async def namespaced_subscription_headers(
         user_agent=user_agent,
         request_url=str(request.url),
     )
-    return Response(headers=_overlay_headers(response_headers, db_admin))
+    return Response(headers=_overlay_headers(response_headers, db_admin, sub_username))
 
 
 @router.get(f"{SUB_PREFIX}/{SCOPE}/{{token}}/info", response_model=SubscriptionUserResponse)
@@ -922,11 +924,11 @@ async def namespaced_subscription_info(
     token: str,
     db: AsyncSession = Depends(get_db),
 ):
-    db_admin = await _validate_namespace(db, admin_slug, token)
+    db_admin, sub_username = await _validate_namespace(db, admin_slug, token)
     user_data, response_headers = await subscription_operator.user_subscription_info(
         db, token=token, ip=request.client.host if request.client else None
     )
-    return JSONResponse(content=user_data.model_dump(mode="json"), headers=_overlay_headers(response_headers, db_admin))
+    return JSONResponse(content=user_data.model_dump(mode="json"), headers=_overlay_headers(response_headers, db_admin, sub_username))
 
 
 @router.get(f"{SUB_PREFIX}/{SCOPE}/{{token}}/raw")
@@ -936,10 +938,10 @@ async def namespaced_subscription_raw(
     token: str,
     db: AsyncSession = Depends(get_db),
 ):
-    db_admin = await _validate_namespace(db, admin_slug, token)
+    db_admin, sub_username = await _validate_namespace(db, admin_slug, token)
     payload = await subscription_operator.user_subscription_raw(db, token=token, request_url=str(request.url))
     if isinstance(payload, dict):
-        payload["headers"] = _overlay_headers(payload.get("headers", {}), db_admin)
+        payload["headers"] = _overlay_headers(payload.get("headers", {}), db_admin, sub_username)
     return payload
 
 
@@ -973,7 +975,7 @@ async def namespaced_subscription_client(
     db: AsyncSession = Depends(get_db),
     headers=Depends(get_subscription_headers),
 ):
-    db_admin = await _validate_namespace(db, admin_slug, token)
+    db_admin, sub_username = await _validate_namespace(db, admin_slug, token)
     response = await subscription_operator.user_subscription_with_client_type(
         db,
         token=token,
@@ -981,17 +983,17 @@ async def namespaced_subscription_client(
         request_url=str(request.url),
         **headers.model_dump(),
     )
-    return _overlay_response(response, db_admin)
+    return _overlay_response(response, db_admin, sub_username)
 
 # Standard PasarGuard subscription links are scoped by the user owner too.
 # MRM is registered before the native subscription router, so these routes
 # preserve native behavior and only overlay MRM values for the owning admin.
-async def _admin_for_token(db: AsyncSession, token: str) -> Admin:
+async def _admin_for_token(db: AsyncSession, token: str) -> tuple[Admin, str]:
     db_user = await subscription_operator.get_validated_sub(db, token, load_admin_role=True)
     db_admin = getattr(db_user, "admin", None)
     if db_admin is None:
         db_admin = await _get_db_admin(db, int(getattr(db_user, "admin_id", 0) or 0))
-    return db_admin
+    return db_admin, str(getattr(db_user, "username", "") or "")
 
 
 @router.get(f"{SUB_PREFIX}/{{token}}/", include_in_schema=False)
@@ -1003,7 +1005,7 @@ async def scoped_standard_subscription(
     user_agent: str = Header(default=""),
     headers=Depends(get_subscription_headers),
 ):
-    db_admin = await _admin_for_token(db, token)
+    db_admin, sub_username = await _admin_for_token(db, token)
     response = await subscription_operator.user_subscription(
         db,
         token=token,
@@ -1013,7 +1015,7 @@ async def scoped_standard_subscription(
         request_url=str(request.url),
         **headers.model_dump(),
     )
-    return _overlay_response(response, db_admin)
+    return _overlay_response(response, db_admin, sub_username)
 
 
 @router.head(f"{SUB_PREFIX}/{{token}}/", include_in_schema=False)
@@ -1024,7 +1026,7 @@ async def scoped_standard_subscription_headers(
     db: AsyncSession = Depends(get_db),
     user_agent: str = Header(default=""),
 ):
-    db_admin = await _admin_for_token(db, token)
+    db_admin, sub_username = await _admin_for_token(db, token)
     response_headers = await subscription_operator.user_subscription_headers(
         db,
         token=token,
@@ -1032,20 +1034,20 @@ async def scoped_standard_subscription_headers(
         user_agent=user_agent,
         request_url=str(request.url),
     )
-    return Response(headers=_overlay_headers(response_headers, db_admin))
+    return Response(headers=_overlay_headers(response_headers, db_admin, sub_username))
 
 
 @router.get(f"{SUB_PREFIX}/{{token}}/info", include_in_schema=False)
 async def scoped_standard_subscription_info(
     request: Request, token: str, db: AsyncSession = Depends(get_db)
 ):
-    db_admin = await _admin_for_token(db, token)
+    db_admin, sub_username = await _admin_for_token(db, token)
     user_data, response_headers = await subscription_operator.user_subscription_info(
         db, token=token, ip=request.client.host if request.client else None
     )
     return JSONResponse(
         content=user_data.model_dump(mode="json"),
-        headers=_overlay_headers(response_headers, db_admin),
+        headers=_overlay_headers(response_headers, db_admin, sub_username),
     )
 
 
@@ -1053,12 +1055,12 @@ async def scoped_standard_subscription_info(
 async def scoped_standard_subscription_raw(
     request: Request, token: str, db: AsyncSession = Depends(get_db)
 ):
-    db_admin = await _admin_for_token(db, token)
+    db_admin, sub_username = await _admin_for_token(db, token)
     payload = await subscription_operator.user_subscription_raw(
         db, token=token, request_url=str(request.url)
     )
     if isinstance(payload, dict):
-        payload["headers"] = _overlay_headers(payload.get("headers", {}), db_admin)
+        payload["headers"] = _overlay_headers(payload.get("headers", {}), db_admin, sub_username)
     return payload
 
 
@@ -1084,7 +1086,7 @@ async def scoped_standard_subscription_client(
     db: AsyncSession = Depends(get_db),
     headers=Depends(get_subscription_headers),
 ):
-    db_admin = await _admin_for_token(db, token)
+    db_admin, sub_username = await _admin_for_token(db, token)
     response = await subscription_operator.user_subscription_with_client_type(
         db,
         token=token,
@@ -1092,7 +1094,7 @@ async def scoped_standard_subscription_client(
         request_url=str(request.url),
         **headers.model_dump(),
     )
-    return _overlay_response(response, db_admin)
+    return _overlay_response(response, db_admin, sub_username)
 
 # MRM canonical subscription URL patch
 def _namespace_url_for_admin(url: str, admin_id: int) -> str:

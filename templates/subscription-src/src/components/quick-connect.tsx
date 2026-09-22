@@ -20,7 +20,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { detectOS, type OperatingSystem } from '@/lib/osDetector';
-import { useApps } from '@/hooks/useUserData';
+import { useApps, useUserInfo } from '@/hooks/useUserData';
 import type { AppClient } from '@/types/user';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { cn } from '@/lib/utils';
@@ -80,7 +80,7 @@ export const CONNECT_APPS: ConnectAppDef[] = [
     id: 'v2raytun',
     name: 'v2rayTun',
     platforms: ['android'],
-    buildDeepLink: (u) => `v2raytun://import/${b64url(u)}`,
+    buildDeepLink: (u, n) => `v2raytun://import/${b64url(`${u}#${n}`)}`,
     stores: {
       android: [
         { label: 'Bazaar', url: 'https://cafebazaar.ir/search?q=v2rayTun' },
@@ -92,7 +92,7 @@ export const CONNECT_APPS: ConnectAppDef[] = [
     id: 'happ',
     name: 'Happ',
     platforms: ['android', 'ios'],
-    buildDeepLink: (u) => `happ://add/${b64url(u)}`,
+    buildDeepLink: (u, n) => `happ://add/${b64url(`${u}#${n}`)}`,
     stores: {
       android: [{ label: 'Bazaar', url: 'https://cafebazaar.ir/search?q=Happ' }],
       ios: [{ label: 'App Store', url: 'https://apps.apple.com/app/id6504287215' }],
@@ -218,8 +218,11 @@ export function QuickConnect({ variant = 'hero', className }: QuickConnectProps)
     }
   }, []);
 
+  const { data: userInfo } = useUserInfo();
   const subscriptionUrl = useMemo(() => getSubscriptionUrl(), []);
   const pageTitle = typeof document !== 'undefined' ? document.title : 'subscription';
+  /* اتصال مستقیم labels imports with the USER's name (never the brand). */
+  const connectName = (userInfo?.username || '').trim() || pageTitle;
 
   const lastApp = useMemo(
     () => CONNECT_APPS.find((a) => a.id === lastAppId) ?? null,
@@ -255,11 +258,24 @@ export function QuickConnect({ variant = 'hero', className }: QuickConnectProps)
         id: mapped?.id ?? 'panel',
         name: officialPanelApp.name || mapped?.name || 'App',
         platforms: [detectedPlatform],
-        buildDeepLink: (u: string, n: string) =>
-          importUrl
+        buildDeepLink: (u: string, n: string) => {
+          const built = importUrl
             .replace('{url}', encodeURIComponent(u))
             .replace('{b64}', b64url(u))
-            .replace('{name}', encodeURIComponent(n)),
+            .replace('{name}', encodeURIComponent(n))
+            .replace('{USERNAME}', encodeURIComponent(n));
+          /* Happ ignores the deep-link URI's own fragment and labels the
+             profile from the payload URL — wrap plain happ://add links as
+             base64 of `url#name` so the account name travels with it. */
+          const happPrefix = 'happ://add/';
+          const payload = built.startsWith(happPrefix) ? built.slice(happPrefix.length) : '';
+          if (payload.startsWith('http') && !/#|%23/i.test(payload)) {
+            let inner = payload;
+            try { inner = decodeURIComponent(payload); } catch { /* keep raw */ }
+            return `${happPrefix}${b64url(`${inner}#${n}`)}`;
+          }
+          return built;
+        },
         stores,
       };
     }
@@ -308,9 +324,9 @@ export function QuickConnect({ variant = 'hero', className }: QuickConnectProps)
         const timer = setTimeout(() => finish(false), 1800);
         document.addEventListener('visibilitychange', onVisibility);
         window.addEventListener('blur', onBlur);
-        window.location.href = app.buildDeepLink(subscriptionUrl, pageTitle);
+        window.location.href = app.buildDeepLink(subscriptionUrl, connectName);
       }),
-    [subscriptionUrl, pageTitle]
+    [subscriptionUrl, connectName]
   );
 
   /** Resolve true when the user leaves to the store and comes back. */
