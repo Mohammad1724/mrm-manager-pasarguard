@@ -1171,6 +1171,18 @@ else
     fail "[170] template-switch un-brick (trap + PathChanged) + smart connect + mobile detect"
 fi
 
+# ─── v1.4.6: one-tap auto install+connect flow (beginner journey) ─────────────
+if grep -qF "runAutoConnect" templates/subscription-src/src/components/quick-connect.tsx &&
+   grep -qF "cafebazaar.ir" templates/subscription-src/src/components/quick-connect.tsx &&
+   grep -qF "waitForReturn" templates/subscription-src/src/components/quick-connect.tsx; then
+    for _loc in fa en ru zh; do
+        grep -qF '"autoInstallHint"' "templates/subscription-src/src/locales/${_loc}.json" || exit 1
+    done
+    pass "[171] one-tap auto install+connect flow with store links + 4 locales" || fail "[171] one-tap auto install+connect flow with store links + 4 locales"
+else
+    fail "[171] one-tap auto install+connect flow with store links + 4 locales"
+fi
+
 if [ "$FAIL" -eq 0 ]; then
     echo -e "  ${GREEN}✔ All tests passed!${NC}"
     echo ""

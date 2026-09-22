@@ -148,7 +148,16 @@
       "android": "Android",
       "ios": "iOS",
       "desktop": "Desktop"
-    }
+    },
+    "autoDetect": "Setting things up for your device…",
+    "autoInstallTitle": "Install the app",
+    "autoInstallHint": "The install page opened; just tap Install. I will import your subscription automatically afterwards.",
+    "autoImportTitle": "Import subscription & connect",
+    "autoImportHint": "I opened the app and imported your subscription; if it does not connect by itself, just tap connect.",
+    "autoDone": "All set — you are connected!",
+    "autoManualTitle": "Auto install did not finish",
+    "autoManualHint": "Install the app from one of the buttons below, then tap Try again.",
+    "autoRetry": "Try again"
   },
   "renew": {
     "normal": "Renew",

@@ -148,7 +148,16 @@
       "android": "安卓",
       "ios": "iOS",
       "desktop": "桌面"
-    }
+    },
+    "autoDetect": "正在为您的设备自动配置…",
+    "autoInstallTitle": "安装应用",
+    "autoInstallHint": "安装页面已打开；请点击“安装”。之后我会自动导入您的订阅。",
+    "autoImportTitle": "导入订阅并连接",
+    "autoImportHint": "应用已打开并导入订阅；如果没有自动连接，只需点击连接按钮。",
+    "autoDone": "一切就绪——已连接！",
+    "autoManualTitle": "自动安装未完成",
+    "autoManualHint": "请从下面的按钮安装应用，然后点击“重试”。",
+    "autoRetry": "重试"
   },
   "renew": {
     "normal": "续费",

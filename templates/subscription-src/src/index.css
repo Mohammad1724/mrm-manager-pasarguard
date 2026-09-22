@@ -1806,6 +1806,17 @@
   background: linear-gradient(145deg, var(--treasury-emerald-deep), var(--treasury-emerald) 62%, var(--treasury-gold));
 }
 .mrm-connect-tabs { margin: 0.6rem 0 0.9rem; }
+.mrm-auto-flow { display: grid; gap: 0.7rem; padding: 0.4rem 0; }
+.mrm-auto-step { display: flex; gap: 0.65rem; align-items: flex-start; opacity: 0.55; }
+.mrm-auto-step.is-active { opacity: 1; }
+.mrm-auto-step.is-done { opacity: 0.9; }
+.mrm-auto-step.is-fail { opacity: 1; }
+.mrm-auto-dot { display: inline-flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem; border-radius: 999px; background: rgba(45, 183, 178, 0.14); color: #14ADA6; flex: none; }
+.mrm-auto-step.is-fail .mrm-auto-dot { background: rgba(214, 68, 68, 0.12); color: #d64444; }
+.mrm-auto-sub { font-size: 0.78rem; opacity: 0.75; line-height: 1.7; }
+.mrm-auto-stores { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.55rem; }
+.mrm-auto-done { display: flex; align-items: center; justify-content: center; gap: 0.5rem; color: #14ADA6; font-weight: 700; padding: 0.8rem 0; }
+.mrm-auto-fail { display: grid; gap: 0.2rem; padding: 0.2rem 0; }
 .mrm-app-grid { display: grid; gap: 0.5rem; }
 .mrm-app-row {
   display: flex;
