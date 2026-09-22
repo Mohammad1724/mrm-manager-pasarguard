@@ -1201,7 +1201,8 @@ if grep -qF 'encode_title(username or profile["store_name"])' plugin/mrm_admin_s
    grep -qF 'db_admin, sub_username = await _admin_for_token' plugin/mrm_admin_subscriptions.py &&
    grep -qF 'userInfo?.username' templates/subscription-src/src/components/quick-connect.tsx &&
    grep -qF 'buildDeepLink(subscriptionUrl, connectName)' templates/subscription-src/src/components/quick-connect.tsx &&
-   grep -qF 'b64url(`${u}#${n}`)' templates/subscription-src/src/components/quick-connect.tsx; then
+   grep -qF 'b64url(`${u}#${n}`)' templates/subscription-src/src/components/quick-connect.tsx &&
+   grep -qF 'b64Prefixes' templates/subscription-src/src/components/quick-connect.tsx; then
     pass "[173] app import profile-title and deep-link name follow the user's name" || fail "[173] app import profile-title and deep-link name follow the user's name"
 else
     fail "[173] app import profile-title and deep-link name follow the user's name"

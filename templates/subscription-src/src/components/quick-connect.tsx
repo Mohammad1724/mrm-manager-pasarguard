@@ -264,15 +264,17 @@ export function QuickConnect({ variant = 'hero', className }: QuickConnectProps)
             .replace('{b64}', b64url(u))
             .replace('{name}', encodeURIComponent(n))
             .replace('{USERNAME}', encodeURIComponent(n));
-          /* Happ ignores the deep-link URI's own fragment and labels the
-             profile from the payload URL — wrap plain happ://add links as
-             base64 of `url#name` so the account name travels with it. */
-          const happPrefix = 'happ://add/';
-          const payload = built.startsWith(happPrefix) ? built.slice(happPrefix.length) : '';
-          if (payload.startsWith('http') && !/#|%23/i.test(payload)) {
-            let inner = payload;
-            try { inner = decodeURIComponent(payload); } catch { /* keep raw */ }
-            return `${happPrefix}${b64url(`${inner}#${n}`)}`;
+          /* Happ and v2rayTun expect base64 payloads and label the profile
+             from the URL inside — wrap plain import links as base64 of
+             `url#name` so the account name travels with the link. */
+          const b64Prefixes = ['happ://add/', 'v2raytun://import/'];
+          for (const prefix of b64Prefixes) {
+            const payload = built.startsWith(prefix) ? built.slice(prefix.length) : '';
+            if (payload.startsWith('http') && !/#|%23/i.test(payload)) {
+              let inner = payload;
+              try { inner = decodeURIComponent(payload); } catch { /* keep raw */ }
+              return `${prefix}${b64url(`${inner}#${n}`)}`;
+            }
           }
           return built;
         },
