@@ -1781,20 +1781,32 @@
 }
 
 .mrm-connect-dialog {
-  /* Physical centering (left:50% + translate(-50%,-50%)) is RTL-proof and the
-     explicit width forbids shrink-to-fit: Samsung Internet overflowed the old
-     inset+auto-margins box off the left screen edge and cramped it. */
+  /* v1.4.13: geometry WITHOUT transform/translate. The Vite CSS minifier
+     folds standalone `translate:` declarations into `transform`, which
+     silently removed the `translate: none` guard and let Tailwind's
+     translate-x/y utilities shift the dialog a SECOND time (half of it hung
+     off the top-left corner on phones). inset+margin:auto centers with zero
+     transforms, and the --tw-* overrides neutralise the utilities AND the
+     zoom animation at the source — custom properties survive minification,
+     and identity values cannot shift anything even if layers stack. */
   position: fixed !important;
-  top: 50% !important;
-  left: 50% !important;
-  right: auto !important;
-  bottom: auto !important;
-  transform: translate(-50%, -50%) !important;
-  translate: none !important;
-  margin: 0 !important;
+  inset: 0 !important;
+  margin: auto !important;
   width: min(26rem, calc(100vw - 2rem)) !important;
   max-width: calc(100vw - 2rem) !important;
-  max-height: 85dvh;
+  height: fit-content !important;
+  max-height: 85vh !important;
+  max-height: 85dvh !important;
+  --tw-translate-x: 0 !important;
+  --tw-translate-y: 0 !important;
+  --tw-translate-z: 0 !important;
+  --tw-enter-scale: 1 !important;
+  --tw-enter-translate-x: 0 !important;
+  --tw-enter-translate-y: 0 !important;
+  --tw-exit-scale: 1 !important;
+  --tw-exit-translate-x: 0 !important;
+  --tw-exit-translate-y: 0 !important;
+  transform: none !important;
   overflow-x: hidden;
   overflow-y: auto;
   box-sizing: border-box;

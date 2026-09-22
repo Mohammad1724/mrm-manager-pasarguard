@@ -1165,7 +1165,7 @@ if grep -qF "PathChanged=/var/lib/pasarguard/mrm/template-request.json" manager/
    grep -qF "trap 'rm -f" plugin/mrm-template-switch.sh &&
    grep -qF "tryAutoOpen" templates/subscription-src/src/components/quick-connect.tsx &&
    grep -qF "/android/.test(userAgent)" templates/subscription-src/src/lib/osDetector.ts &&
-   grep -qF "translate: none !important" templates/subscription-src/src/index.css; then
+   grep -qF -- "--tw-translate-y: 0 !important" templates/subscription-src/src/index.css; then
     pass "[170] template-switch un-brick (trap + PathChanged) + smart connect + mobile detect" || fail "[170] template-switch un-brick (trap + PathChanged) + smart connect + mobile detect"
 else
     fail "[170] template-switch un-brick (trap + PathChanged) + smart connect + mobile detect"
@@ -1210,7 +1210,7 @@ fi
 
 # ─── v1.4.10: connect dialog viewport-safe + touch linux stays mobile ─────────
 if grep -qF 'width: min(26rem, calc(100vw - 2rem))' templates/subscription-src/src/index.css &&
-   grep -qF 'translate(-50%, -50%)' templates/subscription-src/src/index.css &&
+   grep -qF 'margin: auto !important' templates/subscription-src/src/index.css &&
    grep -qF '.mrm-app-row { flex-wrap: wrap; min-width: 0; }' templates/subscription-src/src/index.css &&
    grep -qF 'isTouchDevice && window.innerWidth <= 1024' templates/subscription-src/src/lib/osDetector.ts; then
     pass "[174] connect dialog fits mobile viewports + touch linux stays on mobile tabs" || fail "[174] connect dialog fits mobile viewports + touch linux stays on mobile tabs"
@@ -1241,6 +1241,21 @@ if grep -qF 'theme_redeploy' manager/theme.sh &&
     pass "[176] update redeploys the deployed subscription templates in place" || fail "[176] update redeploys the deployed subscription templates in place"
 else
     fail "[176] update redeploys the deployed subscription templates in place"
+fi
+
+
+# ─── v1.4.13: dialog geometry is transform-free and minifier-proof ────────
+BLK="$(grep -o 'mrm-connect-dialog{[^}]*}' templates/subscription/index.html | head -1)"
+if grep -qF 'height: fit-content !important' templates/subscription-src/src/index.css &&
+   grep -qF 'transform: none !important' templates/subscription-src/src/index.css &&
+   grep -qF -- '--tw-translate-x: 0 !important' templates/subscription-src/src/index.css &&
+   grep -qF -- '--tw-enter-scale: 1 !important' templates/subscription-src/src/index.css &&
+   [ -n "$BLK" ] &&
+   printf '%s' "$BLK" | grep -qF -- '--tw-translate-x:0' &&
+   ! printf '%s' "$BLK" | grep -qF 'translate(-50%'; then
+    pass "[177] connect dialog geometry is transform-free and survives CSS minification" || fail "[177] connect dialog geometry is transform-free and survives CSS minification"
+else
+    fail "[177] connect dialog geometry is transform-free and survives CSS minification"
 fi
 
 if [ "$FAIL" -eq 0 ]; then
