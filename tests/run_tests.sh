@@ -1183,6 +1183,18 @@ else
     fail "[171] one-tap auto install+connect flow with store links + 4 locales"
 fi
 
+# ─── v1.4.7: store official app (panel Applications) drives the one-tap button ─
+if grep -qF "officialTarget" templates/subscription-src/src/components/quick-connect.tsx &&
+   grep -qF "useApps" templates/subscription-src/src/components/quick-connect.tsx &&
+   grep -qF "import_url" templates/subscription-src/src/components/quick-connect.tsx; then
+    for _loc in fa en ru zh; do
+        grep -qF '"official"' "templates/subscription-src/src/locales/${_loc}.json" || exit 1
+    done
+    pass "[172] store official app from panel Applications drives the connect button" || fail "[172] store official app from panel Applications drives the connect button"
+else
+    fail "[172] store official app from panel Applications drives the connect button"
+fi
+
 if [ "$FAIL" -eq 0 ]; then
     echo -e "  ${GREEN}✔ All tests passed!${NC}"
     echo ""

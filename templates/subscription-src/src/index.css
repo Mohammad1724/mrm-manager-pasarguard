@@ -1817,6 +1817,7 @@
 .mrm-auto-stores { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.55rem; }
 .mrm-auto-done { display: flex; align-items: center; justify-content: center; gap: 0.5rem; color: #14ADA6; font-weight: 700; padding: 0.8rem 0; }
 .mrm-auto-fail { display: grid; gap: 0.2rem; padding: 0.2rem 0; }
+.mrm-app-badge.is-official { background: rgba(45, 183, 178, 0.18); color: #0B6E6A; }
 .mrm-app-grid { display: grid; gap: 0.5rem; }
 .mrm-app-row {
   display: flex;

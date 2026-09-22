@@ -20,6 +20,8 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { detectOS, type OperatingSystem } from '@/lib/osDetector';
+import { useApps } from '@/hooks/useUserData';
+import type { AppClient } from '@/types/user';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { cn } from '@/lib/utils';
 
@@ -144,6 +146,41 @@ export const CONNECT_APPS: ConnectAppDef[] = [
 
 const LAST_APP_KEY = 'mrm-connect-app';
 
+const REGISTRY_IDS = new Set(CONNECT_APPS.map((a) => a.id));
+const normalizeAppName = (name: string) =>
+  String(name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .trim();
+const NAME_TO_ID: Record<string, string> = {
+  v2rayng: 'v2rayng',
+  hiddify: 'hiddify',
+  v2raytun: 'v2raytun',
+  happ: 'happ',
+  v2box: 'v2box',
+  streisand: 'streisand',
+  shadowrocket: 'shadowrocket',
+  stash: 'stash',
+  foxray: 'foxray',
+};
+/** Map a panel-defined app («اپلیکیشن‌ها») onto a deep-link registry entry. */
+const matchRegistry = (name: string): ConnectAppDef | null => {
+  const key = normalizeAppName(name);
+  const id = NAME_TO_ID[key] ?? (REGISTRY_IDS.has(key) ? key : '');
+  return CONNECT_APPS.find((a) => a.id === id) ?? null;
+};
+const panelPlatformMatch = (p: string | undefined, want: PlatformKey): boolean => {
+  const v = String(p || '').toLowerCase();
+  if (want === 'android') return v.includes('android');
+  if (want === 'ios') return v.includes('ios') || v.includes('iphone') || v.includes('apple');
+  return v.includes('windows') || v.includes('mac') || v.includes('linux') || v.includes('desktop');
+};
+const panelStores = (app: AppClient, want: PlatformKey): ConnectAppDef['stores'] => {
+  const links = app.download_links || [];
+  if (!links.length) return undefined;
+  return { [want]: links.map((url) => ({ label: 'Download', url })) };
+};
+
 const osToPlatform = (os: OperatingSystem): PlatformKey => {
   if (os === 'android' || os === 'androidtv') return 'android';
   if (os === 'ios' || os === 'appletv') return 'ios';
@@ -197,6 +234,42 @@ export function QuickConnect({ variant = 'hero', className }: QuickConnectProps)
       CONNECT_APPS.find((a) => a.platforms.includes(detectedPlatform)) ??
       null,
     [detectedPlatform]
+  );
+
+  /* «اپِ رسمی فروشگاه» — the app the owner defines in the panel's
+     Applications list becomes THE target of the one-tap button, for every
+     user of that store. Memory never overrides it. */
+  const { apps: panelApps } = useApps();
+  const officialPanelApp = useMemo(() => {
+    const list = (panelApps ?? []).filter((a) => panelPlatformMatch(a?.platform, detectedPlatform));
+    return list.find((a) => a.recommended) ?? list[0] ?? null;
+  }, [panelApps, detectedPlatform]);
+
+  const officialTarget = useMemo<ConnectAppDef | null>(() => {
+    if (!officialPanelApp) return null;
+    const mapped = matchRegistry(officialPanelApp.name);
+    const importUrl = String(officialPanelApp.import_url || '').trim();
+    const stores = mapped?.stores ?? panelStores(officialPanelApp, detectedPlatform);
+    if (importUrl) {
+      return {
+        id: mapped?.id ?? 'panel',
+        name: officialPanelApp.name || mapped?.name || 'App',
+        platforms: [detectedPlatform],
+        buildDeepLink: (u: string, n: string) =>
+          importUrl
+            .replace('{url}', encodeURIComponent(u))
+            .replace('{b64}', b64url(u))
+            .replace('{name}', encodeURIComponent(n)),
+        stores,
+      };
+    }
+    return mapped ? { ...mapped, stores: stores ?? mapped.stores } : null;
+  }, [officialPanelApp, detectedPlatform]);
+
+  /** Deterministic priority: owner's official app > user's manual pick > platform default. */
+  const autoTarget = useMemo<ConnectAppDef | null>(
+    () => officialTarget ?? lastApp ?? recommendedApp,
+    [officialTarget, lastApp, recommendedApp]
   );
 
   type FlowStage = 'detect' | 'install' | 'import' | 'done' | 'fail';
@@ -318,23 +391,23 @@ export function QuickConnect({ variant = 'hero', className }: QuickConnectProps)
 
   /** One tap does everything — the saved app first, else the device's best. */
   const handleMainClick = useCallback(() => {
-    const target = lastApp ?? recommendedApp;
-    if (target) {
-      void runAutoConnect(target);
+    if (autoTarget) {
+      void runAutoConnect(autoTarget);
     } else {
       setFlowStage(null);
       setDialogOpen(true);
     }
-  }, [lastApp, recommendedApp, runAutoConnect]);
+  }, [autoTarget, runAutoConnect]);
 
   const handleCopy = useCallback(() => {
     copyToClipboard(subscriptionUrl, t('quickConnect.copiedSuccess'));
   }, [copyToClipboard, subscriptionUrl, t]);
 
-  const appsForPlatform = useMemo(
-    () => CONNECT_APPS.filter((a) => a.platforms.includes(activePlatform)),
-    [activePlatform]
-  );
+  const appsForPlatform = useMemo(() => {
+    const list = CONNECT_APPS.filter((a) => a.platforms.includes(activePlatform));
+    const officialId = officialTarget?.id;
+    return [...list].sort((a, b) => Number(b.id === officialId) - Number(a.id === officialId));
+  }, [activePlatform, officialTarget]);
 
   const platformTabs: PlatformKey[] = ['android', 'ios', 'desktop'];
 
@@ -344,8 +417,8 @@ export function QuickConnect({ variant = 'hero', className }: QuickConnectProps)
         <div className={cn('treasury-quick-split', className)}>
           <button type="button" className="treasury-quick-main" onClick={handleMainClick}>
             <Zap className="size-[18px] fill-current" />
-            {lastApp
-              ? t('quickConnect.connectWith', { app: lastApp.name })
+            {autoTarget
+              ? t('quickConnect.connectWith', { app: autoTarget.name })
               : t('quickConnect.title')}
           </button>
           <button
@@ -479,6 +552,9 @@ export function QuickConnect({ variant = 'hero', className }: QuickConnectProps)
                     <Smartphone className="size-4" />
                   </span>
                   <span className="mrm-app-name">{app.name}</span>
+                  {officialTarget && app.id === officialTarget.id && (
+                    <span className="mrm-app-badge is-official">{t('quickConnect.official')}</span>
+                  )}
                   {isRecommended && (
                     <span className="mrm-app-badge">{t('quickConnect.recommended')}</span>
                   )}
