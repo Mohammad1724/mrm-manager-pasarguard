@@ -605,6 +605,9 @@ def _has_theme_overrides(admin: Admin) -> bool:
 
 def _overlay_headers(headers: dict, admin: Admin, username: str = "") -> dict:
     result = dict(headers or {})
+    # Subscription payloads/pages must never be served stale — template and
+    # plugin updates take effect immediately after `mrm update`.
+    result["cache-control"] = "no-cache, no-store, must-revalidate"
     profile_overrides = _has_profile_overrides(admin)
     theme_overrides = _has_theme_overrides(admin)
     if not profile_overrides and not theme_overrides:
@@ -623,6 +626,7 @@ def _overlay_headers(headers: dict, admin: Admin, username: str = "") -> dict:
 
 
 def _overlay_response(response: Response, admin: Admin, username: str = "") -> Response:
+    response.headers["cache-control"] = "no-cache, no-store, must-revalidate"
     profile_overrides = _has_profile_overrides(admin)
     theme_overrides = _has_theme_overrides(admin)
     if not profile_overrides and not theme_overrides:

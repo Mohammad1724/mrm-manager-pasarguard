@@ -1218,6 +1218,18 @@ else
     fail "[174] connect dialog fits mobile viewports + touch linux stays on mobile tabs"
 fi
 
+# ─── v1.4.11: no foreign brand leftovers + versioned footer + no-cache ───────
+if ! grep -rqF 'ganj' templates/subscription-src/src &&
+   grep -qF 'Powered by' templates/subscription-src/src/components/layout/footer.tsx &&
+   grep -qF '<span className="font-semibold text-primary">MRM</span>' templates/subscription-src/src/components/layout/footer.tsx &&
+   grep -qE 'v1\.[0-9]+\.[0-9]+' templates/subscription-src/src/components/layout/footer.tsx &&
+   grep -qF '__BRAND__' templates/subscription-src/src/App.tsx &&
+   grep -qF 'no-cache, no-store, must-revalidate' plugin/mrm_admin_subscriptions.py; then
+    pass "[175] MRM-branded versioned footer, zero ganj leftovers, no-cache headers" || fail "[175] MRM-branded versioned footer, zero ganj leftovers, no-cache headers"
+else
+    fail "[175] MRM-branded versioned footer, zero ganj leftovers, no-cache headers"
+fi
+
 if [ "$FAIL" -eq 0 ]; then
     echo -e "  ${GREEN}✔ All tests passed!${NC}"
     echo ""

@@ -231,9 +231,9 @@ function App() {
 
         <header className="treasury-navigation">
           <div className="ios-container flex items-center justify-between gap-3">
-            <div className="treasury-brand" aria-label="ganj">
+            <div className="treasury-brand" aria-label="__BRAND__">
               <span className="treasury-brand-shield"><ShieldCheck className="size-[18px]" /></span>
-              <span>ganj</span>
+              <span>__BRAND__</span>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <LanguageSwitcher />
