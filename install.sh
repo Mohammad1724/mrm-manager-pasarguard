@@ -6,7 +6,7 @@ INSTALL_DIR="/opt/mrm-manager"
 # verified against checksums.txt (integrity). install.sh itself is bootstrapped
 # via the README curl command and therefore cannot self-verify.
 REPO_BASE_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard"
-REPO_REF="v1.4.11"
+REPO_REF="v1.4.12"
 MANAGER_REPO_URL="$REPO_BASE_URL/$REPO_REF"
 VERSION_REGISTRY_URL="$MANAGER_REPO_URL/versions.conf"
 CHECKSUMS_URL="$MANAGER_REPO_URL/checksums.txt"
@@ -38,7 +38,7 @@ rm -f "$VERSION_REGISTRY_FILE"
 
 # Fallback only if registry fetch failed
 if [ -z "$MRM_VERSION" ]; then
-    MRM_VERSION="1.4.11"
+    MRM_VERSION="1.4.12"
 fi
 
 echo -e "${CYAN}╔══════════════════════════════════════════════╗${NC}"
@@ -78,7 +78,7 @@ verify_download() {
 }
 
 echo -e "${BLUE}[1/4] Creating directories...${NC}"
-mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/backup" "$INSTALL_DIR/plugin"
+mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/backup" "$INSTALL_DIR/plugin" "$INSTALL_DIR/templates/subscription-classic"
 
 FILES=(
     "utils.sh" "ui.sh" "ssl.sh" "backup.sh" "domain_separator.sh"
@@ -200,6 +200,22 @@ else
     echo -e " ⚠ Skipped: index.html"
 fi
 
+if "${CURL_BASE[@]}" -o "$INSTALL_DIR/templates/subscription-classic/index.html" "$MANAGER_REPO_URL/templates/subscription-classic/index.html" 2>/dev/null; then
+    if verify_download "$INSTALL_DIR/templates/subscription-classic/index.html" "templates/subscription-classic/index.html"; then
+        echo -e " ${GREEN}✔${NC} Downloaded: classic template"
+    else
+        echo -e " ⚠ Skipped: classic template (bad checksum)"
+    fi
+else
+    echo -e " ⚠ Skipped: classic template"
+fi
+
+# Refresh the template files the panel actually serves ($DATA_DIR/templates),
+# keeping the owner's brand/news values and the active selection. Without this
+# an update only replaced /opt/mrm-manager/index.html and customers kept seeing
+# the old build forever.
+bash "$INSTALL_DIR/theme.sh" --redeploy || true
+
 rm -f /usr/local/bin/mrm
 
 # MRM-005: quoted heredoc — the fallback is evaluated at RUNTIME, not install time
@@ -207,7 +223,7 @@ cat > /usr/local/bin/mrm << 'EOF'
 #!/bin/bash
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then
     [ -r /opt/mrm-manager/versions.conf ] && source /opt/mrm-manager/versions.conf
-    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.11")}"
+    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.12")}"
     exit 0
 fi
 exec bash /opt/mrm-manager/main.sh "$@"

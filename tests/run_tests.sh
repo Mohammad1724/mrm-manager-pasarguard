@@ -1230,6 +1230,19 @@ else
     fail "[175] MRM-branded versioned footer, zero ganj leftovers, no-cache headers"
 fi
 
+# ─── v1.4.12: mrm update redeploys the deployed templates (brand/news kept) ─
+if grep -qF 'theme_redeploy' manager/theme.sh &&
+   grep -qF -- '--redeploy)' manager/theme.sh &&
+   grep -qF 'theme-settings.json' manager/theme.sh &&
+   grep -qF 'startsWith\("__"\)' manager/theme.sh &&
+   grep -qF 'https://t\.me/([A-Za-z0-9_]' manager/theme.sh &&
+   grep -qF 'subscription-classic/index.html' install.sh &&
+   grep -qF -- '--redeploy' install.sh; then
+    pass "[176] update redeploys the deployed subscription templates in place" || fail "[176] update redeploys the deployed subscription templates in place"
+else
+    fail "[176] update redeploys the deployed subscription templates in place"
+fi
+
 if [ "$FAIL" -eq 0 ]; then
     echo -e "  ${GREEN}✔ All tests passed!${NC}"
     echo ""

@@ -137,6 +137,129 @@ theme_set_template() {
     return 0
 }
 
+theme_redeploy() {
+    # Non-interactive refresh of the deployed subscription templates — run by
+    # install.sh at the end of every 'mrm update'. Replaces the deployed files
+    # with the freshly installed sources under /opt/mrm-manager while keeping
+    # the owner's brand/bot/sup/news values and the active template selection.
+    # No prompts: safe for unattended updates.
+    detect_active_panel > /dev/null 2>&1 || true
+    local D="${DATA_DIR:-}" SRC_S SRC_C DEP_S DEP_C
+    [ -n "$D" ] || return 0
+    DEP_S="$D/templates/subscription/index.html"
+    DEP_C="$D/templates/subscription-classic/index.html"
+    # Nothing deployed yet (wizard never ran) — nothing to refresh.
+    [ -s "$DEP_S" ] || { echo "• No deployed template yet — run 'mrm' → 1 to install it"; return 0; }
+    SRC_S="${MRM_SPECIAL_SRC:-/opt/mrm-manager/index.html}"
+    SRC_C="${MRM_CLASSIC_SRC:-/opt/mrm-manager/templates/subscription-classic/index.html}"
+    [ -s "$SRC_S" ] || return 0
+    mkdir -p "$D/templates/subscription-classic" 2>/dev/null || true
+    if python3 - "$SRC_S" "$SRC_C" "$DEP_S" "$DEP_C" "$D/theme-settings.json" <<'PY'
+import json, re, sys
+from pathlib import Path
+
+src_s, src_c, dep_s, dep_c, settings = (Path(p) for p in sys.argv[1:6])
+
+def clean_brand(value):
+    value = re.sub(r'\{\{.*?\}\}', ' ', value or '')
+    value = re.sub(r'\s+', ' ', value).strip()
+    return value.rstrip(' ·|•-–—:')
+
+brand = bot = sup = news = ''
+try:
+    saved = json.loads(settings.read_text(encoding='utf-8'))
+    brand = str(saved.get('brand') or '')
+    bot = str(saved.get('bot') or '')
+    sup = str(saved.get('sup') or '')
+    news = str(saved.get('news') or '')
+except Exception:
+    pass
+
+if not any((brand, bot, sup, news)):
+    # Recover the rendered values from the deployed templates (both markups).
+    old_s = dep_s.read_text(encoding='utf-8', errors='ignore') if dep_s.is_file() else ''
+    old_c = dep_c.read_text(encoding='utf-8', errors='ignore') if dep_c.is_file() else ''
+    old = old_s + '\n' + old_c
+    m = re.search(r'<title>(.*?)</title>', old, re.S | re.I)
+    if m:
+        brand = clean_brand(m.group(1).strip())
+    for pat in (
+        r'href=["\']https://t\.me/([^"\'\s]+)["\'][^>]*id=["\']renewBtn["\']',
+        r'id=["\']renewBtn["\'][^>]*href=["\']https://t\.me/([^"\'\s]+)',
+        r'href=["\']https://t\.me/([^"\'\s]+)["\'][^>]*class=["\'][^"\']*renew-btn',
+        r'href=["\']https://t\.me/([^"\'\s]+)["\'][^>]*class=["\'][^"\']*bot-link',
+    ):
+        m = re.search(pat, old, re.I)
+        if m:
+            bot = m.group(1).strip()
+            break
+    if not bot:
+        handles = [h for h in re.findall(r'https://t\.me/([A-Za-z0-9_]{3,})', old_s)]
+        uniq = list(dict.fromkeys(handles))
+        if len(uniq) == 1:
+            bot = uniq[0]
+        elif handles:
+            bot = max(set(handles), key=handles.count)
+    for pat in (
+        r'href=["\']https://t\.me/([^"\'\s]+)["\'][^>]*class=["\'][^"\']*support-btn',
+        r'class=["\'][^"\']*support-btn["\'][^>]*href=["\']https://t\.me/([^"\'\s]+)',
+        r'href=["\']https://t\.me/([^"\'\s]+)["\'][^>]*class=["\'][^"\']*btn-dark',
+    ):
+        m = re.search(pat, old, re.I)
+        if m:
+            sup = m.group(1).strip()
+            break
+    for pat in (
+        r'id=["\']announceText["\']>\s*([^<]+?)\s*<',
+        r'id=["\']nT["\']>\s*([^<]+?)\s*<',
+        r'const\s+\w+="([^"]*)";return!\w+\.startsWith\("__"\)',
+    ):
+        m = re.search(pat, old, re.S | re.I)
+        if m:
+            news = m.group(1).strip()
+            break
+
+def render(src, dst):
+    if not src.is_file():
+        return False
+    content = src.read_text(encoding='utf-8', errors='ignore')
+    content = content.replace('__BRAND__', brand).replace('__BOT__', bot)
+    content = content.replace('__SUP__', sup).replace('__NEWS__', news)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dst.with_name(dst.name + '.tmp')
+    tmp.write_text(content, encoding='utf-8')
+    try:
+        tmp.chmod(0o644)
+    except OSError:
+        pass
+    tmp.replace(dst)
+    return True
+
+render(src_s, dep_s)
+render(src_c, dep_c)
+
+# Persist the values so the next refresh never has to guess again.
+try:
+    payload = json.dumps({'brand': brand, 'bot': bot, 'sup': sup, 'news': news}, indent=2, ensure_ascii=False) + '\n'
+    tmp = settings.with_name(settings.name + '.tmp')
+    tmp.write_text(payload, encoding='utf-8')
+    try:
+        tmp.chmod(0o600)
+    except OSError:
+        pass
+    tmp.replace(settings)
+except Exception:
+    pass
+PY
+    then
+        theme_restart_panel || true
+        echo "✔ Deployed templates refreshed (brand/news kept, selection kept)"
+        return 0
+    fi
+    echo "⚠ Template refresh failed"
+    return 1
+}
+
 theme_apply_env() {
     local TPL_REL="${1:-subscription/index.html}"
     [ -f "$PANEL_ENV" ] || touch "$PANEL_ENV" 2>/dev/null || return 1
@@ -454,6 +577,23 @@ try:
             f.write(content)
         print(f'{GREEN}✔ Written: {final_path}{NC}')
 
+    # Persist the entered values for non-interactive template refreshes
+    # (theme_redeploy on every 'mrm update').
+    try:
+        import json as _json, os as _os
+        from pathlib import Path as _P
+        _d = _P(_os.environ.get('DATA_DIR') or '/var/lib/pasarguard')
+        _t = _d / 'theme-settings.json'
+        _tmp = _t.with_name(_t.name + '.tmp')
+        _tmp.write_text(_json.dumps({'brand': new_brand, 'bot': new_bot, 'sup': new_sup, 'news': new_news}, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+        try:
+            _tmp.chmod(0o600)
+        except OSError:
+            pass
+        _tmp.replace(_t)
+    except Exception:
+        pass
+
     print(f'\n{GREEN}✔ Settings saved successfully.{NC}')
 except Exception as e:
     print(f'\nError processing file: {e}')
@@ -679,6 +819,7 @@ theme_menu() {
 
 case "${1:-}" in
     --set-template)     shift; theme_set_template "$@"; exit $? ;;
+    --redeploy)         theme_redeploy; exit $? ;;
     --current-template) theme_current_template; exit 0 ;;
     --clean-brand)      shift; python3 -c 'import re,sys; v=re.sub(r"\{\{.*?\}\}"," ",sys.argv[1]); v=re.sub(r"\s+"," ",v).strip(); print(v.rstrip(" ·|•-–—:"))' "${1:-}"; exit $? ;;
 esac
