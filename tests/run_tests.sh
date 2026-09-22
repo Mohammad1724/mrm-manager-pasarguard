@@ -1208,6 +1208,16 @@ else
     fail "[173] app import profile-title and deep-link name follow the user's name"
 fi
 
+# ─── v1.4.10: connect dialog viewport-safe + touch linux stays mobile ─────────
+if grep -qF 'width: min(26rem, calc(100vw - 2rem))' templates/subscription-src/src/index.css &&
+   grep -qF 'translate(-50%, -50%)' templates/subscription-src/src/index.css &&
+   grep -qF '.mrm-app-row { flex-wrap: wrap; min-width: 0; }' templates/subscription-src/src/index.css &&
+   grep -qF 'isTouchDevice && window.innerWidth <= 1024' templates/subscription-src/src/lib/osDetector.ts; then
+    pass "[174] connect dialog fits mobile viewports + touch linux stays on mobile tabs" || fail "[174] connect dialog fits mobile viewports + touch linux stays on mobile tabs"
+else
+    fail "[174] connect dialog fits mobile viewports + touch linux stays on mobile tabs"
+fi
+
 if [ "$FAIL" -eq 0 ]; then
     echo -e "  ${GREEN}✔ All tests passed!${NC}"
     echo ""

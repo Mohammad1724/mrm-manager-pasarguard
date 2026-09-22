@@ -1781,21 +1781,28 @@
 }
 
 .mrm-connect-dialog {
-  /* Inset-centered (no translate) so RTL/mirroring browsers cannot push the
-     modal off-screen; fills up to 26rem inside 1rem viewport margins. */
-  position: fixed;
+  /* Physical centering (left:50% + translate(-50%,-50%)) is RTL-proof and the
+     explicit width forbids shrink-to-fit: Samsung Internet overflowed the old
+     inset+auto-margins box off the left screen edge and cramped it. */
+  position: fixed !important;
   top: 50% !important;
-  left: 1rem !important;
-  right: 1rem !important;
-  transform: translateY(-50%) !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: translate(-50%, -50%) !important;
   translate: none !important;
-  margin-inline: auto !important;
-  width: auto !important;
-  max-width: 26rem !important;
+  margin: 0 !important;
+  width: min(26rem, calc(100vw - 2rem)) !important;
+  max-width: calc(100vw - 2rem) !important;
   max-height: 85dvh;
+  overflow-x: hidden;
   overflow-y: auto;
   box-sizing: border-box;
 }
+.mrm-app-row { flex-wrap: wrap; min-width: 0; }
+.mrm-app-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mrm-app-badge { white-space: nowrap; }
+.mrm-connect-hint { overflow-wrap: anywhere; }
 .mrm-connect-gem {
   display: inline-grid;
   place-items: center;
@@ -1870,8 +1877,8 @@
   align-items: flex-start;
   gap: 0.4rem;
   margin-top: 0.8rem;
-  font-size: 0.7rem;
-  line-height: 1.7;
+  font-size: 0.82rem;
+  line-height: 1.75;
   color: hsl(var(--muted-foreground));
 }
 .mrm-connect-footer {

@@ -95,6 +95,11 @@ export function detectOS(): OperatingSystem {
     if (hasMobileUA || isMobileLike) {
       return 'android';
     }
+    // Desktop-site mode widens the layout viewport past 768 — a touch device
+    // this narrow is still a phone/tablet and must stay on the mobile tabs.
+    if (isTouchDevice && window.innerWidth <= 1024) {
+      return 'android';
+    }
   }
 
   // Windows detection
@@ -109,7 +114,15 @@ export function detectOS(): OperatingSystem {
 
   // Linux detection (only if not a touch device, to avoid false positives for Android)
   if (/linux/.test(userAgent) || platform.includes('linux')) {
+    if (isTouchDevice && window.innerWidth <= 1024) {
+      return 'android';
+    }
     return 'linux';
+  }
+
+  // Last resort: stripped UA (privacy browsers) on a touch phone/tablet.
+  if (isTouchDevice && window.innerWidth <= 1024) {
+    return 'android';
   }
 
   return 'unknown';
