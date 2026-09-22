@@ -1781,7 +1781,7 @@
 }
 
 .mrm-connect-dialog {
-  /* v1.4.13: geometry WITHOUT transform/translate. The Vite CSS minifier
+  /* v1.4.14: geometry WITHOUT transform/translate. The Vite CSS minifier
      folds standalone `translate:` declarations into `transform`, which
      silently removed the `translate: none` guard and let Tailwind's
      translate-x/y utilities shift the dialog a SECOND time (half of it hung

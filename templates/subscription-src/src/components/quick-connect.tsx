@@ -224,21 +224,6 @@ export function QuickConnect({ variant = 'hero', className }: QuickConnectProps)
   /* اتصال مستقیم labels imports with the USER's name (never the brand). */
   const connectName = (userInfo?.username || '').trim() || pageTitle;
 
-  const lastApp = useMemo(
-    () => CONNECT_APPS.find((a) => a.id === lastAppId) ?? null,
-    [lastAppId]
-  );
-
-  const recommendedApp = useMemo(
-    () =>
-      CONNECT_APPS.find(
-        (a) => a.platforms.includes(detectedPlatform) && a.recommended?.includes(detectedPlatform)
-      ) ??
-      CONNECT_APPS.find((a) => a.platforms.includes(detectedPlatform)) ??
-      null,
-    [detectedPlatform]
-  );
-
   /* «اپِ رسمی فروشگاه» — the app the owner defines in the panel's
      Applications list becomes THE target of the one-tap button, for every
      user of that store. Memory never overrides it. */
@@ -283,12 +268,6 @@ export function QuickConnect({ variant = 'hero', className }: QuickConnectProps)
     }
     return mapped ? { ...mapped, stores: stores ?? mapped.stores } : null;
   }, [officialPanelApp, detectedPlatform]);
-
-  /** Deterministic priority: owner's official app > user's manual pick > platform default. */
-  const autoTarget = useMemo<ConnectAppDef | null>(
-    () => officialTarget ?? lastApp ?? recommendedApp,
-    [officialTarget, lastApp, recommendedApp]
-  );
 
   type FlowStage = 'detect' | 'install' | 'import' | 'done' | 'fail';
   const [flowStage, setFlowStage] = useState<FlowStage | null>(null);
@@ -407,15 +386,12 @@ export function QuickConnect({ variant = 'hero', className }: QuickConnectProps)
     [rememberApp, runAutoConnect]
   );
 
-  /** One tap does everything — the saved app first, else the device's best. */
+  /* «اتصال مستقیم» opens the app picker — the user chooses the app by
+     hand, then the one-tap journey runs for the app they picked. */
   const handleMainClick = useCallback(() => {
-    if (autoTarget) {
-      void runAutoConnect(autoTarget);
-    } else {
-      setFlowStage(null);
-      setDialogOpen(true);
-    }
-  }, [autoTarget, runAutoConnect]);
+    setFlowStage(null);
+    setDialogOpen(true);
+  }, []);
 
   const handleCopy = useCallback(() => {
     copyToClipboard(subscriptionUrl, t('quickConnect.copiedSuccess'));
@@ -435,9 +411,7 @@ export function QuickConnect({ variant = 'hero', className }: QuickConnectProps)
         <div className={cn('treasury-quick-split', className)}>
           <button type="button" className="treasury-quick-main" onClick={handleMainClick}>
             <Zap className="size-[18px] fill-current" />
-            {autoTarget
-              ? t('quickConnect.connectWith', { app: autoTarget.name })
-              : t('quickConnect.title')}
+            {t('quickConnect.title')}
           </button>
           <button
             type="button"

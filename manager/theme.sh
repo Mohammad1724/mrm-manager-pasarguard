@@ -175,6 +175,15 @@ try:
 except Exception:
     pass
 
+def scrub(value):
+    # Never carry raw template tokens (e.g. a never-rendered '__BRAND__' left
+    # over from an unrendered deploy) — treat them as unknown so extraction
+    # and fallbacks can heal the file.
+    value = (value or '').strip()
+    return '' if re.fullmatch(r'__[A-Za-z_]+__', value) else value
+
+brand, bot, sup, news = scrub(brand), scrub(bot), scrub(sup), scrub(news)
+
 if not any((brand, bot, sup, news)):
     # Recover the rendered values from the deployed templates (both markups).
     old_s = dep_s.read_text(encoding='utf-8', errors='ignore') if dep_s.is_file() else ''
@@ -219,12 +228,16 @@ if not any((brand, bot, sup, news)):
             news = m.group(1).strip()
             break
 
+brand, bot, sup, news = scrub(brand), scrub(bot), scrub(sup), scrub(news)
+brand = brand or 'MRM'
+
 def render(src, dst):
     if not src.is_file():
         return False
     content = src.read_text(encoding='utf-8', errors='ignore')
     content = content.replace('__BRAND__', brand).replace('__BOT__', bot)
     content = content.replace('__SUP__', sup).replace('__NEWS__', news)
+    content = re.sub(r'__(?:BRAND|BOT|SUP|NEWS)__', '', content)
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_name(dst.name + '.tmp')
     tmp.write_text(content, encoding='utf-8')

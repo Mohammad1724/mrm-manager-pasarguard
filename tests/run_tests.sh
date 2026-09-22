@@ -1258,6 +1258,18 @@ else
     fail "[177] connect dialog geometry is transform-free and survives CSS minification"
 fi
 
+
+# ─── v1.4.14: connect button opens manual picker; tokens never leak ───────
+if grep -A3 'const handleMainClick' templates/subscription-src/src/components/quick-connect.tsx | grep -q 'setDialogOpen(true)' &&
+   ! grep -A3 'const handleMainClick' templates/subscription-src/src/components/quick-connect.tsx | grep -q 'runAutoConnect' &&
+   grep -qF "fullmatch(r'__[A-Za-z_]+__'" manager/theme.sh &&
+   grep -qF "brand = brand or 'MRM'" manager/theme.sh &&
+   grep -qF '__(?:BRAND|BOT|SUP|NEWS)__' manager/theme.sh; then
+    pass "[178] connect button opens the manual app picker; theme refresh never leaks raw tokens" || fail "[178] connect button opens the manual app picker; theme refresh never leaks raw tokens"
+else
+    fail "[178] connect button opens the manual app picker; theme refresh never leaks raw tokens"
+fi
+
 if [ "$FAIL" -eq 0 ]; then
     echo -e "  ${GREEN}✔ All tests passed!${NC}"
     echo ""
