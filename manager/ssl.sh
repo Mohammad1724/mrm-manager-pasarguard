@@ -1,8 +1,8 @@
 #!/bin/bash
-# MRM Manager ssl.sh v1.4.24
+# MRM Manager ssl.sh v1.4.25
 
 # ═══════════════════════════════════════════════════════════════════════════
-# SSL MANAGEMENT MODULE v1.4.24
+# SSL MANAGEMENT MODULE v1.4.25
 # ═══════════════════════════════════════════════════════════════════════════
 # Author: MRM Manager Team
 # License: GPL-3.0
@@ -49,7 +49,7 @@ readonly SSL_BACKUP_DIR="${SSL_BACKUP_DIR:-/opt/mrm-manager/ssl-backups}"
 readonly CONFIG_DIR="${CONFIG_DIR:-/opt/mrm-manager}"
 
 [ -r "$CONFIG_DIR/versions.conf" ] && source "$CONFIG_DIR/versions.conf"
-SSL_VERSION="${SSL_VERSION:-1.0.8}"
+SSL_VERSION="${SSL_VERSION:-1.0.9}"
 
 # Thresholds
 readonly EXPIRY_WARNING_DAYS=14
@@ -1332,7 +1332,8 @@ _stale_live_cleanup() {
     local domain="$1"
     local live="/etc/letsencrypt/live/$domain"
     [[ -e "$live" ]] || return 0
-    local backup="$SSL_BACKUP_DIR/stale-live-$domain-$(date +%Y%m%d-%H%M%S)"
+    local backup
+    backup="$SSL_BACKUP_DIR/stale-live-$domain-$(date +%Y%m%d-%H%M%S)"
     if ! mkdir -p "$backup" 2>/dev/null; then
         log_error "Cannot create backup dir: $backup"
         return 1
@@ -1430,7 +1431,7 @@ _renew_le_certificates() {
 
     echo -e "${YELLOW}[2/3] Renewing certificates...${NC}\n"
 
-    local renewed=0 failed=0 reissued=0 rc=0
+    local renewed=0 failed=0 rc=0
     local tmp_out auth renew_name san_covered
     local reissue_email=""
     local recovery=0 bconf bbackup
@@ -2359,7 +2360,7 @@ _test_all_connections() {
         
         echo -ne "${YELLOW}[$name]${NC} $host:$port ... "
         
-        if ssh -o ConnectTimeout=5 -o BatchMode=yes -p "$port" "$user@$host" "exit" &>/dev/null; then
+        if ssh -n -o ConnectTimeout=5 -o BatchMode=yes -p "$port" "$user@$host" "exit" &>/dev/null; then
             echo -e "${GREEN}✔${NC}"
             ((success++))
         else
@@ -2516,7 +2517,8 @@ backup_certificates() {
     init_logging
     detect_active_panel > /dev/null
     
-    local backup_name="ssl-backup-$(date +%Y%m%d-%H%M%S)"
+    local backup_name
+    backup_name="ssl-backup-$(date +%Y%m%d-%H%M%S)"
     local backup_path="$SSL_BACKUP_DIR/$backup_name"
     
     mkdir -p "$backup_path" || { ui_error "Cannot create backup directory!"; pause; return; }
@@ -2636,6 +2638,7 @@ WRAP_EOF
     chmod 700 "$wrapper"
 
     # Cron entry (replaces the legacy deploy-hook approach)
+    mkdir -p "$(dirname "$cron_file")" 2>/dev/null
     cat > "$cron_file" << EOF
 # SSL Auto-Renewal - MRM Manager
 SHELL=/bin/bash
@@ -2729,8 +2732,8 @@ view_ssl_logs() {
             pause
             ;;
         3) 
-            > "$SSL_LOG_FILE" 2>/dev/null
-            > "$CERTBOT_DEBUG_LOG" 2>/dev/null
+            : > "$SSL_LOG_FILE" 2>/dev/null
+            : > "$CERTBOT_DEBUG_LOG" 2>/dev/null
             ui_success "Cleared."
             pause
             ;;

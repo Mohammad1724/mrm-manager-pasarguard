@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager v1.4.24
+# MRM Manager v1.4.25
 
 if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
 if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manager/safe_ops.sh ]; then source /opt/mrm-manager/safe_ops.sh; fi
@@ -98,7 +98,8 @@ ensure_le_cert() {
     fi
 
     if declare -f _renewal_profile_broken >/dev/null 2>&1 && _renewal_profile_broken "$dom"; then
-        local bb="${SSL_BACKUP_DIR:-/opt/mrm-manager/ssl-backups}/broken-conf-$dom-$(date +%Y%m%d-%H%M%S)"
+        local bb
+        bb="${SSL_BACKUP_DIR:-/opt/mrm-manager/ssl-backups}/broken-conf-$dom-$(date +%Y%m%d-%H%M%S)"
         mkdir -p "$bb" 2>/dev/null && cp -a "/etc/letsencrypt/renewal/$dom.conf" "$bb/" 2>/dev/null
         rm -f "/etc/letsencrypt/renewal/$dom.conf" 2>/dev/null
         echo -e "${YELLOW}↳ broken renewal profile backed up: $bb${NC}"
@@ -132,17 +133,19 @@ setup_domain_separation() {
     echo -e "${CYAN}=============================================${NC}"
     echo ""
 
-    declare -f init_logging >/dev/null 2>&1 && init_logging || true
+    if declare -f init_logging >/dev/null 2>&1; then
+        init_logging || true
+    fi
 
     install_requirements
 
     echo ""
 
-    read -p "1. Admin Domain (e.g., admin.site.com): " ADMIN_DOM
+    read -r -p "1. Admin Domain (e.g., admin.site.com): " ADMIN_DOM
     if [ -z "$ADMIN_DOM" ]; then echo -e "${RED}Error: Admin Domain is required!${NC}"; pause; return; fi
     if ! validate_domain_name "$ADMIN_DOM"; then echo -e "${RED}Error: Admin Domain format is invalid!${NC}"; pause; return; fi
 
-    read -p "2. Sub Domain (e.g., sub.site.com): " SUB_DOM
+    read -r -p "2. Sub Domain (e.g., sub.site.com): " SUB_DOM
     if [ -z "$SUB_DOM" ]; then echo -e "${RED}Error: Sub Domain is required!${NC}"; pause; return; fi
     if ! validate_domain_name "$SUB_DOM"; then echo -e "${RED}Error: Sub Domain format is invalid!${NC}"; pause; return; fi
 
@@ -151,7 +154,7 @@ setup_domain_separation() {
         pause; return
     fi
 
-    read -p "3. Port to use (default: 2096): " PORT
+    read -r -p "3. Port to use (default: 2096): " PORT
     [ -z "$PORT" ] && PORT="2096"
     if ! validate_port_number "$PORT"; then
         echo -e "${RED}Error: Port must be a number between 1 and 65535!${NC}"
@@ -165,7 +168,7 @@ setup_domain_separation() {
     local PANEL_PORT_DEF
     PANEL_PORT_DEF="$(grep -oP '^\s*UVICORN_PORT\s*=\s*\K[0-9]+' "$PANEL_ENV" 2>/dev/null | head -1)" || true
     [ -z "$PANEL_PORT_DEF" ] && PANEL_PORT_DEF="8000"
-    read -p "4. Current Panel Port (default: $PANEL_PORT_DEF): " PANEL_PORT
+    read -r -p "4. Current Panel Port (default: $PANEL_PORT_DEF): " PANEL_PORT
     [ -z "$PANEL_PORT" ] && PANEL_PORT="$PANEL_PORT_DEF"
     if ! validate_port_number "$PANEL_PORT"; then
         echo -e "${RED}Error: Panel Port must be a number between 1 and 65535!${NC}"
@@ -185,7 +188,7 @@ setup_domain_separation() {
     echo -e "Port:  ${CYAN}$PORT${NC}"
     echo -e "Panel: ${CYAN}$PANEL_PORT${NC}"
     echo -e "${BLUE}-------------------------------------${NC}"
-    read -p "Is this correct? (y/n): " CONFIRM
+    read -r -p "Is this correct? (y/n): " CONFIRM
     if [ "$CONFIRM" != "y" ]; then echo "Cancelled."; pause; return; fi
 
     echo ""
@@ -193,7 +196,7 @@ setup_domain_separation() {
     local CB_EMAIL
     CB_EMAIL=$(grep -h '^[[:space:]]*email[[:space:]]*=' /etc/letsencrypt/renewal/*.conf 2>/dev/null | head -1 | cut -d'=' -f2 | tr -d ' ')
     if [ -z "$CB_EMAIL" ]; then
-        read -p "Let's Encrypt email (default: admin@$ADMIN_DOM): " CB_EMAIL
+        read -r -p "Let's Encrypt email (default: admin@$ADMIN_DOM): " CB_EMAIL
         [ -z "$CB_EMAIL" ] && CB_EMAIL="admin@$ADMIN_DOM"
     fi
 
@@ -400,7 +403,7 @@ domain_menu() {
         echo "3) Check Nginx Status"
         echo "4) Edit Nginx Config Manually"
         echo "5) Back"
-        read -p "Select: " OPT
+        read -r -p "Select: " OPT
         case $OPT in
             1) setup_domain_separation ;;
             2)
