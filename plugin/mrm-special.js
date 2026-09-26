@@ -513,11 +513,11 @@
     try { cachedUpdate = await api(`/api/mrm/update-status${refresh ? '?refresh=true' : ''}`); renderUpdateNotice(); return cachedUpdate; } catch (_) { return cachedUpdate; }
   }
   function updateSection() {
-    if (!isOwner) return '';
-    if (!cachedUpdate) return `<section class="z-card"><div class="z-card-note">در حال بررسی بروزرسانی MRM…</div></section>`;
+    if (!isOwner || !cachedUpdate) return '';
     const status = cachedUpdate.status || 'idle', available = cachedUpdate.update_available === true, busy = status === 'queued' || status === 'running';
-    const stateText = busy ? 'بروزرسانی در حال اجراست…' : status === 'failed' ? `خطا: ${escapeHtml(cachedUpdate.message || 'Update failed')}` : available ? 'نسخه جدید آماده نصب است.' : 'MRM به‌روز است.';
-    return `<section class="z-card z-update-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.gem}</span>بروزرسانی MRM</h3><div class="z-card-note">بروزرسانی فقط توسط Owner انجام می‌شود و روی Host اجرا می‌شود.</div></div><span class="z-native">OWNER ONLY</span></div><div class="z-update-row"><div><div class="z-status ${status === 'failed' ? 'err' : (available || busy ? '' : 'ok')}">${stateText}</div><div class="z-update-sha">installed ${shortSha(cachedUpdate.installed_sha)} · latest ${shortSha(cachedUpdate.latest_sha)}</div></div><button type="button" id="z-update-now" class="z-update-btn" ${(!available || busy) ? 'disabled' : ''}>${busy ? 'Updating…' : available ? 'Update now' : 'Up to date'}</button></div></section>`;
+    if (!available && !busy && status !== 'failed') return '';
+    const stateText = busy ? 'بروزرسانی در حال اجراست…' : status === 'failed' ? `خطا: ${escapeHtml(cachedUpdate.message || 'Update failed')}` : 'نسخه جدید آماده نصب است.';
+    return `<section class="z-card z-update-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.gem}</span>بروزرسانی MRM</h3><div class="z-card-note">بروزرسانی فقط توسط Owner انجام می‌شود و روی Host اجرا می‌شود.</div></div><span class="z-native">OWNER ONLY</span></div><div class="z-update-row"><div><div class="z-status ${status === 'failed' ? 'err' : (available || busy ? '' : 'ok')}">${stateText}</div><div class="z-update-sha">installed ${shortSha(cachedUpdate.installed_sha)} · latest ${shortSha(cachedUpdate.latest_sha)}</div></div><button type="button" id="z-update-now" class="z-update-btn" ${(!available || busy) ? 'disabled' : ''}>${busy ? 'Updating…' : 'Update now'}</button></div></section>`;
   }
   function stopUpdatePolling() { if (updatePollTimer) clearInterval(updatePollTimer); updatePollTimer = null; }
   function startUpdatePolling() {
@@ -535,10 +535,10 @@
     }
     const active = (cachedTemplate && cachedTemplate.active) || 'special';
     const tstat = (cachedTemplate && cachedTemplate.message) ? escapeHtml(cachedTemplate.message) : '';
-    return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.palette}</span>قالب صفحه اشتراک</h3><div class="z-card-note">هر دو قالب MRM نصب‌اند؛ فقط یکی نمایش داده می‌شود. بعد از «اعمال» پنل چند لحظه ری‌استارت می‌شود.</div></div><span class="z-native">TEMPLATE</span></div>
+    return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.palette}</span>قالب صفحه اشتراک</h3><div class="z-card-note">قالب مورد نظر را انتخاب و دکمه «اعمال قالب» را بزنید.</div></div><span class="z-native">TEMPLATE</span></div>
       <div class="z-grid">
-        <label class="z-toggle is-special"><div><div class="z-toggle-title">نسخه قدیمی تم</div><div class="z-toggle-sub">همان قالب قدیمی خودمان با دکمه «اتصال مستقیم»</div></div><input type="radio" name="z-template" value="classic" ${active === 'classic' ? 'checked' : ''}></label>
-        <label class="z-toggle is-special"><div><div class="z-toggle-title">MRM Special</div><div class="z-toggle-sub">قالب جدید با ظاهر زمرد و طلایی + همه قابلیت‌های ویژه</div></div><input type="radio" name="z-template" value="special" ${active === 'special' ? 'checked' : ''}></label>
+        <label class="z-toggle is-special" style="cursor:pointer"><div><div class="z-toggle-title">قالب کلاسیک (MRM Classic)</div><div class="z-toggle-sub">قالب سبک، سریع و اصیل با دکمه اتصال مستقیم</div></div><input type="radio" name="z-template" value="classic" ${active === 'classic' ? 'checked' : ''}></label>
+        <label class="z-toggle is-special" style="cursor:pointer"><div><div class="z-toggle-title">قالب ویژه (MRM Special)</div><div class="z-toggle-sub">قالب مدرن شیشه‌ای با استودیوی تم و امکانات کامل</div></div><input type="radio" name="z-template" value="special" ${active === 'special' ? 'checked' : ''}></label>
       </div>
       <div class="z-field"><button class="z-save" id="z-tpl-apply">اعمال قالب</button> <span class="z-help" id="z-tpl-status">${tstat}</span></div>
     </section>`;
@@ -993,7 +993,7 @@
     const roleBadge = isOwner ? '<span class="z-role">OWNER</span>' : '<span class="z-role">RESELLER</span>';
 
     const html = `
-      <section class="z-hero"><div class="z-hero-row"><div class="z-brand"><div class="z-logo">${icons.gem}</div><div><div class="z-title-row"><h2 class="z-title">MRM Template</h2><span class="z-special">SPECIAL</span>${roleBadge}</div><div class="z-subtitle">${subtitle}</div></div></div><span class="z-version">v${VERSION}</span><button type="button" class="z-debug-btn" id="z-debug-open">تشخیص نقش</button></div></section>
+      <section class="z-hero"><div class="z-hero-row"><div class="z-brand"><div class="z-logo">${icons.gem}</div><div><div class="z-title-row"><h2 class="z-title">MRM Template</h2><span class="z-special">SPECIAL</span>${roleBadge}<span class="z-version">v${VERSION}</span></div><div class="z-subtitle">${subtitle}</div></div></div><button type="button" class="z-debug-btn" id="z-debug-open" style="display:none" aria-hidden="true">تشخیص نقش</button></div></section>
       <div class="z-content">
         ${updateSection()}
         ${isOwner ? `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.sliders}</span>کنترل ویژه MRM</h3><div class="z-card-note">خاموش = صفحه اشتراک بدون هیچ دستکاری MRM (حالت خام پاسارگارد)</div></div><span class="z-native">MASTER</span></div><div class="z-grid"><div class="z-toggle is-special"><div><div class="z-toggle-title">MRM Special فعال</div><div class="z-toggle-sub">روشن/خاموش کلیِ همه قابلیت‌های ویژه صفحه اشتراک برای همه کاربران</div></div><input id="z-enabled" type="checkbox" ${cfg.enabled ? 'checked' : ''}></div></div></section>` : `<section class="z-card"><div class="z-card-note">کلید روشن/خاموش MRM Special در دست Owner اصلی است.</div></section>`}

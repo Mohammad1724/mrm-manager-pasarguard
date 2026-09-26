@@ -4,6 +4,12 @@ set -euo pipefail
 MRM_ROOT="${MRM_ROOT:-/opt/mrm-manager}"
 PASARGUARD_ROOT="${PASARGUARD_ROOT:-/opt/pasarguard}"
 SUB_TEMPLATE="${SUB_TEMPLATE:-/var/lib/pasarguard/templates/subscription/index.html}"
+if [[ -f "/var/lib/pasarguard/mrm/template-status.json" ]]; then
+  _act="$(python3 -c "import json; print(json.load(open('/var/lib/pasarguard/mrm/template-status.json')).get('active') or '')" 2>/dev/null || true)"
+  if [[ "${_act}" == "classic" && -s "/var/lib/pasarguard/templates/subscription-classic/index.html" ]]; then
+    SUB_TEMPLATE="/var/lib/pasarguard/templates/subscription-classic/index.html"
+  fi
+fi
 ADMIN_JS="${MRM_ROOT}/plugin/mrm-special.js"
 RUNTIME_JS="${MRM_ROOT}/plugin/mrm-runtime.js"
 BACKEND_PY="${MRM_ROOT}/plugin/mrm_admin_subscriptions.py"
@@ -261,7 +267,7 @@ activate_live_docker_subscription() {
   live_template="$(find_container_subscription_template "${cid}" || true)"
   [[ -n "${live_template}" ]] || return 1
   docker cp "${SUB_TEMPLATE}" "${cid}:${live_template}" >/dev/null
-  docker exec "${cid}" grep -q "${MARKER_RUNTIME}" "${live_template}" >/dev/null 2>&1 || return 1
+  docker exec "${cid}" test -s "${live_template}" >/dev/null 2>&1 || return 1
   log "subscription UI activated live inside Docker service ${service} (${live_template}); no restart/recreate used"
 }
 

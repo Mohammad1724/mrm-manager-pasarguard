@@ -88,8 +88,8 @@ PY
 
 theme_template_display_name() {
     case "$1" in
-        classic) echo "نسخه قدیمی تم" ;;
-        special) echo "MRM Special" ;;
+        classic) echo "MRM Classic (قالب کلاسیک)" ;;
+        special) echo "MRM Special (قالب ویژه)" ;;
         *) echo "—" ;;
     esac
 }
@@ -121,16 +121,56 @@ theme_set_template() {
         *) echo "unknown template '$key' (use: classic | special)"; return 1 ;;
     esac
     detect_active_panel > /dev/null
-    if [ ! -s "$DATA_DIR/templates/$rel" ]; then
+
+    local target_src="$DATA_DIR/templates/$rel"
+    if [ ! -s "$target_src" ] && [ "$key" = "special" ] && [ -s "$DATA_DIR/templates/subscription-special/index.html" ]; then
+        target_src="$DATA_DIR/templates/subscription-special/index.html"
+    fi
+
+    if [ ! -s "$target_src" ]; then
         theme_write_template_status failed "$key" "Template file missing: templates/$rel"
-        echo "Template file missing: $DATA_DIR/templates/$rel"
+        echo "Template file missing: $target_src"
         return 1
     fi
+
     theme_write_template_status running "$key" "Switching subscription template to $key"
+
+    mkdir -p "$DATA_DIR/templates/subscription" "$DATA_DIR/templates/subscription-classic" "$DATA_DIR/templates/subscription-special" 2>/dev/null || true
+
+    # Synchronize template files: ensures active template is both in subscription/index.html
+    # and properly preserved in its dedicated source folder.
+    if [ "$key" = "classic" ]; then
+        if [ -s "$DATA_DIR/templates/subscription/index.html" ] && [ ! -s "$DATA_DIR/templates/subscription-special/index.html" ]; then
+            cp -f "$DATA_DIR/templates/subscription/index.html" "$DATA_DIR/templates/subscription-special/index.html" 2>/dev/null || true
+        fi
+        cp -f "$target_src" "$DATA_DIR/templates/subscription/index.html" 2>/dev/null || true
+    elif [ "$key" = "special" ]; then
+        cp -f "$target_src" "$DATA_DIR/templates/subscription-special/index.html" 2>/dev/null || true
+        cp -f "$target_src" "$DATA_DIR/templates/subscription/index.html" 2>/dev/null || true
+    fi
+
     if ! theme_apply_env "$rel"; then
         theme_write_template_status failed "$key" "Failed to update panel environment"
         return 1
     fi
+
+    # Hot-inject into running Docker container for immediate serving
+    if command -v docker >/dev/null 2>&1; then
+        for cid in $(docker ps -q 2>/dev/null); do
+            local img
+            img=$(docker inspect -f "{{.Config.Image}}" "$cid" 2>/dev/null || true)
+            case "$img" in
+                *pasarguard/panel*)
+                    for c_dest in /code/app/templates/subscription/index.html /app/app/templates/subscription/index.html /opt/pasarguard/app/templates/subscription/index.html; do
+                        if docker exec "$cid" test -f "$c_dest" >/dev/null 2>&1; then
+                            docker cp "$DATA_DIR/templates/subscription/index.html" "$cid:$c_dest" >/dev/null 2>&1 || true
+                        fi
+                    done
+                    ;;
+            esac
+        done
+    fi
+
     theme_restart_panel || true
     theme_write_template_status success "$key" "Template switched to $key"
     echo "✔ Active template: $(theme_template_display_name "$key") ($rel)"
@@ -265,6 +305,11 @@ except Exception:
     pass
 PY
     then
+        local active_tpl
+        active_tpl="$(theme_current_template)"
+        if [ "$active_tpl" = "classic" ] && [ -s "$D/templates/subscription-classic/index.html" ]; then
+            cp -f "$D/templates/subscription-classic/index.html" "$D/templates/subscription/index.html" 2>/dev/null || true
+        fi
         theme_restart_panel || true
         echo "✔ Deployed templates refreshed (brand/news kept, selection kept)"
         return 0
@@ -320,6 +365,7 @@ theme_invalid_option() {
 # 1. INSTALL / UPDATE
 # ==========================================
 install_theme_wizard() {
+    local TARGET="${1:-both}"
     local TEMPLATE_FILE
     local TEMPLATE_DIR
     local TMP_DIR
@@ -335,7 +381,13 @@ install_theme_wizard() {
 
     clear
     echo -e "${CYAN}=============================================${NC}"
-    echo -e "${YELLOW}      THEME INSTALLATION WIZARD              ${NC}"
+    if [ "$TARGET" = "classic" ]; then
+        echo -e "${YELLOW}   INSTALL / UPDATE MRM CLASSIC (قالب کلاسیک)   ${NC}"
+    elif [ "$TARGET" = "special" ]; then
+        echo -e "${YELLOW}   INSTALL / UPDATE MRM SPECIAL (قالب ویژه)     ${NC}"
+    else
+        echo -e "${YELLOW}      THEME INSTALLATION WIZARD              ${NC}"
+    fi
     echo -e "${CYAN}=============================================${NC}"
 
     # ✅ تشخیص مجدد پنل برای اطمینان
@@ -382,7 +434,7 @@ install_theme_wizard() {
     mkdir -p "$TEMPLATE_DIR" "$(dirname "$CLASSIC_FILE")"
 
     echo -e "${BLUE}Template Path: $TEMPLATE_FILE${NC}"
-    echo -e "${BLUE}Old template:   $CLASSIC_FILE${NC}"
+    echo -e "${BLUE}MRM Classic:    $CLASSIC_FILE${NC}"
 
     # 1. Backup old file
     if [ -s "$TEMPLATE_FILE" ]; then
@@ -433,14 +485,14 @@ install_theme_wizard() {
     CLASSIC_LOCAL="$(theme_get_local_classic_template 2>/dev/null || true)"
     if [ -n "$CLASSIC_LOCAL" ]; then
         cp "$CLASSIC_LOCAL" "$CLASSIC_DL"
-        echo -e "${GREEN}✔ Found local old-template source. Using it.${NC}"
+        echo -e "${GREEN}✔ Found local MRM Classic source. Using it.${NC}"
     else
-        echo -e "${BLUE}Downloading old template...${NC}"
+        echo -e "${BLUE}Downloading MRM Classic template...${NC}"
         echo -e "${BLUE}URL: $THEME_CLASSIC_HTML_URL${NC}"
         if curl -sL -f -o "$CLASSIC_DL" "$THEME_CLASSIC_HTML_URL" 2>/dev/null && ! grep -q "404: Not Found" "$CLASSIC_DL" 2>/dev/null; then
-            echo -e "${GREEN}✔ Old template downloaded.${NC}"
+            echo -e "${GREEN}✔ MRM Classic template downloaded.${NC}"
         else
-            echo -e "${YELLOW}⚠ Old template download failed — continuing with MRM Special only.${NC}"
+            echo -e "${YELLOW}⚠ MRM Classic download failed — continuing with MRM Special only.${NC}"
             rm -f "$CLASSIC_DL"
         fi
     fi
@@ -466,11 +518,20 @@ GREEN = '\033[0;32m'
 NC = '\033[0m'
 
 old_path = os.environ.get('OLD_FILE')
-pairs = [(os.environ.get('NEW_FILE'), os.environ.get('FINAL_FILE'))]
+pairs = []
+new_file = os.environ.get('NEW_FILE')
+final_file = os.environ.get('FINAL_FILE')
+if new_file and final_file and os.path.isfile(new_file):
+    pairs.append((new_file, final_file))
+
 classic_new = os.environ.get('CLASSIC_NEW_FILE')
 classic_final = os.environ.get('CLASSIC_FINAL_FILE')
-if classic_new and classic_final and os.path.exists(classic_new):
+if classic_new and classic_final and os.path.isfile(classic_new):
     pairs.append((classic_new, classic_final))
+
+if not pairs:
+    print('No template source files found to install.')
+    sys.exit(1)
 
 defaults = {
     'brand': 'FarsNetVIP',
@@ -618,8 +679,12 @@ PYEOF
     rm -f "$PY_SCRIPT"
 
     if [ $PY_EXIT_CODE -eq 0 ]; then
-        if [ ! -s "$TEMPLATE_FILE" ]; then
-            echo -e "${RED}✘ Final file is empty!${NC}"
+        if [ "$TARGET" = "classic" ] && [ ! -s "$CLASSIC_FILE" ]; then
+            echo -e "${RED}✘ MRM Classic file is empty!${NC}"
+            rm -rf "$TMP_DIR"
+            pause; return
+        elif [ "$TARGET" != "classic" ] && [ ! -s "$TEMPLATE_FILE" ]; then
+            echo -e "${RED}✘ Template file is empty!${NC}"
             rm -rf "$TMP_DIR"
             pause; return
         fi
@@ -627,15 +692,25 @@ PYEOF
         echo ""
         echo -e "${CYAN}=== Final Configuration ===${NC}"
         echo -e "MRM Special  : $TEMPLATE_FILE ($(stat -c%s "$TEMPLATE_FILE" 2>/dev/null) bytes)"
-        echo -e "Old template : $CLASSIC_FILE ($(stat -c%s "$CLASSIC_FILE" 2>/dev/null || echo 0) bytes)"
+        echo -e "MRM Classic  : $CLASSIC_FILE ($(stat -c%s "$CLASSIC_FILE" 2>/dev/null || echo 0) bytes)"
         echo ""
 
-        echo -e "${BLUE}Activating MRM Special template + restarting panel...${NC}"
-        if theme_set_template "special"; then
-            echo -e "${GREEN}✔ Template installed & panel restarted.${NC}"
-            echo -e "${GREEN}  (select «نسخه قدیمی تم» or «MRM Special» in panel → Settings → MRM)${NC}"
+        local active_choice="special"
+        if [ "$TARGET" = "classic" ]; then
+            active_choice="classic"
+        elif [ "$TARGET" = "special" ]; then
+            active_choice="special"
         else
-            echo -e "${YELLOW}⚠ Templates installed, but activation failed. Use menu option 2.${NC}"
+            active_choice="$(theme_current_template)"
+            [ "$active_choice" = "none" ] && active_choice="special"
+        fi
+
+        echo -e "${BLUE}Activating $(theme_template_display_name "$active_choice") + restarting panel...${NC}"
+        if theme_set_template "$active_choice"; then
+            echo -e "${GREEN}✔ Template installed & panel restarted.${NC}"
+            echo -e "${GREEN}  (Switch anytime in panel → Settings → MRM)${NC}"
+        else
+            echo -e "${YELLOW}⚠ Template installed, but activation failed.${NC}"
         fi
         rm -rf "$TMP_DIR"
     else
@@ -752,15 +827,15 @@ theme_templates_status() {
     sp="$DATA_DIR/templates/subscription/index.html"
     cl="$DATA_DIR/templates/subscription-classic/index.html"
     echo -e "Active template : ${CYAN}${active_name}${NC}"
-    if [ -s "$sp" ]; then
+    if [ -s "$sp" ] || [ -s "$DATA_DIR/templates/subscription-special/index.html" ]; then
         echo -e "MRM Special     : ${GREEN}●${NC} Installed"
     else
         echo -e "MRM Special     : ${RED}○${NC} Not installed"
     fi
     if [ -s "$cl" ]; then
-        echo -e "Old template    : ${GREEN}●${NC} Installed"
+        echo -e "MRM Classic     : ${GREEN}●${NC} Installed"
     else
-        echo -e "Old template    : ${RED}○${NC} Not installed"
+        echo -e "MRM Classic     : ${RED}○${NC} Not installed"
     fi
 }
 
@@ -812,18 +887,20 @@ theme_menu() {
         theme_templates_status
         theme_conflicts_label
         echo ""
-        echo "1) 📦 Install / Update Template"
-        echo "2) 🔛 Template: ON / OFF"
-        echo "3) ◆ MRM Special manager"
-        echo "4) 🗑️ Uninstall Template"
+        echo "1) 📦 Install / Update MRM Classic (قالب کلاسیک)"
+        echo "2) ✨ Install / Update MRM Special (قالب ویژه)"
+        echo "3) 🔛 Template: ON / OFF"
+        echo "4) ◆ MRM Special manager"
+        echo "5) 🗑️ Uninstall Template"
         echo "0) Back"
         echo -e "${BLUE}===========================================${NC}"
         read -p "Select: " T_OPT
         case $T_OPT in
-            1) install_theme_wizard ;;
-            2) theme_toggle ;;
-            3) bash /opt/mrm-manager/special.sh || echo "MRM Special could not be started" ;;
-            4) uninstall_theme ;;
+            1) install_theme_wizard "classic" ;;
+            2) install_theme_wizard "special" ;;
+            3) theme_toggle ;;
+            4) bash /opt/mrm-manager/special.sh || echo "MRM Special could not be started" ;;
+            5) uninstall_theme ;;
             0) return ;;
             *) theme_invalid_option ;;
         esac

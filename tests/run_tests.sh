@@ -1038,25 +1038,24 @@ else
     fail "mrm-integrator optimized guard units missing"
 fi
 
-# ─── v1.3.1: user-facing naming — «نسخه قدیمی تم» / «MRM Special» ─────────────
+# ─── v1.4.16: user-facing naming — «MRM Classic (قالب کلاسیک)» / «MRM Special (قالب ویژه)» ───
 
-if grep -q 'نسخه قدیمی تم' "$PROJECT_DIR/plugin/mrm-special.js" && \
+if grep -q 'MRM Classic' "$PROJECT_DIR/plugin/mrm-special.js" && \
    grep -q 'MRM Special' "$PROJECT_DIR/plugin/mrm-special.js" && \
-   grep -q 'Old template' "$PROJECT_DIR/manager/theme.sh" && \
-   ! grep -q 'Zomorod-style' "$PROJECT_DIR/manager/theme.sh" && \
-   ! grep -q 'Classic MRM' "$PROJECT_DIR/manager/theme.sh" && \
-   ! grep -q 'زمرد ویژه' "$PROJECT_DIR/plugin/mrm-special.js"; then
-    pass "template picker uses «نسخه قدیمی تم» / «MRM Special» naming"
+   grep -q 'MRM Classic' "$PROJECT_DIR/manager/theme.sh" && \
+   ! grep -q 'نسخه قدیمی تم' "$PROJECT_DIR/plugin/mrm-special.js" && \
+   ! grep -q 'Old template' "$PROJECT_DIR/manager/theme.sh" && \
+   ! grep -q 'قالب جدید' "$PROJECT_DIR/plugin/mrm-special.js"; then
+    pass "template picker uses «MRM Classic (قالب کلاسیک)» / «MRM Special (قالب ویژه)» naming"
 else
-    fail "template naming not applied (classic/zomorod labels still visible)"
+    fail "template naming not applied (old/new labels still present)"
 fi
 
-if grep -q 'Install / Update Template' "$PROJECT_DIR/manager/theme.sh" && \
-   ! grep -q 'theme_choose_template' "$PROJECT_DIR/manager/theme.sh" && \
-   grep -q 'Choose the active one (and ON/OFF) in panel' "$PROJECT_DIR/manager/theme.sh"; then
-    pass "option 1 is plain install; template selection lives in the panel only"
+if grep -q 'Install / Update MRM Classic' "$PROJECT_DIR/manager/theme.sh" && \
+   grep -q 'Install / Update MRM Special' "$PROJECT_DIR/manager/theme.sh"; then
+    pass "menu provides dedicated install/update options for MRM Classic and MRM Special"
 else
-    fail "menu still shows template choice in CLI or names templates in option 1"
+    fail "menu missing dedicated template install options"
 fi
 
 # ─── Summary ─────────────────────────────────────────────────────────────────
