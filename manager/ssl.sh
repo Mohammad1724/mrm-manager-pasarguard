@@ -1,8 +1,8 @@
 #!/bin/bash
-# MRM Manager ssl.sh v1.4.23
+# MRM Manager ssl.sh v1.4.24
 
 # ═══════════════════════════════════════════════════════════════════════════
-# SSL MANAGEMENT MODULE v1.4.23
+# SSL MANAGEMENT MODULE v1.4.24
 # ═══════════════════════════════════════════════════════════════════════════
 # Author: MRM Manager Team
 # License: GPL-3.0
@@ -49,7 +49,7 @@ readonly SSL_BACKUP_DIR="${SSL_BACKUP_DIR:-/opt/mrm-manager/ssl-backups}"
 readonly CONFIG_DIR="${CONFIG_DIR:-/opt/mrm-manager}"
 
 [ -r "$CONFIG_DIR/versions.conf" ] && source "$CONFIG_DIR/versions.conf"
-SSL_VERSION="${SSL_VERSION:-1.0.7}"
+SSL_VERSION="${SSL_VERSION:-1.0.8}"
 
 # Thresholds
 readonly EXPIRY_WARNING_DAYS=14
@@ -885,6 +885,28 @@ get_status_color() {
 
 # Get all certificates with their info
 # Output format: source|domain|cert_path|days|status
+# MRM-044: domain of the certificate referenced by a .env variable
+# (UVICORN_SSL_CERTFILE for the panel, SSL_CERT_FILE for the node).
+# Handles every layout: LE live dir, per-domain subdir, or the official
+# flat <domain>.cer naming from the docs. Prints the domain; rc 1 unknown.
+_env_cert_domain() {
+    local env_file="$1" var_name="$2"
+    [[ -f "$env_file" ]] || return 1
+    local path
+    path=$(grep -oE "^[[:space:]]*${var_name}[[:space:]]*=[[:space:]]*\"?[^\"]+" "$env_file" 2>/dev/null | head -1 | sed -E "s/^[^=]*=[[:space:]]*\"?//")
+    [[ -n "$path" ]] || return 1
+    local base
+    base=$(basename "$path")
+    if [[ "$base" == *.cer ]]; then
+        printf '%s' "${base%.cer}"
+        return 0
+    fi
+    local dom
+    dom=$(basename "$(dirname "$path")")
+    [[ -n "$dom" && "$dom" != "certs" ]] || return 1
+    printf '%s' "$dom"
+}
+
 discover_all_certificates() {
     local -a results=()
     local -A seen_domains=()
@@ -971,7 +993,31 @@ discover_all_certificates() {
             results+=("node|default|$NODE_DEF_CERTS/$flat|$flat_days|$flat_status")
         done
     fi
-    
+
+    # 5. Flat per-domain certs — the OFFICIAL docs layout
+    # (/var/lib/pasarguard/certs/<domain>.cer + <domain>.cer.key), produced
+    # by the official installer's --ssl-domain wizard (MRM-044)
+    local cert_base cert_label cer_file cer_domain cer_days cer_status
+    for cert_base in "$PANEL_DEF_CERTS" "$NODE_DEF_CERTS"; do
+        [[ -d "$cert_base" ]] || continue
+        if [[ "$cert_base" == "$PANEL_DEF_CERTS" ]]; then
+            cert_label="panel"
+        elif [[ "$cert_base" == "$NODE_DEF_CERTS" ]]; then
+            cert_label="node"
+        else
+            continue
+        fi
+        for cer_file in "$cert_base"/*.cer; do
+            [[ -f "$cer_file" ]] || continue
+            cer_domain=$(basename "$cer_file" .cer)
+            [[ -n "${seen_domains[$cer_domain]}" ]] && continue
+            cer_days=$(get_cert_days_remaining "$cer_file")
+            cer_status=$(get_cert_status "$cer_days")
+            results+=("$cert_label|$cer_domain|$cer_file|$cer_days|$cer_status")
+            seen_domains["$cer_domain"]=1
+        done
+    done
+
     printf '%s\n' "${results[@]}"
 }
 
@@ -987,6 +1033,12 @@ show_certificate_expiry() {
     local -a expired_domains=()
     local -a expiring_domains=()
     
+    # MRM-044: mark the ACTIVE dashboard / node-gRPC domains taken from the
+    # .env files so the operator can see at a glance which cert serves what
+    local panel_dom node_dom
+    panel_dom=$(_env_cert_domain "$PANEL_ENV" "UVICORN_SSL_CERTFILE" 2>/dev/null) || panel_dom=""
+    node_dom=$(_env_cert_domain "$NODE_ENV" "SSL_CERT_FILE" 2>/dev/null) || node_dom=""
+
     # Discover all certificates
     mapfile -t all_certs < <(discover_all_certificates)
     
@@ -1027,15 +1079,25 @@ show_certificate_expiry() {
             panel) src_text="PNL"; src_color="$ORANGE" ;;
             node) src_text="NOD"; src_color="$PURPLE" ;;
         esac
-        
+
+        # MRM-044: role markers for the cert actually in use right now
+        local dom_disp="$domain"
+        [[ -n "$panel_dom" && "$domain" == "$panel_dom" ]] && dom_disp="$domain 🖥"
+        if [[ "$dom_disp" == "$domain" && -n "$node_dom" && "$domain" == "$node_dom" ]]; then
+            dom_disp="$domain ⚙"
+        fi
+
         printf "${CYAN}║${NC} ${src_color}%-13s${NC} │ %-28s │ %-16s │ ${color}%-6s${NC} │ ${color}%-8s${NC} ${CYAN}║${NC}\n" \
-               "$src_text" "${domain:0:28}" "${formatted_date:0:16}" "$days" "$status"
+               "$src_text" "${dom_disp:0:28}" "${formatted_date:0:16}" "$days" "$status"
     done
     
     echo -e "${CYAN}╚════════════════════════════════════════════════════════════════════════════╝${NC}"
     
     # Legend
     echo -e "\n${CYAN}Source:${NC} ${GREEN}LE${NC}=Let's Encrypt  ${ORANGE}PNL${NC}=Panel only  ${PURPLE}NOD${NC}=Node only"
+    if [[ -n "$panel_dom" || -n "$node_dom" ]]; then
+        echo -e "${CYAN}Role:${NC} 🖥 = dashboard domain (panel .env)   ⚙ = node gRPC domain (node .env)"
+    fi
     
     # Alerts
     if [[ ${#expired_domains[@]} -gt 0 ]]; then

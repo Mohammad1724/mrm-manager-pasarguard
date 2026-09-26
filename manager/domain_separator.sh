@@ -1,8 +1,11 @@
 #!/bin/bash
-# MRM Manager v1.4.23
+# MRM Manager v1.4.24
 
 if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
 if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manager/safe_ops.sh ]; then source /opt/mrm-manager/safe_ops.sh; fi
+# MRM-045: reuse ssl.sh's recovery helpers (stale live cleanup, broken
+# profile detection, days-remaining) when they are installed
+if ! declare -f _stale_live_cleanup >/dev/null 2>&1 && [ -r /opt/mrm-manager/ssl.sh ]; then source /opt/mrm-manager/ssl.sh; fi
 
 NGINX_CONF="/etc/nginx/conf.d/panel_separate.conf"
 PANEL_CONFLICT_CONF="/etc/nginx/conf.d/panel.conf"
@@ -75,6 +78,42 @@ install_requirements() {
     systemctl enable nginx > /dev/null 2>&1
 }
 
+# MRM-045: make sure a valid LE certificate exists for a domain before
+# wiring nginx to it:
+#   1) healthy existing cert  -> reuse it (no duplicate ACME order)
+#   2) broken profile skeleton-> back up + drop it (same as MRM-043)
+#   3) stale live dir         -> back up + remove it (same as MRM-042)
+#   4) otherwise issue fresh with the given email
+ensure_le_cert() {
+    local dom="$1" email="$2"
+    local le_full="/etc/letsencrypt/live/$dom/fullchain.pem"
+
+    if [[ -f "$le_full" ]] && declare -f get_cert_days_remaining >/dev/null 2>&1; then
+        local days
+        days=$(get_cert_days_remaining "$le_full" 2>/dev/null || echo 0)
+        if [[ "${days:-0}" -gt 0 ]]; then
+            echo -e "${GREEN}✔ Existing valid certificate for $dom (${days} days) — reusing it.${NC}"
+            return 0
+        fi
+    fi
+
+    if declare -f _renewal_profile_broken >/dev/null 2>&1 && _renewal_profile_broken "$dom"; then
+        local bb="${SSL_BACKUP_DIR:-/opt/mrm-manager/ssl-backups}/broken-conf-$dom-$(date +%Y%m%d-%H%M%S)"
+        mkdir -p "$bb" 2>/dev/null && cp -a "/etc/letsencrypt/renewal/$dom.conf" "$bb/" 2>/dev/null
+        rm -f "/etc/letsencrypt/renewal/$dom.conf" 2>/dev/null
+        echo -e "${YELLOW}↳ broken renewal profile backed up: $bb${NC}"
+    fi
+
+    if declare -f _stale_live_cleanup >/dev/null 2>&1; then
+        if ! _stale_live_cleanup "$dom"; then
+            echo -e "${RED}✘ Could not remove stale certificate data for $dom${NC}"
+            return 1
+        fi
+    fi
+
+    certbot certonly --standalone --non-interactive --agree-tos --email "$email" --preferred-challenges http -d "$dom"
+}
+
 setup_domain_separation() {
     local ADMIN_DOM
     local SUB_DOM
@@ -92,6 +131,8 @@ setup_domain_separation() {
     echo -e "${YELLOW}      DOMAIN SEPARATOR (Panel & Sub)         ${NC}"
     echo -e "${CYAN}=============================================${NC}"
     echo ""
+
+    declare -f init_logging >/dev/null 2>&1 && init_logging || true
 
     install_requirements
 
@@ -148,20 +189,28 @@ setup_domain_separation() {
     if [ "$CONFIRM" != "y" ]; then echo "Cancelled."; pause; return; fi
 
     echo ""
+    # MRM-045: prefer the email already registered with Let's Encrypt
+    local CB_EMAIL
+    CB_EMAIL=$(grep -h '^[[:space:]]*email[[:space:]]*=' /etc/letsencrypt/renewal/*.conf 2>/dev/null | head -1 | cut -d'=' -f2 | tr -d ' ')
+    if [ -z "$CB_EMAIL" ]; then
+        read -p "Let's Encrypt email (default: admin@$ADMIN_DOM): " CB_EMAIL
+        [ -z "$CB_EMAIL" ] && CB_EMAIL="admin@$ADMIN_DOM"
+    fi
+
     echo -e "${BLUE}Stopping Nginx to get SSL...${NC}"
     if ! stop_nginx_checked; then
         echo -e "${RED}✘ Failed to stop Nginx!${NC}"
         pause; return
     fi
 
-    # Get SSL for Admin Domain
-    echo -e "${BLUE}Requesting SSL for Admin Domain: $ADMIN_DOM${NC}"
-    certbot certonly --standalone --non-interactive --agree-tos --email "admin@$ADMIN_DOM" -d "$ADMIN_DOM"
+    # Certificate for Admin Domain (reuses a valid existing cert — MRM-045)
+    echo -e "${BLUE}Certificate for Admin Domain: $ADMIN_DOM${NC}"
+    ensure_le_cert "$ADMIN_DOM" "$CB_EMAIL"
     ADMIN_CERT_OK=$?
 
-    # Get SSL for Sub Domain (Separate)
-    echo -e "${BLUE}Requesting SSL for Sub Domain: $SUB_DOM${NC}"
-    certbot certonly --standalone --non-interactive --agree-tos --email "admin@$ADMIN_DOM" -d "$SUB_DOM"
+    # Certificate for Sub Domain (Separate)
+    echo -e "${BLUE}Certificate for Sub Domain: $SUB_DOM${NC}"
+    ensure_le_cert "$SUB_DOM" "$CB_EMAIL"
     SUB_CERT_OK=$?
 
     # Check Admin cert (required)
