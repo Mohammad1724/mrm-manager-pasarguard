@@ -105,16 +105,14 @@ _generate_units() {
     mkdir -p /etc/systemd/system
     cat > /etc/systemd/system/mrm-integrator.service <<'EOF'
 [Unit]
-Description=Resource-bounded MRM reconciliation guard for PasarGuard
+Description=Resource-bounded MRM reconciliation for PasarGuard
 After=docker.service network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
-ExecStart=/bin/bash -lc 'set -u; while true; do found=0; if command -v docker >/dev/null 2>&1; then for cid in $(docker ps -q 2>/dev/null); do image=$(docker inspect -f "{{.Config.Image}}" "$cid" 2>/dev/null || true); case "$image" in *pasarguard/panel*) found=1; project=$(docker inspect -f "{{ index .Config.Labels \"com.docker.compose.project\" }}" "$cid" 2>/dev/null || true); [ -n "$project" ] || project=pasarguard; echo "[MRM Guard] reconciling ${cid:0:12} compose-project=$project"; if [ -x /opt/mrm-manager/plugin/integrate-dashboard.sh ]; then PASARGUARD_COMPOSE_PROJECT="$project" /opt/mrm-manager/plugin/integrate-dashboard.sh || true; fi ;; esac; done; fi; if [ "$found" -eq 0 ] && [ -x /opt/mrm-manager/plugin/integrate-dashboard.sh ]; then /opt/mrm-manager/plugin/integrate-dashboard.sh || true; fi; sleep 60; done'
-Restart=on-failure
-RestartSec=10s
-TimeoutStartSec=45s
+Type=oneshot
+ExecStart=/opt/mrm-manager/plugin/integrate-dashboard.sh
+TimeoutStartSec=90s
 Nice=10
 IOSchedulingClass=idle
 CPUAccounting=true
@@ -126,9 +124,6 @@ MemoryMax=192M
 TasksMax=32
 User=root
 Group=root
-
-[Install]
-WantedBy=multi-user.target
 EOF
     cat > /etc/systemd/system/mrm-integrator.path <<'EOF'
 [Unit]
@@ -149,10 +144,10 @@ EOF
 Description=Schedule low-impact MRM/PasarGuard reconciliation
 
 [Timer]
-OnBootSec=20s
-OnUnitInactiveSec=60s
-AccuracySec=5s
-RandomizedDelaySec=5s
+OnBootSec=45s
+OnUnitInactiveSec=15min
+AccuracySec=1min
+RandomizedDelaySec=2min
 Unit=mrm-integrator.service
 Persistent=true
 
@@ -212,8 +207,9 @@ EOF
 special_install_units() {
     _generate_units
     systemctl daemon-reload
-    systemctl enable --now mrm-integrator.service mrm-integrator.timer \
+    systemctl enable --now mrm-integrator.timer mrm-integrator.path \
         mrm-panel-update.path mrm-template-switch.path >/dev/null 2>&1
+    systemctl start mrm-integrator.service >/dev/null 2>&1 || true
     echo "systemd watchers installed (self-healing + update/template bridges)"
 }
 

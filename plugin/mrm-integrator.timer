@@ -2,10 +2,10 @@
 Description=Schedule low-impact MRM/PasarGuard reconciliation
 
 [Timer]
-OnBootSec=20s
-OnUnitInactiveSec=60s
-AccuracySec=5s
-RandomizedDelaySec=5s
+OnBootSec=45s
+OnUnitInactiveSec=15min
+AccuracySec=1min
+RandomizedDelaySec=2min
 Unit=mrm-integrator.service
 Persistent=true
 

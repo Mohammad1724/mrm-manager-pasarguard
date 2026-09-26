@@ -1028,12 +1028,14 @@ else
     fail "mrm-panel-update.* units do not match the update bridge"
 fi
 
-# Guard units stay canonical (60s reconciliation loop)
-if grep -q 'sleep 60' "$PROJECT_DIR/plugin/mrm-integrator.service" && \
-   grep -q 'sleep 60' "$PROJECT_DIR/manager/special.sh"; then
-    pass "mrm-integrator guard keeps the canonical 60s loop"
+# Guard units: optimized event-driven oneshot and 15m self-heal timer
+if grep -q 'Type=oneshot' "$PROJECT_DIR/plugin/mrm-integrator.service" && \
+   grep -q 'Type=oneshot' "$PROJECT_DIR/manager/special.sh" && \
+   grep -q '15min' "$PROJECT_DIR/plugin/mrm-integrator.timer" && \
+   grep -q '15min' "$PROJECT_DIR/manager/special.sh"; then
+    pass "mrm-integrator guard uses optimized event-driven oneshot and 15m timer"
 else
-    fail "mrm-integrator guard loop missing"
+    fail "mrm-integrator optimized guard units missing"
 fi
 
 # ─── v1.3.1: user-facing naming — «نسخه قدیمی تم» / «MRM Special» ─────────────
@@ -1268,6 +1270,21 @@ if grep -A3 'const handleMainClick' templates/subscription-src/src/components/qu
     pass "[178] connect button opens the manual app picker; theme refresh never leaks raw tokens" || fail "[178] connect button opens the manual app picker; theme refresh never leaks raw tokens"
 else
     fail "[178] connect button opens the manual app picker; theme refresh never leaks raw tokens"
+fi
+
+
+# ─── v1.4.15: Zomorod performance & polish parity ─────────────────────────
+if grep -qF 'Type=oneshot' plugin/mrm-integrator.service && \
+   grep -qF '_ROUTES_CACHE' plugin/mrm_admin_subscriptions.py && \
+   grep -qF 'domObserver?.disconnect()' plugin/mrm-runtime.js && \
+   grep -qF 'THEME_PRESETS' plugin/mrm-special.js && \
+   grep -qF 'UPDATE_DISMISS_PREFIX' plugin/mrm-special.js && \
+   grep -qF 'QRCodeSVG' templates/subscription-src/src/components/qr-modal.tsx && \
+   grep -qF 'backdrop-filter: none !important' templates/subscription-src/src/index.css && \
+   grep -qF 'treasury-qr-dialog' templates/subscription-src/src/index.css; then
+    pass "[179] Zomorod parity: oneshot integrator, route cache, theme studio presets, dismissible notice, mobile GPU mode & SVG QR" || fail "[179] Zomorod parity: oneshot integrator, route cache, theme studio presets, dismissible notice, mobile GPU mode & SVG QR"
+else
+    fail "[179] Zomorod parity: oneshot integrator, route cache, theme studio presets, dismissible notice, mobile GPU mode & SVG QR"
 fi
 
 if [ "$FAIL" -eq 0 ]; then
