@@ -42,7 +42,7 @@ theme_get_special_source() {
     local dl_dst="$DATA_DIR/templates/.special.pristine.html"
     mkdir -p "$(dirname "$dl_dst")" 2>/dev/null || true
     local ver
-    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.25")"
+    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.26")"
     local dl_url="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v${ver}/templates/subscription/index.html"
     if curl -sL -f -o "$dl_dst" "$dl_url" 2>/dev/null && [ -s "$dl_dst" ] && ! grep -q "guideBanner" "$dl_dst" 2>/dev/null; then
         printf '%s\n' "$dl_dst"
@@ -73,7 +73,7 @@ theme_get_classic_source() {
     local dl_dst="$DATA_DIR/templates/.classic.pristine.html"
     mkdir -p "$(dirname "$dl_dst")" 2>/dev/null || true
     local ver
-    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.25")"
+    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.26")"
     local dl_url="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v${ver}/templates/subscription-classic/index.html"
     if curl -sL -f -o "$dl_dst" "$dl_url" 2>/dev/null && [ -s "$dl_dst" ] && grep -q "guideBanner" "$dl_dst" 2>/dev/null; then
         printf '%s\n' "$dl_dst"
