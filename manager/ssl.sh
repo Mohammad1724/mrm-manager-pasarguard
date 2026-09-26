@@ -1,8 +1,8 @@
 #!/bin/bash
-# MRM Manager ssl.sh v1.4.20
+# MRM Manager ssl.sh v1.4.21
 
 # ═══════════════════════════════════════════════════════════════════════════
-# SSL MANAGEMENT MODULE v1.4.20
+# SSL MANAGEMENT MODULE v1.4.21
 # ═══════════════════════════════════════════════════════════════════════════
 # Author: MRM Manager Team
 # License: GPL-3.0
@@ -49,7 +49,7 @@ readonly SSL_BACKUP_DIR="${SSL_BACKUP_DIR:-/opt/mrm-manager/ssl-backups}"
 readonly CONFIG_DIR="${CONFIG_DIR:-/opt/mrm-manager}"
 
 [ -r "$CONFIG_DIR/versions.conf" ] && source "$CONFIG_DIR/versions.conf"
-SSL_VERSION="${SSL_VERSION:-1.0.4}"
+SSL_VERSION="${SSL_VERSION:-1.0.5}"
 
 # Thresholds
 readonly EXPIRY_WARNING_DAYS=14
@@ -1196,7 +1196,8 @@ _show_certbot_failure() {
     elif grep -qiE 'timeout|timed out' "$output_file" 2>/dev/null; then
         echo -e "    ${YELLOW}Hint: Let's Encrypt could not reach port 80 — check firewall rules and the DNS target.${NC}"
     elif grep -qiE 'No certificate found|No certs were found' "$output_file" 2>/dev/null; then
-        echo -e "    ${YELLOW}Hint: certbot has no certificate named '$domain' (it may be a SAN on another cert). Use 'Request New SSL' instead.${NC}"
+        echo -e "    ${YELLOW}Hint: certbot has no renewal profile for '$domain' and the automatic reissue also failed.${NC}"
+        echo -e "    ${YELLOW}      Check DNS, then see: /var/log/letsencrypt/letsencrypt.log${NC}"
     fi
     echo -e "    Full log: ${CYAN}$CERTBOT_DEBUG_LOG${NC}"
 }
@@ -1209,6 +1210,52 @@ _archive_certbot_failure() {
         cat "$output_file" 2>/dev/null
         echo ""
     } >> "$CERTBOT_DEBUG_LOG" 2>/dev/null
+}
+
+# MRM-041: find a renewal profile whose domain list covers $1.
+# Prints the profile's (primary) name; rc 1 when no profile covers it.
+_find_renewal_name_for_domain() {
+    local domain="$1" conf name tok
+    for conf in /etc/letsencrypt/renewal/*.conf; do
+        [[ -f "$conf" ]] || continue
+        # Extract all domain-like tokens from the profile and exact-match
+        # (webroot_map keys hold every domain the cert covers; exact
+        # comparison avoids regex-escaping pitfalls)
+        while IFS= read -r tok; do
+            if [[ "$tok" == "$domain" ]]; then
+                name=$(basename "$conf" .conf)
+                printf '%s\n' "$name"
+                return 0
+            fi
+        done < <(grep -oE '[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+' "$conf" 2>/dev/null)
+    done
+    return 1
+}
+
+# Saved Let's Encrypt email (first one found), else interactive prompt
+_get_reissue_email() {
+    local saved
+    saved=$(grep -hE '^[[:space:]]*email[[:space:]]*=' /etc/letsencrypt/renewal/*.conf 2>/dev/null | head -1 | cut -d= -f2 | tr -d ' "')
+    if [[ -n "$saved" ]]; then
+        printf '%s\n' "$saved"
+        return 0
+    fi
+    read -r -p "  No saved Let's Encrypt email found — enter email: " saved
+    sanitize_input "$saved"
+}
+
+# Copy an LE cert (from live_dir) into a per-domain panel/node dest dir
+_copy_le_cert_to_dest() {
+    local domain="$1" le_dir="$2" dest_base="$3" dest
+    [[ -n "$dest_base" ]] || return 1
+    dest="$dest_base/$domain"
+    [[ -d "$dest" ]] || return 1
+    [[ -f "$le_dir/fullchain.pem" && -f "$le_dir/privkey.pem" ]] || return 1
+    cp -L "$le_dir/fullchain.pem" "$dest/" 2>/dev/null || return 1
+    cp -L "$le_dir/privkey.pem" "$dest/" 2>/dev/null || return 1
+    chmod 644 "$dest/fullchain.pem" 2>/dev/null
+    chmod 600 "$dest/privkey.pem" 2>/dev/null
+    return 0
 }
 
 _renew_le_certificates() {
@@ -1239,6 +1286,27 @@ _renew_le_certificates() {
         echo -e "${YELLOW}  (Renewal continues anyway — it only works if HTTP actually reaches this server.)${NC}\n"
     fi
 
+    # MRM-041: missing renewal profile pre-check — say it before we stop services
+    local -a missing_profile=() san_covered_by=()
+    local alt_name
+    for domain in "${domains[@]}"; do
+        if [[ ! -f "/etc/letsencrypt/renewal/${domain}.conf" ]]; then
+            if alt_name=$(_find_renewal_name_for_domain "$domain"); then
+                san_covered_by+=("$domain — covered by cert '$alt_name', that one gets renewed")
+            else
+                missing_profile+=("$domain — no renewal profile, a NEW certificate will be requested")
+            fi
+        fi
+    done
+    if [[ ${#missing_profile[@]} -gt 0 || ${#san_covered_by[@]} -gt 0 ]]; then
+        echo -e "${YELLOW}⚠ Renewal profile check:${NC}"
+        local note
+        for note in "${missing_profile[@]}" "${san_covered_by[@]}"; do
+            echo -e "  ${YELLOW}• $note${NC}"
+        done
+        echo ""
+    fi
+
     echo -e "${YELLOW}[1/3] Stopping web services...${NC}"
     stop_web_services
 
@@ -1250,29 +1318,76 @@ _renew_le_certificates() {
 
     echo -e "${YELLOW}[2/3] Renewing certificates...${NC}\n"
 
-    local renewed=0 failed=0 rc=0
-    local tmp_out auth
+    local renewed=0 failed=0 reissued=0 rc=0
+    local tmp_out auth renew_name san_covered
+    local reissue_email=""
     tmp_out=$(mktemp /tmp/ssl-manager-cb.XXXXXX)
 
     for domain in "${domains[@]}"; do
         echo -ne "  Renewing ${CYAN}$domain${NC}... "
 
+        renew_name="$domain"
+        san_covered=0
+
         # DNS-01 certs must renew with their saved plugin — forcing
         # --standalone on them would break the renewal (MRM-039)
-        auth=$(_cert_authenticator "$domain")
+        auth=$(_cert_authenticator "$renew_name")
 
         rc=0
         if [[ "$auth" == dns-* ]]; then
-            certbot renew --cert-name "$domain" --non-interactive >"$tmp_out" 2>&1 || rc=$?
+            certbot renew --cert-name "$renew_name" --non-interactive >"$tmp_out" 2>&1 || rc=$?
         else
-            certbot renew --cert-name "$domain" --standalone --non-interactive >"$tmp_out" 2>&1 || rc=$?
+            certbot renew --cert-name "$renew_name" --standalone --non-interactive >"$tmp_out" 2>&1 || rc=$?
+        fi
+
+        # MRM-041: cert files exist but certbot has no renewal profile for
+        # this name (partial /etc/letsencrypt restore, manually copied cert).
+        # certbot cannot renew what it never recorded — recover:
+        #  a) domain is a SAN on another cert → renew that cert
+        #  b) no profile anywhere            → reissue a fresh certificate
+        if [[ $rc -ne 0 ]] && grep -qE 'No certificate found with name|No certs were found' "$tmp_out"; then
+            alt_name=$(_find_renewal_name_for_domain "$domain")
+            if [[ -n "$alt_name" ]]; then
+                echo -e "${YELLOW}↳ covered by cert '$alt_name' — renewing it...${NC}"
+                renew_name="$alt_name"
+                san_covered=1
+                auth=$(_cert_authenticator "$renew_name")
+                rc=0
+                if [[ "$auth" == dns-* ]]; then
+                    certbot renew --cert-name "$renew_name" --non-interactive >"$tmp_out" 2>&1 || rc=$?
+                else
+                    certbot renew --cert-name "$renew_name" --standalone --non-interactive >"$tmp_out" 2>&1 || rc=$?
+                fi
+            else
+                echo -e "${YELLOW}↳ renewal profile missing — reissuing fresh certificate...${NC}"
+                reissue_email=$(_get_reissue_email)
+                if validate_email "${reissue_email:-}"; then
+                    rc=0
+                    certbot certonly --standalone \
+                        --non-interactive --agree-tos \
+                        --email "$reissue_email" \
+                        --preferred-challenges http \
+                        -d "$domain" >"$tmp_out" 2>&1 || rc=$?
+                else
+                    ui_error "Invalid email — cannot reissue $domain"
+                    rc=1
+                fi
+            fi
         fi
 
         if [[ $rc -eq 0 ]]; then
             echo -e "${GREEN}✔${NC}"
-            log_success "Renewed: $domain"
+            if [[ $san_covered -eq 1 ]]; then
+                log_success "Renewed via cert '$renew_name' (covers $domain)"
+                _copy_le_cert_to_dest "$domain" "/etc/letsencrypt/live/$renew_name" "$PANEL_DEF_CERTS"
+                if [[ -n "$NODE_DEF_CERTS" && "$NODE_DEF_CERTS" != "$PANEL_DEF_CERTS" ]]; then
+                    _copy_le_cert_to_dest "$domain" "/etc/letsencrypt/live/$renew_name" "$NODE_DEF_CERTS"
+                fi
+            else
+                log_success "Renewed: $domain"
+                _update_cert_paths "$domain"
+            fi
             renewed=$((renewed + 1))
-            _update_cert_paths "$domain"
         else
             echo -e "${RED}✘${NC}"
             log_error "Failed to renew: $domain"
@@ -1282,7 +1397,6 @@ _renew_le_certificates() {
         fi
         : > "$tmp_out"
     done
-
     rm -f "$tmp_out"
 
     echo -e "\n${YELLOW}[3/3] Restoring services...${NC}"
