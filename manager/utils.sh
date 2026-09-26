@@ -180,7 +180,7 @@ restart_service() {
         COMPOSE_FILE="$(get_panel_compose_file 2>/dev/null)"
         [ -z "$COMPOSE_FILE" ] && { echo -e "${RED}No compose file found${NC}"; return 1; }
         # FIX: restart only the panel service — down/up would also stop DB/helpers
-        (cd "$PANEL_DIR" && docker compose restart pasarguard) && echo -e "${GREEN}Done.${NC}" || { echo -e "${RED}Failed${NC}"; return 1; }
+        (cd "$PANEL_DIR" && (docker compose up -d --no-deps pasarguard 2>/dev/null || docker compose restart pasarguard 2>/dev/null || docker-compose up -d --no-deps pasarguard 2>/dev/null || docker-compose restart pasarguard 2>/dev/null)) && echo -e "${GREEN}Done.${NC}" || { echo -e "${RED}Failed${NC}"; return 1; }
     elif [ "$SERVICE" == "node" ]; then
         # PasarGuard nodes usually run on their own server and connect to the
         # panel over gRPC/rest. This only works when the node docker-compose

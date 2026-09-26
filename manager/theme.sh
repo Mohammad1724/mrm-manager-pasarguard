@@ -22,9 +22,10 @@ theme_get_special_source() {
     # Returns the pristine source for MRM Special template (must NOT be Classic)
     local candidate
     for candidate in \
-        "$DATA_DIR/templates/subscription-special/index.html" \
-        "/opt/mrm-manager/templates/subscription-special/index.html" \
         "/opt/mrm-manager/index.html" \
+        "/opt/mrm-manager/templates/subscription-special/index.html" \
+        "$DATA_DIR/templates/.special.pristine.html" \
+        "$DATA_DIR/templates/subscription-special/index.html" \
         "./templates/subscription/index.html" \
         "/opt/mrm-manager/templates/subscription/index.html"
     do
@@ -38,7 +39,7 @@ theme_get_special_source() {
         return 0
     fi
     # Network fallback if none found
-    local dl_dst="$DATA_DIR/templates/subscription-special/index.html"
+    local dl_dst="$DATA_DIR/templates/.special.pristine.html"
     mkdir -p "$(dirname "$dl_dst")" 2>/dev/null || true
     local ver
     ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.19")"
@@ -54,8 +55,9 @@ theme_get_classic_source() {
     # Returns the pristine source for MRM Classic template (MUST be Classic)
     local candidate
     for candidate in \
-        "$DATA_DIR/templates/subscription-classic/index.html" \
         "/opt/mrm-manager/templates/subscription-classic/index.html" \
+        "$DATA_DIR/templates/.classic.pristine.html" \
+        "$DATA_DIR/templates/subscription-classic/index.html" \
         "./templates/subscription-classic/index.html"
     do
         if [ -s "$candidate" ] && grep -q "guideBanner" "$candidate" 2>/dev/null; then
@@ -68,7 +70,7 @@ theme_get_classic_source() {
         return 0
     fi
     # Network fallback if none found
-    local dl_dst="$DATA_DIR/templates/subscription-classic/index.html"
+    local dl_dst="$DATA_DIR/templates/.classic.pristine.html"
     mkdir -p "$(dirname "$dl_dst")" 2>/dev/null || true
     local ver
     ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.19")"
@@ -185,30 +187,27 @@ theme_set_template() {
 
     mkdir -p "$DATA_DIR/templates/subscription" "$DATA_DIR/templates/subscription-classic" "$DATA_DIR/templates/subscription-special" 2>/dev/null || true
 
-    # Keep a pristine dedicated copy for this template
+    # Preserve pristine template copies
     if [ "$key" = "classic" ]; then
-        local cl_path="$DATA_DIR/templates/subscription-classic/index.html"
-        if [ "$target_src" != "$cl_path" ]; then
-            cp -f "$target_src" "$cl_path" 2>/dev/null || true
-        fi
+        cp -f "$target_src" "$DATA_DIR/templates/.classic.pristine.html" 2>/dev/null || true
     elif [ "$key" = "special" ]; then
-        local sp_path="$DATA_DIR/templates/subscription-special/index.html"
-        if [ "$target_src" != "$sp_path" ]; then
-            cp -f "$target_src" "$sp_path" 2>/dev/null || true
-        fi
+        cp -f "$target_src" "$DATA_DIR/templates/.special.pristine.html" 2>/dev/null || true
+        cp -f "$target_src" "$DATA_DIR/templates/subscription-special/index.html" 2>/dev/null || true
     fi
 
-    # Deploy to the canonical served template path
-    local served_path="$DATA_DIR/templates/subscription/index.html"
-    if [ "$target_src" != "$served_path" ]; then
-        cp -f "$target_src" "$served_path" 2>/dev/null || true
-    fi
+    # Deploy to BOTH candidate served paths on the host so whichever path PasarGuard reads is updated
+    local served_sub="$DATA_DIR/templates/subscription/index.html"
+    local served_classic="$DATA_DIR/templates/subscription-classic/index.html"
+    cp -f "$target_src" "$served_sub" 2>/dev/null || true
+    cp -f "$target_src" "$served_classic" 2>/dev/null || true
 
-    # Inject runtime into served template so panel customizations (store name, colors, support, announcements) apply dynamically
+    # Inject runtime into served templates so panel customizations apply dynamically
     local r_js="/opt/mrm-manager/plugin/mrm-runtime.js"
     [ -f "$r_js" ] || r_js="$DATA_DIR/plugin/mrm-runtime.js"
-    if [ -f "$r_js" ] && [ -f "$served_path" ]; then
-        python3 - "$served_path" "$r_js" "mrm-runtime-inline" <<'PY' 2>/dev/null || true
+    if [ -f "$r_js" ]; then
+        for s_file in "$served_sub" "$served_classic"; do
+            if [ -f "$s_file" ]; then
+                python3 - "$s_file" "$r_js" "mrm-runtime-inline" <<'PY' 2>/dev/null || true
 from pathlib import Path
 import re, sys
 template_path=Path(sys.argv[1]); runtime_path=Path(sys.argv[2]); marker=sys.argv[3]
@@ -219,23 +218,29 @@ if template_path.exists() and runtime_path.exists():
     html=html.replace('</body>',block+'</body>',1) if '</body>' in html else html+block
     if html!=original: template_path.write_text(html,encoding="utf-8")
 PY
+            fi
+        done
     fi
 
-    if ! theme_apply_env "$rel"; then
-        theme_write_template_status failed "$key" "Failed to update panel environment"
-        return 1
-    fi
+    theme_apply_env "$rel" || true
 
-    # Hot-inject into running Docker container for immediate serving
+    # Hot-inject into running Docker container across ALL possible paths (both subscription & subscription-classic)
     if command -v docker >/dev/null 2>&1; then
         for cid in $(docker ps -q 2>/dev/null); do
             local img
             img=$(docker inspect -f "{{.Config.Image}}" "$cid" 2>/dev/null || true)
             case "$img" in
                 *pasarguard/panel*)
-                    for c_dest in /code/app/templates/subscription/index.html /app/app/templates/subscription/index.html /opt/pasarguard/app/templates/subscription/index.html; do
-                        if docker exec "$cid" test -f "$c_dest" >/dev/null 2>&1; then
-                            docker cp "$served_path" "$cid:$c_dest" >/dev/null 2>&1 || true
+                    for c_dest in \
+                        /code/app/templates/subscription/index.html \
+                        /code/app/templates/subscription-classic/index.html \
+                        /app/app/templates/subscription/index.html \
+                        /app/app/templates/subscription-classic/index.html \
+                        /opt/pasarguard/app/templates/subscription/index.html \
+                        /opt/pasarguard/app/templates/subscription-classic/index.html
+                    do
+                        if docker exec "$cid" test -e "$(dirname "$c_dest")" >/dev/null 2>&1; then
+                            docker cp "$served_sub" "$cid:$c_dest" >/dev/null 2>&1 || true
                         fi
                     done
                     ;;
@@ -388,9 +393,36 @@ PY
         active_tpl="$(theme_current_template)"
         if [ "$active_tpl" = "classic" ] && [ -s "$DEP_C" ]; then
             cp -f "$DEP_C" "$DEP_S" 2>/dev/null || true
+            cp -f "$DEP_C" "$D/templates/subscription-classic/index.html" 2>/dev/null || true
         elif [ -s "$DEP_SP" ]; then
             cp -f "$DEP_SP" "$DEP_S" 2>/dev/null || true
+            cp -f "$DEP_SP" "$D/templates/subscription-classic/index.html" 2>/dev/null || true
         fi
+
+        # Hot-inject into running Docker container across all potential paths
+        if command -v docker >/dev/null 2>&1; then
+            for cid in $(docker ps -q 2>/dev/null); do
+                local img
+                img=$(docker inspect -f "{{.Config.Image}}" "$cid" 2>/dev/null || true)
+                case "$img" in
+                    *pasarguard/panel*)
+                        for c_dest in \
+                            /code/app/templates/subscription/index.html \
+                            /code/app/templates/subscription-classic/index.html \
+                            /app/app/templates/subscription/index.html \
+                            /app/app/templates/subscription-classic/index.html \
+                            /opt/pasarguard/app/templates/subscription/index.html \
+                            /opt/pasarguard/app/templates/subscription-classic/index.html
+                        do
+                            if docker exec "$cid" test -e "$(dirname "$c_dest")" >/dev/null 2>&1; then
+                                docker cp "$DEP_S" "$cid:$c_dest" >/dev/null 2>&1 || true
+                            fi
+                        done
+                        ;;
+                esac
+            done
+        fi
+
         theme_restart_panel || true
         echo "✔ Deployed templates refreshed (brand/news kept, selection kept)"
         return 0
@@ -425,9 +457,14 @@ theme_restart_panel() {
         return $?
     fi
 
-    if [ -d "$PANEL_DIR" ] && command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-        (cd "$PANEL_DIR" && docker compose down && docker compose up -d)
-        return $?
+    if [ -d "$PANEL_DIR" ] && command -v docker >/dev/null 2>&1; then
+        if docker compose version >/dev/null 2>&1; then
+            (cd "$PANEL_DIR" && (docker compose up -d --no-deps pasarguard 2>/dev/null || docker compose restart pasarguard 2>/dev/null || docker compose restart 2>/dev/null))
+            return $?
+        elif command -v docker-compose >/dev/null 2>&1; then
+            (cd "$PANEL_DIR" && (docker-compose up -d --no-deps pasarguard 2>/dev/null || docker-compose restart pasarguard 2>/dev/null || docker-compose restart 2>/dev/null))
+            return $?
+        fi
     fi
 
     return 1

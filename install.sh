@@ -190,6 +190,14 @@ fi
 
 echo ""
 echo -e "${BLUE}[4/4] Installing optional files...${NC}"
+if [ -z "${DATA_DIR:-}" ]; then
+    if [ -d "/var/lib/pasarguard" ]; then
+        DATA_DIR="/var/lib/pasarguard"
+    elif [ -d "/opt/pasarguard" ]; then
+        DATA_DIR="/var/lib/pasarguard"
+    fi
+fi
+
 if "${CURL_BASE[@]}" -o "$INSTALL_DIR/index.html" "$MANAGER_REPO_URL/templates/subscription/index.html" 2>/dev/null; then
     if verify_download "$INSTALL_DIR/index.html" "templates/subscription/index.html"; then
         echo -e " ${GREEN}✔${NC} Downloaded: index.html"
@@ -198,6 +206,7 @@ if "${CURL_BASE[@]}" -o "$INSTALL_DIR/index.html" "$MANAGER_REPO_URL/templates/s
         if [ -n "$DATA_DIR" ] && [ -d "$DATA_DIR/templates" ]; then
             mkdir -p "$DATA_DIR/templates/subscription-special" 2>/dev/null || true
             cp -f "$INSTALL_DIR/index.html" "$DATA_DIR/templates/subscription-special/index.html" 2>/dev/null || true
+            cp -f "$INSTALL_DIR/index.html" "$DATA_DIR/templates/.special.pristine.html" 2>/dev/null || true
         fi
     else
         echo -e " ⚠ Skipped: index.html (bad checksum)"
@@ -212,6 +221,7 @@ if "${CURL_BASE[@]}" -o "$INSTALL_DIR/templates/subscription-classic/index.html"
         if [ -n "$DATA_DIR" ] && [ -d "$DATA_DIR/templates" ]; then
             mkdir -p "$DATA_DIR/templates/subscription-classic" 2>/dev/null || true
             cp -f "$INSTALL_DIR/templates/subscription-classic/index.html" "$DATA_DIR/templates/subscription-classic/index.html" 2>/dev/null || true
+            cp -f "$INSTALL_DIR/templates/subscription-classic/index.html" "$DATA_DIR/templates/.classic.pristine.html" 2>/dev/null || true
         fi
     else
         echo -e " ⚠ Skipped: classic template (bad checksum)"
