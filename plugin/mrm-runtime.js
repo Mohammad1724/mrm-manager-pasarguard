@@ -1,6 +1,13 @@
 (() => {
   'use strict';
 
+  // Guard: mrm-runtime is exclusively for the modern MRM Special template.
+  // The classic template is completely self-contained with its own neumorphic styling.
+  // Overriding :root on classic breaks button borders, cards, and accent colors.
+  if (document.getElementById('guideBanner') || (!document.querySelector('.treasury-shell') && !document.querySelector('#root') && !document.querySelector('#app'))) {
+    return;
+  }
+
   const PREFIX = 'x-mrm-';
   const SUPPORT_ID = 'mrm-support-link';
   const THEME_STYLE_ID = 'mrm-theme-style';

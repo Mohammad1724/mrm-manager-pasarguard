@@ -144,6 +144,8 @@ theme_set_template() {
             cp -f "$DATA_DIR/templates/subscription/index.html" "$DATA_DIR/templates/subscription-special/index.html" 2>/dev/null || true
         fi
         cp -f "$target_src" "$DATA_DIR/templates/subscription/index.html" 2>/dev/null || true
+        # Cleanly strip any injected runtime script from classic
+        python3 -c "import re, pathlib; p = pathlib.Path('$DATA_DIR/templates/subscription/index.html'); txt = p.read_text(encoding='utf-8', errors='ignore'); txt = re.sub(r'\s*<script id=\"mrm-runtime-inline\">.*?</script>\s*', '', txt, flags=re.S); p.write_text(txt, encoding='utf-8')" 2>/dev/null || true
     elif [ "$key" = "special" ]; then
         cp -f "$target_src" "$DATA_DIR/templates/subscription-special/index.html" 2>/dev/null || true
         cp -f "$target_src" "$DATA_DIR/templates/subscription/index.html" 2>/dev/null || true
