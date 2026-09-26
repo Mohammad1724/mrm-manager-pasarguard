@@ -1286,6 +1286,17 @@ else
     fail "[179] Zomorod parity: oneshot integrator, route cache, theme studio presets, dismissible notice, mobile GPU mode & SVG QR"
 fi
 
+# ─── v1.4.19: isolated template sources & safe bidirectional switching ───
+if grep -qF 'theme_get_special_source' manager/theme.sh && \
+   grep -qF 'theme_get_classic_source' manager/theme.sh && \
+   grep -qF 'subscription-special' install.sh && \
+   grep -qF 'SPECIAL_FINAL_FILE' manager/theme.sh && \
+   grep -qF 'dep_sp' manager/theme.sh; then
+    pass "[180] template sources isolated in subscription-special & subscription-classic to prevent cross-contamination" || fail "[180] template sources isolated in subscription-special & subscription-classic to prevent cross-contamination"
+else
+    fail "[180] template sources isolated in subscription-special & subscription-classic to prevent cross-contamination"
+fi
+
 if [ "$FAIL" -eq 0 ]; then
     echo -e "  ${GREEN}✔ All tests passed!${NC}"
     echo ""

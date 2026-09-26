@@ -18,36 +18,74 @@ THEME_VERSION="${THEME_VERSION:-2.2.1}"
 # ✅ اطمینان از تشخیص پنل و تنظیم DATA_DIR
 detect_active_panel > /dev/null
 
-theme_get_local_template() {
-    local CANDIDATE
-
-    for CANDIDATE in \
-        "./index.html" \
-        "./templates/subscription/index.html" \
+theme_get_special_source() {
+    # Returns the pristine source for MRM Special template (must NOT be Classic)
+    local candidate
+    for candidate in \
+        "$DATA_DIR/templates/subscription-special/index.html" \
+        "/opt/mrm-manager/templates/subscription-special/index.html" \
         "/opt/mrm-manager/index.html" \
+        "./templates/subscription/index.html" \
         "/opt/mrm-manager/templates/subscription/index.html"
     do
-        if [ -f "$CANDIDATE" ]; then
-            printf '%s\n' "$CANDIDATE"
+        if [ -s "$candidate" ] && ! grep -q "guideBanner" "$candidate" 2>/dev/null; then
+            printf '%s\n' "$candidate"
             return 0
         fi
     done
-
+    if [ -s "$DATA_DIR/templates/subscription/index.html" ] && ! grep -q "guideBanner" "$DATA_DIR/templates/subscription/index.html" 2>/dev/null; then
+        printf '%s\n' "$DATA_DIR/templates/subscription/index.html"
+        return 0
+    fi
+    # Network fallback if none found
+    local dl_dst="$DATA_DIR/templates/subscription-special/index.html"
+    mkdir -p "$(dirname "$dl_dst")" 2>/dev/null || true
+    local ver
+    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.19")"
+    local dl_url="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v${ver}/templates/subscription/index.html"
+    if curl -sL -f -o "$dl_dst" "$dl_url" 2>/dev/null && [ -s "$dl_dst" ] && ! grep -q "guideBanner" "$dl_dst" 2>/dev/null; then
+        printf '%s\n' "$dl_dst"
+        return 0
+    fi
     return 1
 }
 
-theme_get_local_classic_template() {
-    local CANDIDATE
-    for CANDIDATE in \
-        "./templates/subscription-classic/index.html" \
-        "/opt/mrm-manager/templates/subscription-classic/index.html"
+theme_get_classic_source() {
+    # Returns the pristine source for MRM Classic template (MUST be Classic)
+    local candidate
+    for candidate in \
+        "$DATA_DIR/templates/subscription-classic/index.html" \
+        "/opt/mrm-manager/templates/subscription-classic/index.html" \
+        "./templates/subscription-classic/index.html"
     do
-        if [ -f "$CANDIDATE" ]; then
-            printf '%s\n' "$CANDIDATE"
+        if [ -s "$candidate" ] && grep -q "guideBanner" "$candidate" 2>/dev/null; then
+            printf '%s\n' "$candidate"
             return 0
         fi
     done
+    if [ -s "$DATA_DIR/templates/subscription/index.html" ] && grep -q "guideBanner" "$DATA_DIR/templates/subscription/index.html" 2>/dev/null; then
+        printf '%s\n' "$DATA_DIR/templates/subscription/index.html"
+        return 0
+    fi
+    # Network fallback if none found
+    local dl_dst="$DATA_DIR/templates/subscription-classic/index.html"
+    mkdir -p "$(dirname "$dl_dst")" 2>/dev/null || true
+    local ver
+    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.19")"
+    local dl_url="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v${ver}/templates/subscription-classic/index.html"
+    if curl -sL -f -o "$dl_dst" "$dl_url" 2>/dev/null && [ -s "$dl_dst" ] && grep -q "guideBanner" "$dl_dst" 2>/dev/null; then
+        printf '%s\n' "$dl_dst"
+        return 0
+    fi
     return 1
+}
+
+theme_get_local_template() {
+    theme_get_special_source
+}
+
+theme_get_local_classic_template() {
+    theme_get_classic_source
 }
 
 theme_mrm_data_dir() {
@@ -96,40 +134,50 @@ theme_template_display_name() {
 
 theme_current_template() {
     # Prints: classic | special | none
-    local rel="" dir st
-    rel="$(grep -E "^[[:space:]]*SUBSCRIPTION_PAGE_TEMPLATE[[:space:]]*=" "$PANEL_ENV" 2>/dev/null | tail -1 | cut -d'"' -f2)"
-    case "$rel" in
-        subscription-classic/*) echo "classic"; return 0 ;;
-        subscription/*) echo "special"; return 0 ;;
-    esac
+    local dir st rel
     dir="$(theme_mrm_data_dir)"
     st="$(python3 -c "import json;print(json.load(open('$dir/template-status.json')).get('active') or '')" 2>/dev/null || true)"
     case "$st" in
         classic|special) echo "$st"; return 0 ;;
     esac
-    if [ -s "$DATA_DIR/templates/subscription/index.html" ]; then echo "special"; return 0; fi
+
+    rel="$(grep -E "^[[:space:]]*SUBSCRIPTION_PAGE_TEMPLATE[[:space:]]*=" "$PANEL_ENV" 2>/dev/null | tail -1 | cut -d'"' -f2)"
+    case "$rel" in
+        subscription-classic/*) echo "classic"; return 0 ;;
+        subscription-special/*) echo "special"; return 0 ;;
+    esac
+
+    if [ -s "$DATA_DIR/templates/subscription/index.html" ]; then
+        if grep -q "guideBanner" "$DATA_DIR/templates/subscription/index.html" 2>/dev/null; then
+            echo "classic"; return 0
+        else
+            echo "special"; return 0
+        fi
+    fi
     if [ -s "$DATA_DIR/templates/subscription-classic/index.html" ]; then echo "classic"; return 0; fi
     echo "none"
 }
 
 theme_set_template() {
     # $1 = classic | special  — switch the active subscription template
-    local key="${1:-}" rel
+    local key="${1:-}" rel="" target_src=""
     case "$key" in
-        classic) rel="subscription-classic/index.html" ;;
-        special) rel="subscription/index.html" ;;
-        *) echo "unknown template '$key' (use: classic | special)"; return 1 ;;
+        classic)
+            rel="subscription-classic/index.html"
+            target_src="$(theme_get_classic_source 2>/dev/null || true)"
+            ;;
+        special)
+            rel="subscription/index.html"
+            target_src="$(theme_get_special_source 2>/dev/null || true)"
+            ;;
+        *)
+            echo "unknown template '$key' (use: classic | special)"; return 1 ;;
     esac
     detect_active_panel > /dev/null
 
-    local target_src="$DATA_DIR/templates/$rel"
-    if [ ! -s "$target_src" ] && [ "$key" = "special" ] && [ -s "$DATA_DIR/templates/subscription-special/index.html" ]; then
-        target_src="$DATA_DIR/templates/subscription-special/index.html"
-    fi
-
-    if [ ! -s "$target_src" ]; then
-        theme_write_template_status failed "$key" "Template file missing: templates/$rel"
-        echo "Template file missing: $target_src"
+    if [ -z "$target_src" ] || [ ! -s "$target_src" ]; then
+        theme_write_template_status failed "$key" "Template source file missing for $key"
+        echo "Template source file missing for $key"
         return 1
     fi
 
@@ -137,23 +185,30 @@ theme_set_template() {
 
     mkdir -p "$DATA_DIR/templates/subscription" "$DATA_DIR/templates/subscription-classic" "$DATA_DIR/templates/subscription-special" 2>/dev/null || true
 
-    # Synchronize template files: ensures active template is both in subscription/index.html
-    # and properly preserved in its dedicated source folder.
+    # Keep a pristine dedicated copy for this template
     if [ "$key" = "classic" ]; then
-        if [ -s "$DATA_DIR/templates/subscription/index.html" ] && [ ! -s "$DATA_DIR/templates/subscription-special/index.html" ]; then
-            cp -f "$DATA_DIR/templates/subscription/index.html" "$DATA_DIR/templates/subscription-special/index.html" 2>/dev/null || true
+        local cl_path="$DATA_DIR/templates/subscription-classic/index.html"
+        if [ "$target_src" != "$cl_path" ]; then
+            cp -f "$target_src" "$cl_path" 2>/dev/null || true
         fi
-        cp -f "$target_src" "$DATA_DIR/templates/subscription/index.html" 2>/dev/null || true
     elif [ "$key" = "special" ]; then
-        cp -f "$target_src" "$DATA_DIR/templates/subscription-special/index.html" 2>/dev/null || true
-        cp -f "$target_src" "$DATA_DIR/templates/subscription/index.html" 2>/dev/null || true
+        local sp_path="$DATA_DIR/templates/subscription-special/index.html"
+        if [ "$target_src" != "$sp_path" ]; then
+            cp -f "$target_src" "$sp_path" 2>/dev/null || true
+        fi
+    fi
+
+    # Deploy to the canonical served template path
+    local served_path="$DATA_DIR/templates/subscription/index.html"
+    if [ "$target_src" != "$served_path" ]; then
+        cp -f "$target_src" "$served_path" 2>/dev/null || true
     fi
 
     # Inject runtime into served template so panel customizations (store name, colors, support, announcements) apply dynamically
     local r_js="/opt/mrm-manager/plugin/mrm-runtime.js"
     [ -f "$r_js" ] || r_js="$DATA_DIR/plugin/mrm-runtime.js"
-    if [ -f "$r_js" ] && [ -f "$DATA_DIR/templates/subscription/index.html" ]; then
-        python3 - "$DATA_DIR/templates/subscription/index.html" "$r_js" "mrm-runtime-inline" <<'PY' 2>/dev/null || true
+    if [ -f "$r_js" ] && [ -f "$served_path" ]; then
+        python3 - "$served_path" "$r_js" "mrm-runtime-inline" <<'PY' 2>/dev/null || true
 from pathlib import Path
 import re, sys
 template_path=Path(sys.argv[1]); runtime_path=Path(sys.argv[2]); marker=sys.argv[3]
@@ -180,7 +235,7 @@ PY
                 *pasarguard/panel*)
                     for c_dest in /code/app/templates/subscription/index.html /app/app/templates/subscription/index.html /opt/pasarguard/app/templates/subscription/index.html; do
                         if docker exec "$cid" test -f "$c_dest" >/dev/null 2>&1; then
-                            docker cp "$DATA_DIR/templates/subscription/index.html" "$cid:$c_dest" >/dev/null 2>&1 || true
+                            docker cp "$served_path" "$cid:$c_dest" >/dev/null 2>&1 || true
                         fi
                     done
                     ;;
@@ -201,21 +256,28 @@ theme_redeploy() {
     # the owner's brand/bot/sup/news values and the active template selection.
     # No prompts: safe for unattended updates.
     detect_active_panel > /dev/null 2>&1 || true
-    local D="${DATA_DIR:-}" SRC_S SRC_C DEP_S DEP_C
+    local D="${DATA_DIR:-}" SRC_S SRC_C DEP_S DEP_C DEP_SP
     [ -n "$D" ] || return 0
     DEP_S="$D/templates/subscription/index.html"
+    DEP_SP="$D/templates/subscription-special/index.html"
     DEP_C="$D/templates/subscription-classic/index.html"
     # Nothing deployed yet (wizard never ran) — nothing to refresh.
-    [ -s "$DEP_S" ] || { echo "• No deployed template yet — run 'mrm' → 1 to install it"; return 0; }
-    SRC_S="${MRM_SPECIAL_SRC:-/opt/mrm-manager/index.html}"
-    SRC_C="${MRM_CLASSIC_SRC:-/opt/mrm-manager/templates/subscription-classic/index.html}"
-    [ -s "$SRC_S" ] || return 0
-    mkdir -p "$D/templates/subscription-classic" 2>/dev/null || true
-    if python3 - "$SRC_S" "$SRC_C" "$DEP_S" "$DEP_C" "$D/theme-settings.json" <<'PY'
+    [ -s "$DEP_S" ] || [ -s "$DEP_SP" ] || [ -s "$DEP_C" ] || { echo "• No deployed template yet — run 'mrm' → 1 to install it"; return 0; }
+    SRC_S="${MRM_SPECIAL_SRC:-}"
+    [ -n "$SRC_S" ] || SRC_S="$(theme_get_special_source 2>/dev/null || true)"
+    [ -n "$SRC_S" ] || SRC_S="/opt/mrm-manager/index.html"
+
+    SRC_C="${MRM_CLASSIC_SRC:-}"
+    [ -n "$SRC_C" ] || SRC_C="$(theme_get_classic_source 2>/dev/null || true)"
+    [ -n "$SRC_C" ] || SRC_C="/opt/mrm-manager/templates/subscription-classic/index.html"
+
+    [ -s "$SRC_S" ] || [ -s "$SRC_C" ] || return 0
+    mkdir -p "$D/templates/subscription" "$D/templates/subscription-classic" "$D/templates/subscription-special" 2>/dev/null || true
+    if python3 - "$SRC_S" "$SRC_C" "$DEP_S" "$DEP_C" "$D/theme-settings.json" "$DEP_SP" <<'PY'
 import json, re, sys
 from pathlib import Path
 
-src_s, src_c, dep_s, dep_c, settings = (Path(p) for p in sys.argv[1:6])
+src_s, src_c, dep_s, dep_c, settings, dep_sp = (Path(p) for p in sys.argv[1:7])
 
 def clean_brand(value):
     value = re.sub(r'\{\{.*?\}\}', ' ', value or '')
@@ -305,7 +367,7 @@ def render(src, dst):
     tmp.replace(dst)
     return True
 
-render(src_s, dep_s)
+render(src_s, dep_sp)
 render(src_c, dep_c)
 
 # Persist the values so the next refresh never has to guess again.
@@ -324,8 +386,10 @@ PY
     then
         local active_tpl
         active_tpl="$(theme_current_template)"
-        if [ "$active_tpl" = "classic" ] && [ -s "$D/templates/subscription-classic/index.html" ]; then
-            cp -f "$D/templates/subscription-classic/index.html" "$D/templates/subscription/index.html" 2>/dev/null || true
+        if [ "$active_tpl" = "classic" ] && [ -s "$DEP_C" ]; then
+            cp -f "$DEP_C" "$DEP_S" 2>/dev/null || true
+        elif [ -s "$DEP_SP" ]; then
+            cp -f "$DEP_SP" "$DEP_S" 2>/dev/null || true
         fi
         theme_restart_panel || true
         echo "✔ Deployed templates refreshed (brand/news kept, selection kept)"
@@ -520,6 +584,7 @@ install_theme_wizard() {
     export OLD_FILE
     export NEW_FILE="$TEMP_DL"
     export FINAL_FILE="$TEMPLATE_FILE"
+    export SPECIAL_FINAL_FILE="$DATA_DIR/templates/subscription-special/index.html"
     export CLASSIC_NEW_FILE="$CLASSIC_DL"
     export CLASSIC_FINAL_FILE="$CLASSIC_FILE"
 
@@ -538,8 +603,11 @@ old_path = os.environ.get('OLD_FILE')
 pairs = []
 new_file = os.environ.get('NEW_FILE')
 final_file = os.environ.get('FINAL_FILE')
+special_final = os.environ.get('SPECIAL_FINAL_FILE')
 if new_file and final_file and os.path.isfile(new_file):
     pairs.append((new_file, final_file))
+if new_file and special_final and os.path.isfile(new_file):
+    pairs.append((new_file, special_final))
 
 classic_new = os.environ.get('CLASSIC_NEW_FILE')
 classic_final = os.environ.get('CLASSIC_FINAL_FILE')
@@ -844,7 +912,7 @@ theme_templates_status() {
     sp="$DATA_DIR/templates/subscription/index.html"
     cl="$DATA_DIR/templates/subscription-classic/index.html"
     echo -e "Active template : ${CYAN}${active_name}${NC}"
-    if [ -s "$sp" ] || [ -s "$DATA_DIR/templates/subscription-special/index.html" ]; then
+    if [ -s "$DATA_DIR/templates/subscription-special/index.html" ] || { [ -s "$sp" ] && ! grep -q "guideBanner" "$sp" 2>/dev/null; }; then
         echo -e "MRM Special     : ${GREEN}●${NC} Installed"
     else
         echo -e "MRM Special     : ${RED}○${NC} Not installed"

@@ -6,7 +6,7 @@ INSTALL_DIR="/opt/mrm-manager"
 # verified against checksums.txt (integrity). install.sh itself is bootstrapped
 # via the README curl command and therefore cannot self-verify.
 REPO_BASE_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard"
-REPO_REF="v1.4.18"
+REPO_REF="v1.4.19"
 MANAGER_REPO_URL="$REPO_BASE_URL/$REPO_REF"
 VERSION_REGISTRY_URL="$MANAGER_REPO_URL/versions.conf"
 CHECKSUMS_URL="$MANAGER_REPO_URL/checksums.txt"
@@ -38,7 +38,7 @@ rm -f "$VERSION_REGISTRY_FILE"
 
 # Fallback only if registry fetch failed
 if [ -z "$MRM_VERSION" ]; then
-    MRM_VERSION="1.4.18"
+    MRM_VERSION="1.4.19"
 fi
 
 echo -e "${CYAN}╔══════════════════════════════════════════════╗${NC}"
@@ -78,7 +78,7 @@ verify_download() {
 }
 
 echo -e "${BLUE}[1/4] Creating directories...${NC}"
-mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/backup" "$INSTALL_DIR/plugin" "$INSTALL_DIR/templates/subscription-classic"
+mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/backup" "$INSTALL_DIR/plugin" "$INSTALL_DIR/templates/subscription-classic" "$INSTALL_DIR/templates/subscription-special"
 
 FILES=(
     "utils.sh" "ui.sh" "ssl.sh" "backup.sh" "domain_separator.sh"
@@ -193,6 +193,12 @@ echo -e "${BLUE}[4/4] Installing optional files...${NC}"
 if "${CURL_BASE[@]}" -o "$INSTALL_DIR/index.html" "$MANAGER_REPO_URL/templates/subscription/index.html" 2>/dev/null; then
     if verify_download "$INSTALL_DIR/index.html" "templates/subscription/index.html"; then
         echo -e " ${GREEN}✔${NC} Downloaded: index.html"
+        mkdir -p "$INSTALL_DIR/templates/subscription-special" 2>/dev/null || true
+        cp -f "$INSTALL_DIR/index.html" "$INSTALL_DIR/templates/subscription-special/index.html" 2>/dev/null || true
+        if [ -n "$DATA_DIR" ] && [ -d "$DATA_DIR/templates" ]; then
+            mkdir -p "$DATA_DIR/templates/subscription-special" 2>/dev/null || true
+            cp -f "$INSTALL_DIR/index.html" "$DATA_DIR/templates/subscription-special/index.html" 2>/dev/null || true
+        fi
     else
         echo -e " ⚠ Skipped: index.html (bad checksum)"
     fi
@@ -203,6 +209,10 @@ fi
 if "${CURL_BASE[@]}" -o "$INSTALL_DIR/templates/subscription-classic/index.html" "$MANAGER_REPO_URL/templates/subscription-classic/index.html" 2>/dev/null; then
     if verify_download "$INSTALL_DIR/templates/subscription-classic/index.html" "templates/subscription-classic/index.html"; then
         echo -e " ${GREEN}✔${NC} Downloaded: classic template"
+        if [ -n "$DATA_DIR" ] && [ -d "$DATA_DIR/templates" ]; then
+            mkdir -p "$DATA_DIR/templates/subscription-classic" 2>/dev/null || true
+            cp -f "$INSTALL_DIR/templates/subscription-classic/index.html" "$DATA_DIR/templates/subscription-classic/index.html" 2>/dev/null || true
+        fi
     else
         echo -e " ⚠ Skipped: classic template (bad checksum)"
     fi
@@ -223,7 +233,7 @@ cat > /usr/local/bin/mrm << 'EOF'
 #!/bin/bash
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then
     [ -r /opt/mrm-manager/versions.conf ] && source /opt/mrm-manager/versions.conf
-    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.18")}"
+    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.19")}"
     exit 0
 fi
 exec bash /opt/mrm-manager/main.sh "$@"
