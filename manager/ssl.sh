@@ -1,8 +1,8 @@
 #!/bin/bash
-# MRM Manager ssl.sh v1.4.19
+# MRM Manager ssl.sh v1.4.20
 
 # ═══════════════════════════════════════════════════════════════════════════
-# SSL MANAGEMENT MODULE v1.4.19
+# SSL MANAGEMENT MODULE v1.4.20
 # ═══════════════════════════════════════════════════════════════════════════
 # Author: MRM Manager Team
 # License: GPL-3.0
@@ -49,7 +49,7 @@ readonly SSL_BACKUP_DIR="${SSL_BACKUP_DIR:-/opt/mrm-manager/ssl-backups}"
 readonly CONFIG_DIR="${CONFIG_DIR:-/opt/mrm-manager}"
 
 [ -r "$CONFIG_DIR/versions.conf" ] && source "$CONFIG_DIR/versions.conf"
-SSL_VERSION="${SSL_VERSION:-1.0.3}"
+SSL_VERSION="${SSL_VERSION:-1.0.4}"
 
 # Thresholds
 readonly EXPIRY_WARNING_DAYS=14
@@ -79,6 +79,8 @@ declare -g NODE_ENV="${NODE_ENV:-}"
 
 # Service states - use local in functions when possible
 declare -g _SERVICES_STOPPED=()
+# Docker containers stopped for certificate work (MRM-037)
+declare -g _CONTAINERS_STOPPED=()
 
 # ═══════════════════════════════════════════════════════════════════════════
 # LOAD EXTERNAL MODULES
@@ -202,6 +204,16 @@ cleanup_on_exit() {
         fi
     done
     _SERVICES_STOPPED=()
+    
+    # Restore stopped Docker containers (MRM-037)
+    local container
+    for container in "${_CONTAINERS_STOPPED[@]}"; do
+        if [[ -n "$container" ]]; then
+            docker start "$container" >/dev/null 2>&1
+            log_info "Restored container: $container"
+        fi
+    done
+    _CONTAINERS_STOPPED=()
     
     # Remove temp files
     rm -f /tmp/ssl-manager-*.tmp 2>/dev/null
@@ -415,15 +427,26 @@ start_service() {
 stop_web_services() {
     local stopped=0
     
+    # 1) systemd-managed web servers
     for service in nginx apache2 httpd lighttpd; do
         if systemctl is-active --quiet "$service" 2>/dev/null; then
-            stop_service "$service" && ((stopped++))
+            stop_service "$service" && stopped=$((stopped + 1))
         fi
     done
     
-    # Also kill any process on port 80
-    if command -v fuser &>/dev/null; then
-        fuser -k ${HTTP_PORT}/tcp 2>/dev/null
+    # 2) Docker containers owning the challenge port (MRM-037)
+    #    A container publishing :80 keeps an iptables DNAT rule that routes
+    #    incoming HTTP traffic into the container even when the host port
+    #    looks free — certbot --standalone would never see the Let's
+    #    Encrypt HTTP-01 challenge. Such containers MUST be stopped.
+    if _docker_available; then
+        _stop_docker_listeners
+    fi
+    
+    # 3) Last resort: non-container processes still on the port
+    if command -v fuser &>/dev/null && _port_in_use "$HTTP_PORT"; then
+        log_warning "Port $HTTP_PORT still busy after stopping known services — killing residual listener(s)"
+        fuser -k "${HTTP_PORT}/tcp" 2>/dev/null
     fi
     
     # Wait for ports to be released
@@ -432,12 +455,71 @@ stop_web_services() {
     return 0
 }
 
-# Restore all stopped services
+# ── Docker helpers (MRM-037) ────────────────────────────────────────────────
+
+_docker_available() {
+    command -v docker >/dev/null 2>&1 || return 1
+    docker info >/dev/null 2>&1
+}
+
+# Map a host PID to its Docker container name (empty + rc 1 if not in a container)
+_container_of_pid() {
+    local pid="$1" cgroup cid
+    cgroup=$(tr -s '[:space:]' '\n' < "/proc/$pid/cgroup" 2>/dev/null | grep -oE '[0-9a-f]{64}' | head -1)
+    [[ -n "$cgroup" ]] || return 1
+    cid="${cgroup:0:12}"
+    docker inspect --format '{{.Name}}' "$cid" 2>/dev/null | sed 's|^/||'
+}
+
+# Stop containers that own the HTTP challenge port:
+#  a) published :80 (Ports column) — DNAT keeps hijacking traffic
+#  b) still listening on :80 after (a) — e.g. network_mode: host
+_stop_docker_listeners() {
+    local name ports
+    while IFS='|' read -r name ports; do
+        [[ -z "$name" ]] && continue
+        if [[ "$ports" == *":${HTTP_PORT}->"* ]]; then
+            if docker stop -t 10 "$name" >/dev/null 2>&1; then
+                _CONTAINERS_STOPPED+=("$name")
+                log_info "Stopped container (publishes :$HTTP_PORT): $name"
+            fi
+        fi
+    done < <(docker ps --format '{{.Names}}|{{.Ports}}' 2>/dev/null)
+    
+    local pids pid cname
+    pids=$(ss -tlnp 2>/dev/null | awk -v p=":${HTTP_PORT}$" 'NR>1 && $4 ~ p' | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u)
+    for pid in $pids; do
+        cname=$(_container_of_pid "$pid" 2>/dev/null) || cname=""
+        if [[ -n "$cname" && " ${_CONTAINERS_STOPPED[*]:-} " != *" $cname "* ]]; then
+            if docker stop -t 10 "$cname" >/dev/null 2>&1; then
+                _CONTAINERS_STOPPED+=("$cname")
+                log_info "Stopped container (host listener :$HTTP_PORT): $cname"
+            fi
+        fi
+    done
+}
+
+# Restore all stopped services (systemd + Docker containers)
 restore_services() {
     local -a services_to_restore=("${_SERVICES_STOPPED[@]}")
     
     for service in "${services_to_restore[@]}"; do
         start_service "$service"
+    done
+    
+    # Containers: `docker start` (compose restart would fail on stopped
+    # containers) — MRM-037
+    local -a containers_to_restore=("${_CONTAINERS_STOPPED[@]}")
+    _CONTAINERS_STOPPED=()
+    
+    local container
+    for container in "${containers_to_restore[@]}"; do
+        if docker start "$container" >/dev/null 2>&1; then
+            log_info "Started container: $container"
+        else
+            log_error "Failed to start container: $container"
+            echo -e "  ${RED}✘ Container $container did not start — run: docker start $container${NC}"
+        fi
     done
 }
 
@@ -484,7 +566,7 @@ restart_panel_services() {
         node)
             if [[ -n "$NODE_DIR" ]]; then
                 target_dir="$NODE_DIR"
-            else
+            elif [[ -n "$NODE_ENV" ]]; then
                 target_dir="$(dirname "$NODE_ENV" 2>/dev/null)"
             fi
             ;;
@@ -539,22 +621,28 @@ recreate_service() {
 # PORT CHECKING
 # ═══════════════════════════════════════════════════════════════════════════
 
+# True (rc 0) when the TCP port has a local listener
+_port_in_use() {
+    local port="$1"
+    ss -tlnp 2>/dev/null | awk -v p=":${port}$" 'NR>1 && $4 ~ p { found = 1 } END { exit !found }'
+}
+
 check_port_availability() {
     local port="$1"
     local max_retries="${2:-3}"
     local retry=0
     
     while [[ $retry -lt $max_retries ]]; do
-        if ! ss -tlnp 2>/dev/null | grep -q ":${port} "; then
+        if ! _port_in_use "$port"; then
             return 0
         fi
-        ((retry++))
+        retry=$((retry + 1))
         sleep 1
     done
     
     local service
-    service=$(ss -tlnp 2>/dev/null | grep ":${port} " | awk '{print $NF}' | head -1)
-    ui_warning "Port $port is in use by: $service"
+    service=$(ss -tlnp 2>/dev/null | awk -v p=":${port}$" 'NR>1 && $4 ~ p { print $NF; exit }')
+    ui_warning "Port $port is in use by: ${service:-unknown process}"
     return 1
 }
 
@@ -931,16 +1019,17 @@ show_certificate_expiry() {
             WARNING) expiring_domains+=("$domain") ;;
         esac
         
-        # Source label
-        local src_label
+        # Source label — color goes in the FORMAT string, not the argument:
+        # printf '%s' would print literal \033[...] text (MRM-038)
+        local src_text src_color
         case "$source" in
-            le) src_label="${GREEN}LE${NC}" ;;
-            panel) src_label="${ORANGE}PNL${NC}" ;;
-            node) src_label="${PURPLE}NOD${NC}" ;;
+            le) src_text="LE"; src_color="$GREEN" ;;
+            panel) src_text="PNL"; src_color="$ORANGE" ;;
+            node) src_text="NOD"; src_color="$PURPLE" ;;
         esac
         
-        printf "${CYAN}║${NC} %-13s │ %-28s │ %-16s │ ${color}%-6s${NC} │ ${color}%-8s${NC} ${CYAN}║${NC}\n" \
-               "$src_label" "${domain:0:28}" "${formatted_date:0:16}" "$days" "$status"
+        printf "${CYAN}║${NC} ${src_color}%-13s${NC} │ %-28s │ %-16s │ ${color}%-6s${NC} │ ${color}%-8s${NC} ${CYAN}║${NC}\n" \
+               "$src_text" "${domain:0:28}" "${formatted_date:0:16}" "$days" "$status"
     done
     
     echo -e "${CYAN}╚════════════════════════════════════════════════════════════════════════════╝${NC}"
@@ -1079,52 +1168,139 @@ renew_expiring_certificates() {
 # HELPER: Renew Let's Encrypt Certificates
 # ═══════════════════════════════════════════════════════════════════════════
 
+# authenticator saved for a live cert (empty when unknown)
+_cert_authenticator() {
+    local domain="$1"
+    grep -E '^[[:space:]]*authenticator[[:space:]]*=' "/etc/letsencrypt/renewal/${domain}.conf" 2>/dev/null \
+        | head -1 | sed 's/^[^=]*=[[:space:]]*//' | tr -d ' "'
+}
+
+# Show the most relevant part of a failed certbot run + actionable hints
+_show_certbot_failure() {
+    local output_file="$1" domain="$2"
+
+    if [[ ! -s "$output_file" ]]; then
+        echo -e "\n  ${YELLOW}(no certbot output captured)${NC}"
+        return
+    fi
+
+    echo -e "\n  ${RED}── certbot report: $domain ──${NC}"
+    grep -vE '^[[:space:]]*$' "$output_file" 2>/dev/null | tail -n 12 | sed 's/^/    /'
+    echo ""
+
+    if grep -qE 'Failed to bind to port|Address already in use' "$output_file" 2>/dev/null; then
+        echo -e "    ${YELLOW}Hint: port $HTTP_PORT is still occupied — find and stop the web server/container owning it.${NC}"
+    elif grep -qiE 'Invalid response from|404|403' "$output_file" 2>/dev/null; then
+        echo -e "    ${YELLOW}Hint: Let's Encrypt reached the server but got an invalid challenge response.${NC}"
+        echo -e "    ${YELLOW}      Make sure DNS for $domain really points to THIS server (no CDN/proxy in between).${NC}"
+    elif grep -qiE 'timeout|timed out' "$output_file" 2>/dev/null; then
+        echo -e "    ${YELLOW}Hint: Let's Encrypt could not reach port 80 — check firewall rules and the DNS target.${NC}"
+    elif grep -qiE 'No certificate found|No certs were found' "$output_file" 2>/dev/null; then
+        echo -e "    ${YELLOW}Hint: certbot has no certificate named '$domain' (it may be a SAN on another cert). Use 'Request New SSL' instead.${NC}"
+    fi
+    echo -e "    Full log: ${CYAN}$CERTBOT_DEBUG_LOG${NC}"
+}
+
+# Append a failed run's full output to the archive log with a separator
+_archive_certbot_failure() {
+    local output_file="$1" domain="$2"
+    {
+        echo "════════ certbot failure: $domain ($(date '+%Y-%m-%d %H:%M:%S')) ════════"
+        cat "$output_file" 2>/dev/null
+        echo ""
+    } >> "$CERTBOT_DEBUG_LOG" 2>/dev/null
+}
+
 _renew_le_certificates() {
     local -a domains=("$@")
-    
+
     [[ ${#domains[@]} -eq 0 ]] && return 0
-    
-    echo -e "\n${YELLOW}[1/3] Stopping web services...${NC}"
+
+    # Non-interactive DNS sanity check (MRM-039): warn before stopping services
+    local -a dns_bad=()
+    local domain srv4
+    local -a a_recs=()
+    srv4=$(get_server_ipv4 2>/dev/null || true)
+    for domain in "${domains[@]}"; do
+        a_recs=()
+        mapfile -t a_recs < <(get_domain_ipv4 "$domain")
+        if [[ ${#a_recs[@]} -eq 0 ]]; then
+            dns_bad+=("$domain — no A record found")
+        elif [[ -n "$srv4" ]] && ! all_records_match_server "$srv4" "${a_recs[@]}"; then
+            dns_bad+=("$domain — A: ${a_recs[*]} but this server is $srv4")
+        fi
+    done
+    if [[ ${#dns_bad[@]} -gt 0 ]]; then
+        echo -e "\n${YELLOW}⚠ DNS pre-check — likely to fail:${NC}"
+        local bad_entry
+        for bad_entry in "${dns_bad[@]}"; do
+            echo -e "  ${YELLOW}• $bad_entry${NC}"
+        done
+        echo -e "${YELLOW}  (Renewal continues anyway — it only works if HTTP actually reaches this server.)${NC}\n"
+    fi
+
+    echo -e "${YELLOW}[1/3] Stopping web services...${NC}"
     stop_web_services
-    
+
     if ! check_port_availability "$HTTP_PORT" 5; then
         ui_error "Port $HTTP_PORT still in use!"
         restore_services
         return 1
     fi
-    
+
     echo -e "${YELLOW}[2/3] Renewing certificates...${NC}\n"
-    
-    local renewed=0 failed=0
-    
+
+    local renewed=0 failed=0 rc=0
+    local tmp_out auth
+    tmp_out=$(mktemp /tmp/ssl-manager-cb.XXXXXX)
+
     for domain in "${domains[@]}"; do
         echo -ne "  Renewing ${CYAN}$domain${NC}... "
-        
-        if certbot renew --cert-name "$domain" --standalone --non-interactive >> "$CERTBOT_DEBUG_LOG" 2>&1; then
+
+        # DNS-01 certs must renew with their saved plugin — forcing
+        # --standalone on them would break the renewal (MRM-039)
+        auth=$(_cert_authenticator "$domain")
+
+        rc=0
+        if [[ "$auth" == dns-* ]]; then
+            certbot renew --cert-name "$domain" --non-interactive >"$tmp_out" 2>&1 || rc=$?
+        else
+            certbot renew --cert-name "$domain" --standalone --non-interactive >"$tmp_out" 2>&1 || rc=$?
+        fi
+
+        if [[ $rc -eq 0 ]]; then
             echo -e "${GREEN}✔${NC}"
             log_success "Renewed: $domain"
-            ((renewed++))
+            renewed=$((renewed + 1))
             _update_cert_paths "$domain"
         else
             echo -e "${RED}✘${NC}"
             log_error "Failed to renew: $domain"
-            ((failed++))
+            failed=$((failed + 1))
+            _archive_certbot_failure "$tmp_out" "$domain"
+            _show_certbot_failure "$tmp_out" "$domain"
         fi
+        : > "$tmp_out"
     done
-    
+
+    rm -f "$tmp_out"
+
     echo -e "\n${YELLOW}[3/3] Restoring services...${NC}"
     restore_services
-    restart_panel_services "panel"
-    restart_panel_services "node"
-    
+    # Only restart panel/node when something actually renewed (fresh certs to load)
+    if [[ $renewed -gt 0 ]]; then
+        restart_panel_services "panel"
+        restart_panel_services "node"
+    fi
+
     # Summary
-    echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "  ${GREEN}✔ Renewed: $renewed${NC}"
     echo -e "  ${RED}✘ Failed:  $failed${NC}"
-    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
     _offer_sync "${domains[@]}"
-    
+
     return 0
 }
 
@@ -1167,13 +1343,16 @@ _request_new_certificates() {
     echo -e "\n${YELLOW}[1/4] Validating DNS...${NC}\n"
     
     local -a valid_domains=()
+    local domain dns_out
     for domain in "${domains[@]}"; do
         echo -ne "  Checking ${CYAN}$domain${NC}... "
-        if validate_domain_dns "$domain" "true" &>/dev/null; then
+        # (MRM-039) capture the check output so the FAILURE REASON is visible
+        if dns_out=$(validate_domain_dns "$domain" "true" 2>&1); then
             echo -e "${GREEN}✔${NC}"
             valid_domains+=("$domain")
         else
             echo -e "${RED}✘ (skipping)${NC}"
+            printf '%s\n' "$dns_out" | sed 's/^/    /'
             log_warning "DNS failed for $domain"
         fi
     done
@@ -1194,32 +1373,44 @@ _request_new_certificates() {
     
     echo -e "${YELLOW}[3/4] Requesting certificates...${NC}\n"
     
-    local success=0 failed=0
+    local success=0 failed=0 rc=0
+    local tmp_out
+    tmp_out=$(mktemp /tmp/ssl-manager-cb.XXXXXX)
     
     for domain in "${valid_domains[@]}"; do
         echo -ne "  Requesting ${CYAN}$domain${NC}... "
         
-        if certbot certonly --standalone \
+        rc=0
+        certbot certonly --standalone \
             --non-interactive --agree-tos \
             --email "$email" \
             --preferred-challenges http \
-            -d "$domain" >> "$CERTBOT_DEBUG_LOG" 2>&1; then
-            
+            -d "$domain" >"$tmp_out" 2>&1 || rc=$?
+        
+        if [[ $rc -eq 0 ]]; then
             echo -e "${GREEN}✔${NC}"
             log_success "New certificate: $domain"
-            ((success++))
+            success=$((success + 1))
             _update_cert_paths "$domain"
         else
             echo -e "${RED}✘${NC}"
             log_error "Failed to get certificate: $domain"
-            ((failed++))
+            failed=$((failed + 1))
+            _archive_certbot_failure "$tmp_out" "$domain"
+            _show_certbot_failure "$tmp_out" "$domain"
         fi
+        : > "$tmp_out"
     done
+    
+    rm -f "$tmp_out"
     
     echo -e "\n${YELLOW}[4/4] Restoring services...${NC}"
     restore_services
-    restart_panel_services "panel"
-    restart_panel_services "node"
+    # Only restart panel/node when something actually succeeded (MRM-039)
+    if [[ $success -gt 0 ]]; then
+        restart_panel_services "panel"
+        restart_panel_services "node"
+    fi
     
     # Summary
     echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -1278,17 +1469,18 @@ renew_specific_certificate() {
         [[ "$domain" == "default" ]] && continue   # flat/default certs: not renewable (MRM-033)
         cert_list+=("$source|$domain|$cert_path|$days|$status")
         
-        local color src_label
+        local color src_text src_color
         color=$(get_status_color "$status")
         case "$source" in
-            le) src_label="${GREEN}[LE]${NC}" ;;
-            panel) src_label="${ORANGE}[PNL]${NC}" ;;
-            node) src_label="${PURPLE}[NOD]${NC}" ;;
+            le) src_text="[LE]"; src_color="$GREEN" ;;
+            panel) src_text="[PNL]"; src_color="$ORANGE" ;;
+            node) src_text="[NOD]"; src_color="$PURPLE" ;;
         esac
         
-        printf "%2d) %-12s %-30s ${color}[%s - %d days]${NC}\n" \
-               "$idx" "$src_label" "$domain" "$status" "$days"
-        ((idx++))
+        # (MRM-038) color in the format string — '%s' would print raw \033 codes
+        printf "%2d) ${src_color}%-12s${NC} %-30s ${color}[%s - %d days]${NC}\n" \
+               "$idx" "$src_text" "$domain" "$status" "$days"
+        idx=$((idx + 1))
     done < <(discover_all_certificates)
     
     if [[ $idx -eq 1 ]]; then
@@ -1311,7 +1503,15 @@ renew_specific_certificate() {
     local selected_idx=$((selection - 1))
     IFS='|' read -r source domain cert_path days status <<< "${cert_list[$selected_idx]}"
     
-    echo -e "\nSelected: ${CYAN}$domain${NC} (Source: $source)"
+    # (MRM-038) same fix as expiry table: colors in format, not %s args
+    local src_text src_color
+    case "$source" in
+        le) src_text="[LE]"; src_color="$GREEN" ;;
+        panel) src_text="[PNL]"; src_color="$ORANGE" ;;
+        node) src_text="[NOD]"; src_color="$PURPLE" ;;
+    esac
+    
+    echo -e "\nSelected: ${CYAN}$domain${NC} (Source: ${src_color}${src_text}${NC})"
     
     if [[ "$source" == "le" ]]; then
         read -r -p "Renew this certificate? (Y/n): " confirm
@@ -1507,8 +1707,7 @@ _request_certificate() {
         return 0
     else
         ui_error "Certificate request failed!"
-        echo -e "\n${YELLOW}Last 15 lines of log:${NC}"
-        tail -n 15 "$CERTBOT_DEBUG_LOG"
+        _show_certbot_failure "$CERTBOT_DEBUG_LOG" "${domains[0]}"
         log_error "Certbot failed"
         restore_services
         return 5
@@ -2106,101 +2305,106 @@ backup_certificates() {
 # ═══════════════════════════════════════════════════════════════════════════
 # AUTO-RENEWAL SETUP
 # ═══════════════════════════════════════════════════════════════════════════
+# AUTO-RENEWAL SETUP
+# ═══════════════════════════════════════════════════════════════════════════
 
 setup_auto_renewal() {
     ui_header "⏰ SETUP AUTO-RENEWAL"
     detect_active_panel > /dev/null
 
     local cron_file="/etc/cron.d/ssl-auto-renew"
-    local hook_script="/opt/mrm-manager/ssl-renew-hook.sh"
-    local hook_node_dir="${NODE_DIR:-$(dirname "$NODE_ENV" 2>/dev/null)}"
+    local wrapper="/opt/mrm-manager/ssl-auto-renew.sh"
 
     echo -e "${YELLOW}This will setup automatic certificate renewal.${NC}\n"
     echo "Schedule: Daily at 3:00 AM"
-    echo "Action: Renew + update paths + restart services"
+    echo "Action:  Stop web services + port-80 containers → renew →"
+    echo "         copy certs to panel/node dirs → restore services"
+    echo "Log:     ${SSL_LOG_DIR}/auto-renew.log"
     echo ""
 
     read -r -p "Proceed? (Y/n): " proceed
     [[ "$proceed" =~ ^[Nn]$ ]] && return
 
-    mkdir -p "$(dirname "$hook_script")"
+    mkdir -p "$(dirname "$wrapper")"
 
-    # Create hook script
-    cat > "$hook_script" << HOOK_EOF
+    # (MRM-040) A bare `certbot renew` in cron fails silently when the panel
+    # container still owns port 80 — the challenge never reaches certbot.
+    # The wrapper sources this module and reuses the exact same
+    # stop/restore logic as the interactive flows.
+    cat > "$wrapper" << WRAP_EOF
 #!/bin/bash
-# SSL Auto-Renewal Hook - Generated by MRM Manager
+# SSL Auto-Renewal wrapper - generated by MRM Manager
+# Runs under cron. Must NOT be edited by hand; re-run 'mrm → SSL → Setup
+# Auto-Renewal' after updating MRM.
 
+source /opt/mrm-manager/ssl.sh
 PANEL_CERTS="$PANEL_DEF_CERTS"
 NODE_CERTS="$NODE_DEF_CERTS"
-PANEL_DIR="$PANEL_DIR"
-NODE_DIR="$hook_node_dir"
 
-restart_compose_service() {
-    local target_dir="\$1"
-    local candidate
+init_logging || exit 1
+detect_active_panel > /dev/null
+log_info "Auto-renew started (panel: ${PANEL_DIR:-?})"
 
-    [[ -n "\$target_dir" && -d "\$target_dir" ]] || return 1
+stop_web_services
 
-    for candidate in \
-        "\$target_dir/docker-compose.yml" \
-        "\$target_dir/docker-compose.yaml" \
-        "\$target_dir/compose.yml" \
-        "\$target_dir/compose.yaml"
-    do
-        if [[ -f "\$candidate" ]]; then
-            (cd "\$target_dir" && docker compose restart >/dev/null 2>&1) || \
-            (cd "\$target_dir" && docker-compose restart >/dev/null 2>&1)
-            return 0
-        fi
-    done
+# Pass 1: HTTP-01 with standalone (web servers + port-80 containers stopped)
+# Pass 2: plain renew — covers DNS-01 certs saved with their own plugin
+certbot renew --standalone --quiet 2>>"$CERTBOT_DEBUG_LOG"
+RC=\$?
+if [[ \$RC -ne 0 ]]; then
+    certbot renew --quiet 2>>"$CERTBOT_DEBUG_LOG"
+    RC=\$?
+fi
 
-    return 1
-}
-
+# Copy renewed LE certs into the panel/node cert dirs (MRM convention)
 for dir in /etc/letsencrypt/live/*/; do
     domain=\$(basename "\$dir")
     [[ "\$domain" == "README" ]] && continue
-
-    # Update panel certs
     if [[ -d "\$PANEL_CERTS/\$domain" ]]; then
-        cp -L "\$dir/fullchain.pem" "\$PANEL_CERTS/\$domain/"
-        cp -L "\$dir/privkey.pem" "\$PANEL_CERTS/\$domain/"
-        chmod 644 "\$PANEL_CERTS/\$domain/fullchain.pem"
-        chmod 600 "\$PANEL_CERTS/\$domain/privkey.pem"
+        cp -L "\$dir/fullchain.pem" "\$dir/privkey.pem" "\$PANEL_CERTS/\$domain/" 2>/dev/null
+        chmod 644 "\$PANEL_CERTS/\$domain/fullchain.pem" 2>/dev/null
+        chmod 600 "\$PANEL_CERTS/\$domain/privkey.pem" 2>/dev/null
+        log_info "Updated panel cert: \$domain"
     fi
-
-    # Update node certs
     if [[ -d "\$NODE_CERTS/\$domain" && "\$NODE_CERTS" != "\$PANEL_CERTS" ]]; then
-        cp -L "\$dir/fullchain.pem" "\$NODE_CERTS/\$domain/"
-        cp -L "\$dir/privkey.pem" "\$NODE_CERTS/\$domain/"
-        chmod 644 "\$NODE_CERTS/\$domain/fullchain.pem"
-        chmod 600 "\$NODE_CERTS/\$domain/privkey.pem"
+        cp -L "\$dir/fullchain.pem" "\$dir/privkey.pem" "\$NODE_CERTS/\$domain/" 2>/dev/null
+        chmod 644 "\$NODE_CERTS/\$domain/fullchain.pem" 2>/dev/null
+        chmod 600 "\$NODE_CERTS/\$domain/privkey.pem" 2>/dev/null
+        log_info "Updated node cert: \$domain"
     fi
 done
 
-restart_compose_service "$PANEL_DIR" || true
-restart_compose_service "$NODE_DIR" || true
-systemctl reload nginx >/dev/null 2>&1 || true
-HOOK_EOF
+restore_services
+restart_panel_services "panel"
+restart_panel_services "node"
 
-    chmod 700 "$hook_script"
+log_info "Auto-renew finished (certbot rc=\$RC)"
+exit 0
+WRAP_EOF
 
-    # Create cron job
+    chmod 700 "$wrapper"
+
+    # Cron entry (replaces the legacy deploy-hook approach)
     cat > "$cron_file" << EOF
 # SSL Auto-Renewal - MRM Manager
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
-0 3 * * * root certbot renew --quiet --deploy-hook "$hook_script"
+0 3 * * * root /opt/mrm-manager/ssl-auto-renew.sh >> $SSL_LOG_DIR/auto-renew.log 2>&1
 EOF
 
     chmod 644 "$cron_file"
 
-    ui_success "Auto-renewal configured!"
-    echo -e "  ${YELLOW}Cron:${NC} $cron_file"
-    echo -e "  ${YELLOW}Hook:${NC} $hook_script"
-    echo -e "\n${CYAN}Test with:${NC} certbot renew --dry-run"
+    # Legacy hook from previous versions — no longer used
+    rm -f /opt/mrm-manager/ssl-renew-hook.sh
 
-    log_success "Auto-renewal configured"
+    ui_success "Auto-renewal configured!"
+    echo -e "  ${YELLOW}Wrapper:${NC} $wrapper"
+    echo -e "  ${YELLOW}Cron:${NC} $cron_file"
+    echo -e "  ${YELLOW}Log:${NC} $SSL_LOG_DIR/auto-renew.log"
+    echo -e "\n${CYAN}Test now with:${NC} bash $wrapper"
+    echo -e "${CYAN}Dry-run only:${NC}  certbot renew --dry-run"
+
+    log_success "Auto-renewal configured (wrapper mode, MRM-040)"
     pause
 }
 
