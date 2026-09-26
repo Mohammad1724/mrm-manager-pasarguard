@@ -1,8 +1,8 @@
 #!/bin/bash
-# MRM Manager ssl.sh v1.4.21
+# MRM Manager ssl.sh v1.4.22
 
 # ═══════════════════════════════════════════════════════════════════════════
-# SSL MANAGEMENT MODULE v1.4.21
+# SSL MANAGEMENT MODULE v1.4.22
 # ═══════════════════════════════════════════════════════════════════════════
 # Author: MRM Manager Team
 # License: GPL-3.0
@@ -49,7 +49,7 @@ readonly SSL_BACKUP_DIR="${SSL_BACKUP_DIR:-/opt/mrm-manager/ssl-backups}"
 readonly CONFIG_DIR="${CONFIG_DIR:-/opt/mrm-manager}"
 
 [ -r "$CONFIG_DIR/versions.conf" ] && source "$CONFIG_DIR/versions.conf"
-SSL_VERSION="${SSL_VERSION:-1.0.5}"
+SSL_VERSION="${SSL_VERSION:-1.0.6}"
 
 # Thresholds
 readonly EXPIRY_WARNING_DAYS=14
@@ -1195,6 +1195,9 @@ _show_certbot_failure() {
         echo -e "    ${YELLOW}      Make sure DNS for $domain really points to THIS server (no CDN/proxy in between).${NC}"
     elif grep -qiE 'timeout|timed out' "$output_file" 2>/dev/null; then
         echo -e "    ${YELLOW}Hint: Let's Encrypt could not reach port 80 — check firewall rules and the DNS target.${NC}"
+    elif grep -qiE 'live directory exists' "$output_file" 2>/dev/null; then
+        echo -e "    ${YELLOW}Hint: a stale /etc/letsencrypt live directory blocked the new certificate.${NC}"
+        echo -e "    ${YELLOW}      MRM should have backed it up and removed it — run the renewal again.${NC}"
     elif grep -qiE 'No certificate found|No certs were found' "$output_file" 2>/dev/null; then
         echo -e "    ${YELLOW}Hint: certbot has no renewal profile for '$domain' and the automatic reissue also failed.${NC}"
         echo -e "    ${YELLOW}      Check DNS, then see: /var/log/letsencrypt/letsencrypt.log${NC}"
@@ -1255,6 +1258,34 @@ _copy_le_cert_to_dest() {
     cp -L "$le_dir/privkey.pem" "$dest/" 2>/dev/null || return 1
     chmod 644 "$dest/fullchain.pem" 2>/dev/null
     chmod 600 "$dest/privkey.pem" 2>/dev/null
+    return 0
+}
+
+# MRM-042: certbot refuses to issue a cert when a stale live/ directory
+# already exists ("live directory exists for X"). Back up the stale dir
+# (dereferenced) into the SSL backup space, remove it and the orphaned
+# archive, so the reissue can proceed. The old key/chain stay in the
+# backup; panel/node copies under their cert dirs are untouched.
+_stale_live_cleanup() {
+    local domain="$1"
+    local live="/etc/letsencrypt/live/$domain"
+    [[ -e "$live" ]] || return 0
+    local backup="$SSL_BACKUP_DIR/stale-live-$domain-$(date +%Y%m%d-%H%M%S)"
+    if ! mkdir -p "$backup" 2>/dev/null; then
+        log_error "Cannot create backup dir: $backup"
+        return 1
+    fi
+    cp -Lr "$live" "$backup/" 2>/dev/null
+    if [[ -d "/etc/letsencrypt/archive/$domain" ]]; then
+        cp -a "/etc/letsencrypt/archive/$domain" "$backup/" 2>/dev/null
+    fi
+    if ! rm -rf "$live" "/etc/letsencrypt/archive/$domain" 2>/dev/null || [[ -e "$live" ]]; then
+        log_error "Failed to remove stale live dir for $domain"
+        return 1
+    fi
+    rm -f "/etc/letsencrypt/renewal/${domain}.conf" 2>/dev/null
+    log_info "Stale live dir for $domain backed up to $backup"
+    echo -e "    ${YELLOW}↳ stale cert backed up: $backup${NC}"
     return 0
 }
 
@@ -1361,16 +1392,19 @@ _renew_le_certificates() {
             else
                 echo -e "${YELLOW}↳ renewal profile missing — reissuing fresh certificate...${NC}"
                 reissue_email=$(_get_reissue_email)
-                if validate_email "${reissue_email:-}"; then
+                if ! validate_email "${reissue_email:-}"; then
+                    ui_error "Invalid email — cannot reissue $domain"
+                    rc=1
+                elif ! _stale_live_cleanup "$domain"; then
+                    ui_error "Stale live directory for $domain could not be removed — reissue skipped"
+                    rc=1
+                else
                     rc=0
                     certbot certonly --standalone \
                         --non-interactive --agree-tos \
                         --email "$reissue_email" \
                         --preferred-challenges http \
                         -d "$domain" >"$tmp_out" 2>&1 || rc=$?
-                else
-                    ui_error "Invalid email — cannot reissue $domain"
-                    rc=1
                 fi
             fi
         fi
