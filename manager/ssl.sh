@@ -1,44 +1,17 @@
 #!/bin/bash
-# MRM Manager ssl.sh v1.4.27
-
-# ═══════════════════════════════════════════════════════════════════════════
-# SSL MANAGEMENT MODULE v1.4.27
-# ═══════════════════════════════════════════════════════════════════════════
-# Author: MRM Manager Team
+# MRM Manager ssl.sh — SSL certificate management
 # License: GPL-3.0
-# Requires: Bash 4.0+, certbot, openssl, curl
 #
-# Exit Codes:
-#   0 - Success
-#   1 - General error
-#   2 - Dependency missing
-#   3 - Permission denied
-#   4 - Network error
-#   5 - Certificate error
-# ═══════════════════════════════════════════════════════════════════════════
+# Requires: Bash 4.0+, certbot, openssl, curl
+# Exit codes: 0 ok · 1 error · 2 dependency missing · 3 permission · 4 network · 5 certificate
 
 set -o pipefail
 
-# ═══════════════════════════════════════════════════════════════════════════
-# CONSTANTS & CONFIGURATION
-# ═══════════════════════════════════════════════════════════════════════════
-
-# Version
+# ─── Constants & configuration ───────────────────────────────────────────────
 
 # Guard against double-source (prevents "readonly: variable is read only" error)
 if [[ -z "${_SSL_MODULE_INITIALIZED:-}" ]]; then
 _SSL_MODULE_INITIALIZED=1
-
-# Colors (not readonly: utils.sh exports the same names when both are sourced — MRM-036)
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-CYAN='\033[0;36m'
-ORANGE='\033[0;33m'
-NC='\033[0m'
-BOLD='\033[1m'
 
 # Paths (can be overridden via environment)
 readonly SSL_LOG_DIR="${SSL_LOG_DIR:-/var/log/ssl-manager}"
@@ -66,9 +39,7 @@ readonly HTTPS_PORT=443
 
 fi # end _SSL_MODULE_INITIALIZED guard
 
-# ═══════════════════════════════════════════════════════════════════════════
-# GLOBAL STATE
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Global State ──────────────────────────────────────────────────────
 
 declare -g PANEL_DIR="${PANEL_DIR:-}"
 declare -g PANEL_DEF_CERTS="${PANEL_DEF_CERTS:-}"
@@ -82,9 +53,7 @@ declare -g _SERVICES_STOPPED=()
 # Docker containers stopped for certificate work (MRM-037)
 declare -g _CONTAINERS_STOPPED=()
 
-# ═══════════════════════════════════════════════════════════════════════════
-# LOAD EXTERNAL MODULES
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Load External Modules ─────────────────────────────────────────────
 
 _load_external_modules() {
     local modules=("utils.sh" "ui.sh")
@@ -110,61 +79,21 @@ _load_external_modules() {
 }
 _load_external_modules
 
-# ═══════════════════════════════════════════════════════════════════════════
-# UI FALLBACK FUNCTIONS
-# ═══════════════════════════════════════════════════════════════════════════
-
+# UI helpers come from ui.sh (loaded above). Minimal stand-ins keep the module
+# usable if it is ever run outside an MRM installation.
 if ! declare -f ui_header >/dev/null 2>&1; then
-    ui_header() {
-        local title="$1"
-        local width=58
-        local line
-        local padding
-
-        printf -v line '%*s' "$width" ''
-        line=${line// /═}
-        padding=$(( (width - ${#title}) / 2 ))
-        [ "$padding" -lt 1 ] && padding=1
-
-        # FIX: only clear on a real terminal (MRM-034)
-        if [ -t 1 ]; then
-            clear
-        fi
-        echo -e "${CYAN}╔${line}╗${NC}"
-        printf '%b║%*s%b%s%b%*s%b║%b\n' \
-            "$CYAN" "$padding" '' "$BOLD" "$title" "$NC" \
-            "$((width - padding - ${#title}))" '' "$CYAN" "$NC"
-        echo -e "${CYAN}╚${line}╝${NC}"
-        echo ""
-    }
+    ui_header()  { echo ""; echo "── $1 ──"; echo ""; }
+    ui_error()   { echo "  ✘ $1" >&2; }
+    ui_success() { echo "  ✔ $1"; }
+    ui_warning() { echo "  ⚠ $1"; }
+    ui_info()    { echo "  ℹ $1"; }
+    ui_note()    { echo "  $1"; }
+    pause()      { echo ""; read -r -p "  Press Enter to continue… " _; }
 fi
+# Colors are defined by ui.sh; keep empty defaults so echo -e never prints raw names
+: "${RED:=}" "${GREEN:=}" "${YELLOW:=}" "${BLUE:=}" "${PURPLE:=}" "${CYAN:=}" "${ORANGE:=}" "${NC:=}" "${BOLD:=}" "${DIM:=}"
 
-if ! declare -f ui_error >/dev/null 2>&1; then
-    ui_error() { echo -e "${RED}[✘] $1${NC}" >&2; }
-fi
-
-if ! declare -f ui_success >/dev/null 2>&1; then
-    ui_success() { echo -e "${GREEN}[✔] $1${NC}"; }
-fi
-
-if ! declare -f ui_warning >/dev/null 2>&1; then
-    ui_warning() { echo -e "${YELLOW}[⚠] $1${NC}"; }
-fi
-
-if ! declare -f ui_info >/dev/null 2>&1; then
-    ui_info() { echo -e "${BLUE}[ℹ] $1${NC}"; }
-fi
-
-if ! declare -f pause >/dev/null 2>&1; then
-    pause() {
-        echo ""
-        read -r -p "Press Enter to continue..."
-    }
-fi
-
-# ═══════════════════════════════════════════════════════════════════════════
-# LOGGING SYSTEM
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Logging System ────────────────────────────────────────────────────
 
 init_logging() {
     mkdir -p "$SSL_LOG_DIR" "$SSL_BACKUP_DIR" 2>/dev/null || {
@@ -189,9 +118,7 @@ log_success() { log_message "SUCCESS" "$1"; }
 log_warning() { log_message "WARNING" "$1"; }
 log_debug() { [[ "${DEBUG:-0}" == "1" ]] && log_message "DEBUG" "$1"; }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# CLEANUP & SIGNAL HANDLING
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Cleanup & Signal Handling ─────────────────────────────────────────
 
 cleanup_on_exit() {
     local exit_code=$?
@@ -225,9 +152,7 @@ trap cleanup_on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# ═══════════════════════════════════════════════════════════════════════════
-# INPUT VALIDATION & SANITIZATION
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Input Validation & Sanitization ───────────────────────────────────
 
 # Validate domain format (strict)
 validate_domain() {
@@ -293,9 +218,7 @@ validate_ip() {
     return 0
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# DEPENDENCY CHECKING
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Dependency Checking ───────────────────────────────────────────────
 
 check_dependencies() {
     local -a missing=()
@@ -309,8 +232,8 @@ check_dependencies() {
     done
     
     if [[ ${#missing[@]} -gt 0 ]]; then
-        ui_error "Missing required dependencies: ${missing[*]}"
-        echo -e "${YELLOW}Install with: apt install ${missing[*]}${NC}"
+        ui_error "Missing required tools: ${missing[*]}"
+        ui_cmd "apt install -y ${missing[*]}" "install them"
         return 2
     fi
     
@@ -339,9 +262,7 @@ check_root() {
     return 0
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# PANEL DETECTION
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Panel Detection ───────────────────────────────────────────────────
 
 detect_active_panel() {
     local panel_name=""
@@ -385,9 +306,7 @@ detect_active_panel() {
     return 0
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# SERVICE MANAGEMENT (Centralized)
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Service Management (Centralized) ──────────────────────────────────
 
 # Stop a service and track it for restoration
 stop_service() {
@@ -518,7 +437,7 @@ restore_services() {
             log_info "Started container: $container"
         else
             log_error "Failed to start container: $container"
-            echo -e "  ${RED}✘ Container $container did not start — run: docker start $container${NC}"
+            ui_error "Container $container did not start — run: docker start $container"
         fi
     done
 }
@@ -617,9 +536,7 @@ recreate_service() {
     fi
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# PORT CHECKING
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Port Checking ─────────────────────────────────────────────────────
 
 # True (rc 0) when the TCP port has a local listener
 _port_in_use() {
@@ -646,9 +563,7 @@ check_port_availability() {
     return 1
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# DNS VALIDATION
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── DNS Validation ────────────────────────────────────────────────────
 
 is_ipv6_address() {
     local address="$1"
@@ -797,18 +712,17 @@ validate_domain_dns() {
     fi
 
     if [[ "$mismatch" == "true" ]]; then
-        echo -e "${YELLOW}A records:    ${domain_ipv4[*]:-none}${NC}"
-        echo -e "${YELLOW}AAAA records: ${domain_ipv6[*]:-none}${NC}"
-        echo -e "${YELLOW}Server IPv4:  ${server_ipv4:-none}${NC}"
-        echo -e "${YELLOW}Server IPv6:  ${server_ipv6:-none}${NC}"
+        ui_kv "A records" "${domain_ipv4[*]:-none}"
+        ui_kv "AAAA records" "${domain_ipv6[*]:-none}"
+        ui_kv "Server IPv4" "${server_ipv4:-none}"
+        ui_kv "Server IPv6" "${server_ipv6:-none}"
         log_warning "DNS mismatch for $domain"
 
         if [[ "$skip_mismatch" == "true" ]]; then
             return 1
         fi
 
-        read -r -p "Continue anyway? (y/N): " response
-        [[ "$response" =~ ^[Yy]$ ]] || return 1
+        ui_confirm "Continue anyway?" || return 1
         log_warning "User chose to continue despite DNS mismatch"
     fi
 
@@ -823,9 +737,7 @@ validate_domain_dns() {
     return 0
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# CERTIFICATE EXPIRY FUNCTIONS
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Certificate Expiry Functions ──────────────────────────────────────
 
 # Get certificate expiry date
 get_cert_expiry_date() {
@@ -879,9 +791,7 @@ get_status_color() {
     esac
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# CERTIFICATE DISCOVERY
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Certificate Discovery ─────────────────────────────────────────────
 
 # Get all certificates with their info
 # Output format: source|domain|cert_path|days|status
@@ -1021,111 +931,93 @@ discover_all_certificates() {
     printf '%s\n' "${results[@]}"
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# SHOW CERTIFICATE EXPIRY STATUS
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Show Certificate Expiry Status ────────────────────────────────────
 
 show_certificate_expiry() {
-    ui_header "📅 CERTIFICATE EXPIRY STATUS"
     detect_active_panel > /dev/null
-    
+    ui_header "Certificate Expiry" "Panel: $(basename "$PANEL_DIR" 2>/dev/null || echo unknown) · warn <${EXPIRY_WARNING_DAYS}d · critical <${EXPIRY_CRITICAL_DAYS}d"
+
     local -a all_certs
     local -a expired_domains=()
     local -a expiring_domains=()
-    
+
     # MRM-044: mark the ACTIVE dashboard / node-gRPC domains taken from the
     # .env files so the operator can see at a glance which cert serves what
     local panel_dom node_dom
     panel_dom=$(_env_cert_domain "$PANEL_ENV" "UVICORN_SSL_CERTFILE" 2>/dev/null) || panel_dom=""
     node_dom=$(_env_cert_domain "$NODE_ENV" "SSL_CERT_FILE" 2>/dev/null) || node_dom=""
 
-    # Discover all certificates
     mapfile -t all_certs < <(discover_all_certificates)
-    
+
     if [[ ${#all_certs[@]} -eq 0 ]]; then
         ui_warning "No certificates found."
         pause
         return
     fi
-    
-    # Display header
-    echo -e "${CYAN}╔════════════════════════════════════════════════════════════════════════════╗${NC}"
-    printf "${CYAN}║${NC} %-4s │ %-28s │ %-16s │ %-6s │ %-8s ${CYAN}║${NC}\n" "Src" "Domain" "Expiry Date" "Days" "Status"
-    echo -e "${CYAN}╠════════════════════════════════════════════════════════════════════════════╣${NC}"
-    
-    # Display certificates
+
+    ui_table_header "%-4s  %-30s  %-11s  %5s  %-9s  %s" "Src" "Domain" "Expires" "Days" "Status" "Role"
+
+    local cert_info source domain cert_path days status
     for cert_info in "${all_certs[@]}"; do
         IFS='|' read -r source domain cert_path days status <<< "$cert_info"
-        
-        local color
-        color=$(get_status_color "$status")
-        
-        # Get expiry date for display
+
         local expiry_date formatted_date
         expiry_date=$(get_cert_expiry_date "$cert_path")
         formatted_date=$(date -d "$expiry_date" "+%Y-%m-%d" 2>/dev/null || echo "${expiry_date:0:10}")
-        
-        # Track problematic certificates
+
         case "$status" in
             EXPIRED|CRITICAL) expired_domains+=("$domain") ;;
             WARNING) expiring_domains+=("$domain") ;;
         esac
-        
-        # Source label — color goes in the FORMAT string, not the argument:
-        # printf '%s' would print literal \033[...] text (MRM-038)
-        local src_text src_color
+
+        local src_text mode role=""
         case "$source" in
-            le) src_text="LE"; src_color="$GREEN" ;;
-            panel) src_text="PNL"; src_color="$ORANGE" ;;
-            node) src_text="NOD"; src_color="$PURPLE" ;;
+            le)    src_text="LE" ;;
+            panel) src_text="PNL" ;;
+            node)  src_text="NOD" ;;
+            *)     src_text="$source" ;;
         esac
+        case "$status" in
+            OK)      mode=ok ;;
+            WARNING) mode=warn ;;
+            *)       mode=bad ;;
+        esac
+        [[ -n "$panel_dom" && "$domain" == "$panel_dom" ]] && role="dashboard"
+        [[ -z "$role" && -n "$node_dom" && "$domain" == "$node_dom" ]] && role="node gRPC"
 
-        # MRM-044: role markers for the cert actually in use right now
-        local dom_disp="$domain"
-        [[ -n "$panel_dom" && "$domain" == "$panel_dom" ]] && dom_disp="$domain 🖥"
-        if [[ "$dom_disp" == "$domain" && -n "$node_dom" && "$domain" == "$node_dom" ]]; then
-            dom_disp="$domain ⚙"
-        fi
-
-        printf "${CYAN}║${NC} ${src_color}%-13s${NC} │ %-28s │ %-16s │ ${color}%-6s${NC} │ ${color}%-8s${NC} ${CYAN}║${NC}\n" \
-               "$src_text" "${dom_disp:0:28}" "${formatted_date:0:16}" "$days" "$status"
+        # Status column is coloured — printf %s would print raw escape text, so
+        # the glyph+text is built with ui_state and padded manually (MRM-038)
+        local status_cell
+        status_cell="$(ui_state "$mode" "$status")"
+        printf '%s%-4s  %-30s  %-11s  %5s  %b%*s  %s\n' "$UI_PAD" "$src_text" "$(ui_truncate "$domain" 30)" \
+            "${formatted_date:0:11}" "$days" "$status_cell" "$(( 9 - ${#status} - 2 ))" "" "$role"
     done
-    
-    echo -e "${CYAN}╚════════════════════════════════════════════════════════════════════════════╝${NC}"
-    
-    # Legend
-    echo -e "\n${CYAN}Source:${NC} ${GREEN}LE${NC}=Let's Encrypt  ${ORANGE}PNL${NC}=Panel only  ${PURPLE}NOD${NC}=Node only"
-    if [[ -n "$panel_dom" || -n "$node_dom" ]]; then
-        echo -e "${CYAN}Role:${NC} 🖥 = dashboard domain (panel .env)   ⚙ = node gRPC domain (node .env)"
-    fi
-    
-    # Alerts
+
+    echo ""
+    ui_note "Source: LE = Let's Encrypt · PNL = panel certs dir only · NOD = node certs dir only"
+
     if [[ ${#expired_domains[@]} -gt 0 ]]; then
-        echo -e "\n${RED}🚨 ${#expired_domains[@]} certificate(s) EXPIRED or CRITICAL:${NC}"
-        for d in "${expired_domains[@]}"; do
-            echo -e "   ${RED}• $d${NC}"
-        done
-    fi
-    
-    if [[ ${#expiring_domains[@]} -gt 0 ]]; then
-        echo -e "\n${YELLOW}⚡ ${#expiring_domains[@]} certificate(s) expiring soon:${NC}"
-        for d in "${expiring_domains[@]}"; do
-            echo -e "   ${YELLOW}• $d${NC}"
-        done
-    fi
-    
-    # Quick actions
-    local total_issues=$(( ${#expired_domains[@]} + ${#expiring_domains[@]} ))
-    
-    if [[ $total_issues -gt 0 ]]; then
-        echo -e "\n${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo "Quick Actions:"
-        echo "1) 🔄 Renew ALL expiring/expired certificates"
-        echo "2) 🎯 Renew specific certificate"
-        echo "0) ↩️  Back"
         echo ""
-        read -r -p "Select: " action
-        
+        ui_error "${#expired_domains[@]} certificate(s) expired or critical:"
+        local d
+        for d in "${expired_domains[@]}"; do ui_bullet "$d"; done
+    fi
+    if [[ ${#expiring_domains[@]} -gt 0 ]]; then
+        echo ""
+        ui_warning "${#expiring_domains[@]} certificate(s) expiring soon:"
+        local d
+        for d in "${expiring_domains[@]}"; do ui_bullet "$d"; done
+    fi
+
+    local total_issues=$(( ${#expired_domains[@]} + ${#expiring_domains[@]} ))
+    if [[ $total_issues -gt 0 ]]; then
+        echo ""
+        ui_menu_title "Quick actions"
+        ui_menu_item 1 "Renew all expiring / expired certificates"
+        ui_menu_item 2 "Renew a specific certificate"
+        ui_menu_back
+        local action
+        ui_select action
         case "$action" in
             1) renew_expiring_certificates ;;
             2) renew_specific_certificate ;;
@@ -1135,12 +1027,10 @@ show_certificate_expiry() {
     fi
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# RENEW EXPIRING CERTIFICATES
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Renew Expiring Certificates ───────────────────────────────────────
 
 renew_expiring_certificates() {
-    ui_header "🔄 RENEWING EXPIRING CERTIFICATES"
+    ui_header "Renew Expiring Certificates"
     init_logging
     detect_active_panel > /dev/null
     
@@ -1170,48 +1060,40 @@ renew_expiring_certificates() {
     local total=$((total_le + total_panel))
     
     if [[ $total -eq 0 ]]; then
-        ui_success "All certificates are up to date!"
+        ui_success "All certificates are up to date."
         pause
         return 0
     fi
-    
-    # Display summary
-    echo -e "${YELLOW}═══════════════════════════════════════════════════${NC}"
-    echo -e "${YELLOW}  Certificates requiring renewal: $total${NC}"
-    echo -e "${YELLOW}═══════════════════════════════════════════════════${NC}\n"
-    
+
+    ui_kv "Need renewal" "$total certificate(s)"
+    echo ""
+    local d days status mode
     if [[ $total_le -gt 0 ]]; then
-        echo -e "${GREEN}Let's Encrypt certificates ($total_le):${NC}"
+        ui_section "Let's Encrypt certificates ($total_le)"
         for d in "${le_domains[@]}"; do
             IFS='|' read -r days status <<< "${domain_info[$d]}"
-            local color
-            color=$(get_status_color "$status")
-            echo -e "  ${color}• $d ($days days - $status)${NC}"
+            case "$status" in WARNING) mode=warn ;; *) mode=bad ;; esac
+            ui_kv_state "$d" "$mode" "$status" "$days days left"
         done
         echo ""
     fi
-    
     if [[ $total_panel -gt 0 ]]; then
-        echo -e "${ORANGE}Panel/Node only certificates ($total_panel):${NC}"
-        echo -e "${ORANGE}(These need NEW certificates from Let's Encrypt)${NC}"
+        ui_section "Panel / node only certificates ($total_panel)"
+        ui_note "Not managed by Let's Encrypt — a new certificate will be requested."
         for d in "${panel_only_domains[@]}"; do
             IFS='|' read -r days status <<< "${domain_info[$d]}"
-            local color
-            color=$(get_status_color "$status")
-            echo -e "  ${color}• $d ($days days - $status)${NC}"
+            case "$status" in WARNING) mode=warn ;; *) mode=bad ;; esac
+            ui_kv_state "$d" "$mode" "$status" "$days days left"
         done
         echo ""
     fi
-    
-    # Options
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo "Options:"
-    [[ $total_le -gt 0 ]] && echo "1) Renew Let's Encrypt certificates ($total_le)"
-    [[ $total_panel -gt 0 ]] && echo "2) Request NEW certificates for Panel/Node only ($total_panel)"
-    [[ $total_le -gt 0 && $total_panel -gt 0 ]] && echo "3) Process ALL ($total)"
-    echo "0) Cancel"
-    echo ""
-    read -r -p "Select: " choice
+
+    [[ $total_le -gt 0 ]] && ui_menu_item 1 "Renew Let's Encrypt certificates" "$total_le"
+    [[ $total_panel -gt 0 ]] && ui_menu_item 2 "Request new certificates for panel / node only" "$total_panel"
+    [[ $total_le -gt 0 && $total_panel -gt 0 ]] && ui_menu_item 3 "Process all" "$total"
+    ui_menu_back "Cancel"
+    local choice
+    ui_select choice
     
     case "$choice" in
         1) [[ $total_le -gt 0 ]] && _renew_le_certificates "${le_domains[@]}" ;;
@@ -1226,9 +1108,7 @@ renew_expiring_certificates() {
     pause
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# HELPER: Renew Let's Encrypt Certificates
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Helper: Renew Let'S Encrypt Certificates ──────────────────────────
 
 # authenticator saved for a live cert (empty when unknown)
 _cert_authenticator() {
@@ -1242,29 +1122,30 @@ _show_certbot_failure() {
     local output_file="$1" domain="$2"
 
     if [[ ! -s "$output_file" ]]; then
-        echo -e "\n  ${YELLOW}(no certbot output captured)${NC}"
+        ui_note "(no certbot output captured)"
         return
     fi
 
-    echo -e "\n  ${RED}── certbot report: $domain ──${NC}"
-    grep -vE '^[[:space:]]*$' "$output_file" 2>/dev/null | tail -n 12 | sed 's/^/    /'
+    echo ""
+    ui_section "certbot report · $domain"
+    grep -vE '^[[:space:]]*$' "$output_file" 2>/dev/null | tail -n 12 | sed "s/^/${UI_PAD}  /"
     echo ""
 
     if grep -qE 'Failed to bind to port|Address already in use' "$output_file" 2>/dev/null; then
-        echo -e "    ${YELLOW}Hint: port $HTTP_PORT is still occupied — find and stop the web server/container owning it.${NC}"
+        ui_warning "Port $HTTP_PORT is still occupied — find and stop the web server / container owning it."
     elif grep -qiE 'Invalid response from|404|403' "$output_file" 2>/dev/null; then
-        echo -e "    ${YELLOW}Hint: Let's Encrypt reached the server but got an invalid challenge response.${NC}"
-        echo -e "    ${YELLOW}      Make sure DNS for $domain really points to THIS server (no CDN/proxy in between).${NC}"
+        ui_warning "Let's Encrypt reached the server but got an invalid challenge response."
+        ui_note "Make sure DNS for $domain points to THIS server (no CDN / proxy in between)."
     elif grep -qiE 'timeout|timed out' "$output_file" 2>/dev/null; then
-        echo -e "    ${YELLOW}Hint: Let's Encrypt could not reach port 80 — check firewall rules and the DNS target.${NC}"
+        ui_warning "Let's Encrypt could not reach port 80 — check firewall rules and the DNS target."
     elif grep -qiE 'live directory exists' "$output_file" 2>/dev/null; then
-        echo -e "    ${YELLOW}Hint: a stale /etc/letsencrypt live directory blocked the new certificate.${NC}"
-        echo -e "    ${YELLOW}      MRM should have backed it up and removed it — run the renewal again.${NC}"
+        ui_warning "A stale /etc/letsencrypt live directory blocked the new certificate."
+        ui_note "MRM should have backed it up and removed it — run the renewal again."
     elif grep -qiE 'No certificate found|No certs were found' "$output_file" 2>/dev/null; then
-        echo -e "    ${YELLOW}Hint: certbot has no renewal profile for '$domain' and the automatic reissue also failed.${NC}"
-        echo -e "    ${YELLOW}      Check DNS, then see: /var/log/letsencrypt/letsencrypt.log${NC}"
+        ui_warning "certbot has no renewal profile for '$domain' and the automatic reissue also failed."
+        ui_note "Check DNS, then see: /var/log/letsencrypt/letsencrypt.log"
     fi
-    echo -e "    Full log: ${CYAN}$CERTBOT_DEBUG_LOG${NC}"
+    ui_note "Full log: $CERTBOT_DEBUG_LOG"
 }
 
 # Append a failed run's full output to the archive log with a separator
@@ -1305,7 +1186,7 @@ _get_reissue_email() {
         printf '%s\n' "$saved"
         return 0
     fi
-    read -r -p "  No saved Let's Encrypt email found — enter email: " saved
+    ui_ask saved "No saved Let's Encrypt email found — email"
     sanitize_input "$saved"
 }
 
@@ -1348,7 +1229,7 @@ _stale_live_cleanup() {
     fi
     rm -f "/etc/letsencrypt/renewal/${domain}.conf" 2>/dev/null
     log_info "Stale live dir for $domain backed up to $backup"
-    echo -e "    ${YELLOW}↳ stale cert backed up: $backup${NC}"
+    ui_task_note "stale certificate backed up: $backup"
     return 0
 }
 
@@ -1387,12 +1268,14 @@ _renew_le_certificates() {
         fi
     done
     if [[ ${#dns_bad[@]} -gt 0 ]]; then
-        echo -e "\n${YELLOW}⚠ DNS pre-check — likely to fail:${NC}"
+        echo ""
+        ui_warning "DNS pre-check — these are likely to fail:"
         local bad_entry
         for bad_entry in "${dns_bad[@]}"; do
-            echo -e "  ${YELLOW}• $bad_entry${NC}"
+            ui_bullet "$bad_entry"
         done
-        echo -e "${YELLOW}  (Renewal continues anyway — it only works if HTTP actually reaches this server.)${NC}\n"
+        ui_note "Renewal continues anyway — it only works if HTTP actually reaches this server."
+        echo ""
     fi
 
     # MRM-041: missing renewal profile pre-check — say it before we stop services
@@ -1412,24 +1295,24 @@ _renew_le_certificates() {
         fi
     done
     if [[ ${#missing_profile[@]} -gt 0 || ${#broken_profile[@]} -gt 0 || ${#san_covered_by[@]} -gt 0 ]]; then
-        echo -e "${YELLOW}⚠ Renewal profile check:${NC}"
+        ui_warning "Renewal profile check:"
         local note
         for note in "${missing_profile[@]}" "${broken_profile[@]}" "${san_covered_by[@]}"; do
-            echo -e "  ${YELLOW}• $note${NC}"
+            ui_bullet "$note"
         done
         echo ""
     fi
 
-    echo -e "${YELLOW}[1/3] Stopping web services...${NC}"
+    ui_step 1 3 "Stopping web services"
     stop_web_services
 
     if ! check_port_availability "$HTTP_PORT" 5; then
-        ui_error "Port $HTTP_PORT still in use!"
+        ui_error "Port $HTTP_PORT is still in use"
         restore_services
         return 1
     fi
 
-    echo -e "${YELLOW}[2/3] Renewing certificates...${NC}\n"
+    ui_step 2 3 "Renewing certificates"
 
     local renewed=0 failed=0 rc=0
     local tmp_out auth renew_name san_covered
@@ -1438,7 +1321,7 @@ _renew_le_certificates() {
     tmp_out=$(mktemp /tmp/ssl-manager-cb.XXXXXX)
 
     for domain in "${domains[@]}"; do
-        echo -ne "  Renewing ${CYAN}$domain${NC}... "
+        ui_task "Renewing $domain"
 
         renew_name="$domain"
         san_covered=0
@@ -1476,14 +1359,14 @@ _renew_le_certificates() {
                 mkdir -p "$bbackup" 2>/dev/null && cp -a "$bconf" "$bbackup/" 2>/dev/null
                 rm -f "$bconf" 2>/dev/null
                 log_info "Broken renewal profile for $domain backed up to $bbackup"
-                echo -e "    ${YELLOW}↳ broken renewal profile backed up: $bbackup${NC}"
+                ui_task_note "broken renewal profile backed up: $bbackup"
                 recovery=1
             fi
         fi
         if [[ $recovery -eq 1 ]]; then
             alt_name=$(_find_renewal_name_for_domain "$domain")
             if [[ -n "$alt_name" ]]; then
-                echo -e "${YELLOW}↳ covered by cert '$alt_name' — renewing it...${NC}"
+                ui_task_note "covered by cert '$alt_name' — renewing that one"
                 renew_name="$alt_name"
                 san_covered=1
                 auth=$(_cert_authenticator "$renew_name")
@@ -1494,7 +1377,7 @@ _renew_le_certificates() {
                     certbot renew --cert-name "$renew_name" --standalone --non-interactive >"$tmp_out" 2>&1 || rc=$?
                 fi
             else
-                echo -e "${YELLOW}↳ renewal profile missing — reissuing fresh certificate...${NC}"
+                ui_task_note "renewal profile missing — requesting a fresh certificate"
                 reissue_email=$(_get_reissue_email)
                 if ! validate_email "${reissue_email:-}"; then
                     ui_error "Invalid email — cannot reissue $domain"
@@ -1514,7 +1397,7 @@ _renew_le_certificates() {
         fi
 
         if [[ $rc -eq 0 ]]; then
-            echo -e "${GREEN}✔${NC}"
+            ui_task_done ok "$domain renewed"
             if [[ $san_covered -eq 1 ]]; then
                 log_success "Renewed via cert '$renew_name' (covers $domain)"
                 _copy_le_cert_to_dest "$domain" "/etc/letsencrypt/live/$renew_name" "$PANEL_DEF_CERTS"
@@ -1527,7 +1410,7 @@ _renew_le_certificates() {
             fi
             renewed=$((renewed + 1))
         else
-            echo -e "${RED}✘${NC}"
+            ui_task_done bad "$domain failed"
             log_error "Failed to renew: $domain"
             failed=$((failed + 1))
             _archive_certbot_failure "$tmp_out" "$domain"
@@ -1537,7 +1420,8 @@ _renew_le_certificates() {
     done
     rm -f "$tmp_out"
 
-    echo -e "\n${YELLOW}[3/3] Restoring services...${NC}"
+    echo ""
+    ui_step 3 3 "Restoring services"
     restore_services
     # Only restart panel/node when something actually renewed (fresh certs to load)
     if [[ $renewed -gt 0 ]]; then
@@ -1545,107 +1429,106 @@ _renew_le_certificates() {
         restart_panel_services "node"
     fi
 
-    # Summary
-    echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "  ${GREEN}✔ Renewed: $renewed${NC}"
-    echo -e "  ${RED}✘ Failed:  $failed${NC}"
-    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    if [[ $failed -eq 0 ]]; then ui_box_start ok "Renewal finished"; else ui_box_start warn "Renewal finished with errors"; fi
+    ui_box_line "Renewed" "$renewed"
+    ui_box_line "Failed" "$failed"
+    ui_box_end
 
     _offer_sync "${domains[@]}"
 
     return 0
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# HELPER: Request New Certificates
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Helper: Request New Certificates ──────────────────────────────────
 
 _request_new_certificates() {
     local -a domains=("$@")
-    
+
     [[ ${#domains[@]} -eq 0 ]] && return 0
-    
-    echo -e "\n${ORANGE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${ORANGE}  These certificates need to be requested NEW.${NC}"
-    echo -e "${ORANGE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
-    
+
+    echo ""
+    ui_section "New certificates"
+    ui_note "These domains are not managed by Let's Encrypt yet — a new certificate is requested for each."
+    echo ""
+
     # Get email
     local email=""
     local saved_email
     saved_email=$(grep -h "email" /etc/letsencrypt/renewal/*.conf 2>/dev/null | head -1 | cut -d'=' -f2 | tr -d ' ')
-    
+
     if [[ -n "$saved_email" ]]; then
-        echo -e "Found email: ${CYAN}$saved_email${NC}"
-        read -r -p "Use this email? (Y/n): " use_saved
-        if [[ ! "$use_saved" =~ ^[Nn]$ ]]; then
+        ui_kv "Saved email" "$saved_email"
+        if ui_confirm "Use this email?" y; then
             email="$saved_email"
         fi
     fi
-    
+
     if [[ -z "$email" ]]; then
-        read -r -p "Enter email: " email
+        ui_ask email "Email for Let's Encrypt notices"
         email=$(sanitize_input "$email")
-        
         if ! validate_email "$email"; then
             ui_error "Invalid email format."
             return 1
         fi
     fi
-    
-    echo -e "\n${YELLOW}[1/4] Validating DNS...${NC}\n"
-    
+
+    echo ""
+    ui_step 1 4 "Validating DNS"
+
     local -a valid_domains=()
     local domain dns_out
     for domain in "${domains[@]}"; do
-        echo -ne "  Checking ${CYAN}$domain${NC}... "
+        ui_task "Checking $domain"
         # (MRM-039) capture the check output so the FAILURE REASON is visible
         if dns_out=$(validate_domain_dns "$domain" "true" 2>&1); then
-            echo -e "${GREEN}✔${NC}"
+            ui_task_done ok
             valid_domains+=("$domain")
         else
-            echo -e "${RED}✘ (skipping)${NC}"
-            printf '%s\n' "$dns_out" | sed 's/^/    /'
+            ui_task_done bad "skipped"
+            printf '%s\n' "$dns_out" | sed "s/^/${UI_PAD}  /"
             log_warning "DNS failed for $domain"
         fi
     done
-    
+
     if [[ ${#valid_domains[@]} -eq 0 ]]; then
-        ui_error "No domains passed DNS validation!"
+        ui_error "No domain passed DNS validation."
         return 1
     fi
-    
-    echo -e "\n${YELLOW}[2/4] Stopping web services...${NC}"
+
+    echo ""
+    ui_step 2 4 "Stopping web services"
     stop_web_services
-    
+
     if ! check_port_availability "$HTTP_PORT" 5; then
-        ui_error "Port $HTTP_PORT still in use!"
+        ui_error "Port $HTTP_PORT is still in use"
         restore_services
         return 1
     fi
-    
-    echo -e "${YELLOW}[3/4] Requesting certificates...${NC}\n"
-    
+
+    ui_step 3 4 "Requesting certificates"
+
     local success=0 failed=0 rc=0
     local tmp_out
     tmp_out=$(mktemp /tmp/ssl-manager-cb.XXXXXX)
-    
+
     for domain in "${valid_domains[@]}"; do
-        echo -ne "  Requesting ${CYAN}$domain${NC}... "
-        
+        ui_task "Requesting $domain"
+
         rc=0
         certbot certonly --standalone \
             --non-interactive --agree-tos \
             --email "$email" \
             --preferred-challenges http \
             -d "$domain" >"$tmp_out" 2>&1 || rc=$?
-        
+
         if [[ $rc -eq 0 ]]; then
-            echo -e "${GREEN}✔${NC}"
+            ui_task_done ok
             log_success "New certificate: $domain"
             success=$((success + 1))
             _update_cert_paths "$domain"
         else
-            echo -e "${RED}✘${NC}"
+            ui_task_done bad
             log_error "Failed to get certificate: $domain"
             failed=$((failed + 1))
             _archive_certbot_failure "$tmp_out" "$domain"
@@ -1653,31 +1536,30 @@ _request_new_certificates() {
         fi
         : > "$tmp_out"
     done
-    
+
     rm -f "$tmp_out"
-    
-    echo -e "\n${YELLOW}[4/4] Restoring services...${NC}"
+
+    echo ""
+    ui_step 4 4 "Restoring services"
     restore_services
     # Only restart panel/node when something actually succeeded (MRM-039)
     if [[ $success -gt 0 ]]; then
         restart_panel_services "panel"
         restart_panel_services "node"
     fi
-    
-    # Summary
-    echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "  ${GREEN}✔ Success: $success${NC}"
-    echo -e "  ${RED}✘ Failed:  $failed${NC}"
-    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    
+
+    echo ""
+    if [[ $failed -eq 0 ]]; then ui_box_start ok "Certificates requested"; else ui_box_start warn "Finished with errors"; fi
+    ui_box_line "Issued" "$success"
+    ui_box_line "Failed" "$failed"
+    ui_box_end
+
     _offer_sync "${valid_domains[@]}"
-    
+
     return 0
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# HELPER: Update Certificate Paths
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Helper: Update Certificate Paths ──────────────────────────────────
 
 _update_cert_paths() {
     local domain="$1"
@@ -1691,7 +1573,7 @@ _update_cert_paths() {
         cp -L "$le_path/privkey.pem" "$PANEL_DEF_CERTS/$domain/" 2>/dev/null
         chmod 644 "$PANEL_DEF_CERTS/$domain/fullchain.pem" 2>/dev/null
         chmod 600 "$PANEL_DEF_CERTS/$domain/privkey.pem" 2>/dev/null
-        echo -e "    ${GREEN}↳ Updated panel cert${NC}"
+        ui_task_note "panel copy updated: $PANEL_DEF_CERTS/$domain"
     fi
     
     # Update node certs
@@ -1700,176 +1582,164 @@ _update_cert_paths() {
         cp -L "$le_path/privkey.pem" "$NODE_DEF_CERTS/$domain/" 2>/dev/null
         chmod 644 "$NODE_DEF_CERTS/$domain/fullchain.pem" 2>/dev/null
         chmod 600 "$NODE_DEF_CERTS/$domain/privkey.pem" 2>/dev/null
-        echo -e "    ${GREEN}↳ Updated node cert${NC}"
+        ui_task_note "node copy updated: $NODE_DEF_CERTS/$domain"
     fi
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# RENEW SPECIFIC CERTIFICATE
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Renew Specific Certificate ────────────────────────────────────────
 
 renew_specific_certificate() {
-    ui_header "🎯 RENEW SPECIFIC CERTIFICATE"
+    ui_header "Renew a Certificate"
     detect_active_panel > /dev/null
-    
-    echo -e "${YELLOW}Select certificate to renew:${NC}\n"
-    
+
     local -a cert_list=()
     local idx=1
-    
+    local source domain cert_path days status
+
     while IFS='|' read -r source domain cert_path days status; do
         [[ "$domain" == "default" ]] && continue   # flat/default certs: not renewable (MRM-033)
         cert_list+=("$source|$domain|$cert_path|$days|$status")
-        
-        local color src_text src_color
-        color=$(get_status_color "$status")
+        local src_text
         case "$source" in
-            le) src_text="[LE]"; src_color="$GREEN" ;;
-            panel) src_text="[PNL]"; src_color="$ORANGE" ;;
-            node) src_text="[NOD]"; src_color="$PURPLE" ;;
+            le) src_text="LE" ;;
+            panel) src_text="PNL" ;;
+            node) src_text="NOD" ;;
+            *) src_text="$source" ;;
         esac
-        
-        # (MRM-038) color in the format string — '%s' would print raw \033 codes
-        printf "%2d) ${src_color}%-12s${NC} %-30s ${color}[%s - %d days]${NC}\n" \
-               "$idx" "$src_text" "$domain" "$status" "$days"
+        ui_menu_item "$idx" "$domain" "$src_text · $status · $days days"
         idx=$((idx + 1))
     done < <(discover_all_certificates)
-    
+
     if [[ $idx -eq 1 ]]; then
         ui_error "No certificates found."
         pause
         return
     fi
-    
-    echo ""
-    read -r -p "Select (0 to cancel): " selection
+
+    ui_menu_back "Cancel"
+    local selection
+    ui_select selection
     [[ "$selection" == "0" || -z "$selection" ]] && return
-    
-    # Validate selection
+
     if ! [[ "$selection" =~ ^[0-9]+$ ]] || [[ "$selection" -lt 1 ]] || [[ "$selection" -ge "$idx" ]]; then
         ui_error "Invalid selection."
         pause
         return
     fi
-    
+
     local selected_idx=$((selection - 1))
     IFS='|' read -r source domain cert_path days status <<< "${cert_list[$selected_idx]}"
-    
-    # (MRM-038) same fix as expiry table: colors in format, not %s args
-    local src_text src_color
-    case "$source" in
-        le) src_text="[LE]"; src_color="$GREEN" ;;
-        panel) src_text="[PNL]"; src_color="$ORANGE" ;;
-        node) src_text="[NOD]"; src_color="$PURPLE" ;;
-    esac
-    
-    echo -e "\nSelected: ${CYAN}$domain${NC} (Source: ${src_color}${src_text}${NC})"
-    
+
+    echo ""
+    ui_kv "Selected" "$domain"
     if [[ "$source" == "le" ]]; then
-        read -r -p "Renew this certificate? (Y/n): " confirm
-        [[ "$confirm" =~ ^[Nn]$ ]] && return
-        
+        ui_kv "Source" "Let's Encrypt"
+        echo ""
+        ui_confirm "Renew this certificate?" y || return
         _renew_le_certificates "$domain"
     else
-        echo -e "\n${ORANGE}This certificate is not in Let's Encrypt.${NC}"
-        echo -e "${ORANGE}A NEW certificate will be requested.${NC}"
-        read -r -p "Proceed? (Y/n): " confirm
-        [[ "$confirm" =~ ^[Nn]$ ]] && return
-        
+        ui_kv "Source" "$( [[ "$source" == panel ]] && echo "panel certs dir" || echo "node certs dir" )"
+        ui_note "This certificate is not managed by Let's Encrypt — a new one will be requested."
+        echo ""
+        ui_confirm "Request a new certificate?" y || return
         _request_new_certificates "$domain"
     fi
-    
+
     pause
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# REQUEST NEW CERTIFICATE (SSL WIZARD)
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Request New Certificate (SSL Wizard) ──────────────────────────────
 
 ssl_wizard() {
-    ui_header "🔐 SSL GENERATION WIZARD"
     init_logging
     detect_active_panel > /dev/null
-    
+    ui_header "New Certificate" "Panel: $(basename "$PANEL_DIR" 2>/dev/null || echo unknown) · Certs: ${PANEL_DEF_CERTS:-unknown}"
+
     if ! check_dependencies; then
         pause
         return 2
     fi
-    
-    echo -e "${CYAN}Panel: $(basename "$PANEL_DIR" 2>/dev/null || echo 'unknown')${NC}"
-    echo -e "${CYAN}Certs: $PANEL_DEF_CERTS${NC}\n"
-    
+
+    ui_note "Let's Encrypt (HTTP-01). Every domain must already point to this server."
+    echo ""
+
     # Get domain count
-    read -r -p "How many domains? (1-10): " count
-    
+    local count
+    ui_ask count "How many domains? (1-10)" "1"
+
     if ! [[ "$count" =~ ^[0-9]+$ ]] || [[ "$count" -lt 1 ]] || [[ "$count" -gt 10 ]]; then
-        ui_error "Invalid number. Enter 1-10."
+        ui_error "Invalid number — enter a value from 1 to 10."
         pause
         return 1
     fi
-    
+
     # Get domains
     local -a domain_list=()
+    local domain_input
     for (( i=1; i<=count; i++ )); do
         while true; do
-            read -r -p "Domain $i: " domain_input
+            ui_ask domain_input "Domain $i"
             domain_input=$(sanitize_input "$domain_input")
-            
+
             if [[ -z "$domain_input" ]]; then
                 ui_error "Domain cannot be empty."
                 continue
             fi
-            
+
             if ! validate_domain "$domain_input"; then
                 ui_error "Invalid domain format: $domain_input"
                 continue
             fi
-            
+
             domain_list+=("$domain_input")
             break
         done
     done
-    
+
     # Get email
     local email
     while true; do
-        read -r -p "Email: " email
+        ui_ask email "Email for Let's Encrypt notices"
         email=$(sanitize_input "$email")
-        
+
         if validate_email "$email"; then
             break
         fi
         ui_error "Invalid email format."
     done
-    
+
     local primary_domain="${domain_list[0]}"
-    
+    echo ""
+
     # Request certificate
     if ! _request_certificate "$email" "${domain_list[@]}"; then
-        ui_error "Certificate request failed!"
-        echo -e "${YELLOW}Check logs: $CERTBOT_DEBUG_LOG${NC}"
+        ui_error "Certificate request failed."
+        ui_note "Log: $CERTBOT_DEBUG_LOG"
         pause
         return 5
     fi
-    
+
     # Verify certificate exists
     if [[ ! -d "/etc/letsencrypt/live/$primary_domain" ]]; then
-        ui_error "Certificate not created!"
+        ui_error "Certificate was not created."
         pause
         return 5
     fi
-    
-    ui_success "Certificate obtained for: $primary_domain"
+
     echo ""
-    
+    ui_success "Certificate issued for $primary_domain"
+    echo ""
+
     # Configure usage
-    echo "Where to use this certificate?"
-    echo "1) Panel (Dashboard)"
-    echo "2) Node Server"
-    echo "3) Config (Inbounds)"
-    echo "4) All of the above"
-    read -r -p "Select: " usage_opt
-    
+    ui_menu_title "Where should this certificate be used?"
+    ui_menu_item 1 "Panel" "dashboard HTTPS"
+    ui_menu_item 2 "Node" "gRPC / REST between panel and node"
+    ui_menu_item 3 "Inbounds" "copy paths for the Xray config"
+    ui_menu_item 4 "All of the above"
+    ui_menu_back "Skip"
+    local usage_opt
+    ui_select usage_opt
+
     case "$usage_opt" in
         1) _process_panel "$primary_domain" ;;
         2) _process_node "$primary_domain" ;;
@@ -1879,18 +1749,17 @@ ssl_wizard() {
             _process_node "$primary_domain"
             _process_config "$primary_domain"
             ;;
+        0|"") ;;
         *) ui_error "Invalid selection." ;;
     esac
-    
+
     _offer_sync "$primary_domain"
-    
+
     log_info "SSL wizard completed for $primary_domain"
     pause
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# REQUEST CERTIFICATE (Core Function)
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Request Certificate (Core Function) ───────────────────────────────
 
 _request_certificate() {
     local email="$1"
@@ -1900,40 +1769,40 @@ _request_certificate() {
     log_info "Starting certificate request for: ${domains[*]}"
     
     # Step 1: Check Let's Encrypt API
-    echo -e "${YELLOW}[1/5] Checking Let's Encrypt API...${NC}"
+    ui_step 1 5 "Checking Let's Encrypt API"
     if ! curl -s --connect-timeout "$CURL_TIMEOUT" https://acme-v02.api.letsencrypt.org/directory > /dev/null; then
-        ui_error "Let's Encrypt API unreachable!"
+        ui_error "Let's Encrypt API is unreachable"
         log_error "LE API unreachable"
         return 4
     fi
-    ui_success "API accessible"
-    
+    ui_success "API reachable"
+
     # Step 2: Validate DNS
-    echo -e "${YELLOW}[2/5] Validating DNS...${NC}"
+    ui_step 2 5 "Validating DNS"
     for domain in "${domains[@]}"; do
         if ! validate_domain_dns "$domain"; then
             log_error "DNS validation failed for $domain"
             return 1
         fi
     done
-    
+
     # Step 3: Configure firewall
-    echo -e "${YELLOW}[3/5] Configuring firewall...${NC}"
+    ui_step 3 5 "Opening firewall ports $HTTP_PORT / $HTTPS_PORT"
     if command -v ufw &>/dev/null; then
         ufw allow "$HTTP_PORT/tcp" &>/dev/null
         ufw allow "$HTTPS_PORT/tcp" &>/dev/null
     fi
-    
+
     # Step 4: Stop services
-    echo -e "${YELLOW}[4/5] Preparing for challenge...${NC}"
+    ui_step 4 5 "Preparing for the HTTP challenge"
     stop_web_services
-    
+
     if ! check_port_availability "$HTTP_PORT" 5; then
-        ui_error "Port $HTTP_PORT still in use!"
+        ui_error "Port $HTTP_PORT is still in use"
         restore_services
         return 1
     fi
-    ui_success "Port $HTTP_PORT available"
+    ui_success "Port $HTTP_PORT is free"
     
     # Build domain flags
     local domain_flags=""
@@ -1942,8 +1811,8 @@ _request_certificate() {
     done
     
     # Step 5: Request certificate
-    echo -e "${YELLOW}[5/5] Requesting certificate...${NC}"
-    echo -e "${CYAN}This may take up to 2 minutes...${NC}"
+    ui_step 5 5 "Requesting certificate"
+    ui_note "This can take up to two minutes."
     
     # shellcheck disable=SC2086
     if certbot certonly --standalone \
@@ -1953,12 +1822,12 @@ _request_certificate() {
         --http-01-port "$HTTP_PORT" \
         $domain_flags > "$CERTBOT_DEBUG_LOG" 2>&1; then
         
-        ui_success "Certificate obtained successfully!"
+        ui_success "Certificate obtained"
         log_success "Certificate obtained for ${domains[*]}"
         restore_services
         return 0
     else
-        ui_error "Certificate request failed!"
+        ui_error "Certificate request failed"
         _show_certbot_failure "$CERTBOT_DEBUG_LOG" "${domains[0]}"
         log_error "Certbot failed"
         restore_services
@@ -1966,40 +1835,39 @@ _request_certificate() {
     fi
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# PROCESS PANEL/NODE/CONFIG SSL
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Process Panel/Node/Config SSL ─────────────────────────────────────
 
 _process_panel() {
     local domain="$1"
     local le_path="/etc/letsencrypt/live/$domain"
     
-    echo -e "\n${CYAN}--- Configuring Panel SSL ---${NC}"
-    
+    echo ""
+    ui_section "Panel SSL"
+
     if [[ ! -f "$le_path/fullchain.pem" ]]; then
-        ui_error "Source certificate not found!"
+        ui_error "Source certificate not found: $le_path"
         return 1
     fi
-    
-    echo "Storage options:"
-    echo "1) Default ($PANEL_DEF_CERTS/$domain)"
-    echo "2) Custom path"
-    read -r -p "Select: " path_opt
-    
+
+    ui_menu_item 1 "Default location" "$PANEL_DEF_CERTS/$domain"
+    ui_menu_item 2 "Custom path"
+    local path_opt custom_path
+    ui_select path_opt
+
     local target_dir="$PANEL_DEF_CERTS"
     if [[ "$path_opt" == "2" ]]; then
-        read -r -p "Enter path: " custom_path
+        ui_ask custom_path "Directory"
         custom_path=$(sanitize_input "$custom_path")
         if validate_path "$custom_path"; then
             target_dir="$custom_path"
         else
-            ui_error "Invalid path!"
+            ui_error "Invalid path."
             return 1
         fi
     fi
-    
+
     target_dir="$target_dir/$domain"
-    mkdir -p "$target_dir" || { ui_error "Cannot create directory!"; return 1; }
+    mkdir -p "$target_dir" || { ui_error "Cannot create $target_dir"; return 1; }
     
     if cp -L "$le_path/fullchain.pem" "$target_dir/" && \
        cp -L "$le_path/privkey.pem" "$target_dir/"; then
@@ -2018,13 +1886,13 @@ _process_panel() {
         # FIX: recreate the container — env_file changes only apply on
         # container creation; `restart` reuses the old config (MRM-031)
         recreate_service "panel"
-        
-        ui_success "Panel SSL configured!"
-        echo -e "  Cert: ${CYAN}$target_dir/fullchain.pem${NC}"
-        echo -e "  Key:  ${CYAN}$target_dir/privkey.pem${NC}"
+
+        ui_success "Panel SSL configured"
+        ui_kv "Certificate" "$target_dir/fullchain.pem"
+        ui_kv "Private key" "$target_dir/privkey.pem"
         log_success "Panel SSL configured for $domain"
     else
-        ui_error "Failed to copy certificates!"
+        ui_error "Failed to copy the certificate files"
         return 1
     fi
 }
@@ -2033,32 +1901,33 @@ _process_node() {
     local domain="$1"
     local le_path="/etc/letsencrypt/live/$domain"
     
-    echo -e "\n${PURPLE}--- Configuring Node SSL ---${NC}"
-    
+    echo ""
+    ui_section "Node SSL"
+
     if [[ ! -f "$le_path/fullchain.pem" ]]; then
-        ui_error "Source certificate not found!"
+        ui_error "Source certificate not found: $le_path"
         return 1
     fi
-    
-    echo "Storage options:"
-    echo "1) Default ($NODE_DEF_CERTS/$domain)"
-    echo "2) Custom path"
-    read -r -p "Select: " path_opt
-    
+
+    ui_menu_item 1 "Default location" "$NODE_DEF_CERTS/$domain"
+    ui_menu_item 2 "Custom path"
+    local path_opt custom_path
+    ui_select path_opt
+
     local target_dir="$NODE_DEF_CERTS"
     if [[ "$path_opt" == "2" ]]; then
-        read -r -p "Enter path: " custom_path
+        ui_ask custom_path "Directory"
         custom_path=$(sanitize_input "$custom_path")
         if validate_path "$custom_path"; then
             target_dir="$custom_path"
         else
-            ui_error "Invalid path!"
+            ui_error "Invalid path."
             return 1
         fi
     fi
-    
+
     target_dir="$target_dir/$domain"
-    mkdir -p "$target_dir" || { ui_error "Cannot create directory!"; return 1; }
+    mkdir -p "$target_dir" || { ui_error "Cannot create $target_dir"; return 1; }
     
     if cp -L "$le_path/fullchain.pem" "$target_dir/" && \
        cp -L "$le_path/privkey.pem" "$target_dir/"; then
@@ -2075,15 +1944,15 @@ _process_node() {
             # FIX: recreate the container — env_file changes need a new container (MRM-031)
             recreate_service "node"
         else
-            ui_warning "Node .env not found - manual config needed"
+            ui_warning "Node .env not found — set SSL_CERT_FILE / SSL_KEY_FILE manually"
         fi
-        
-        ui_success "Node SSL configured!"
-        echo -e "  Cert: ${CYAN}$target_dir/fullchain.pem${NC}"
-        echo -e "  Key:  ${CYAN}$target_dir/privkey.pem${NC}"
+
+        ui_success "Node SSL configured"
+        ui_kv "Certificate" "$target_dir/fullchain.pem"
+        ui_kv "Private key" "$target_dir/privkey.pem"
         log_success "Node SSL configured for $domain"
     else
-        ui_error "Failed to copy certificates!"
+        ui_error "Failed to copy the certificate files"
         return 1
     fi
 }
@@ -2092,15 +1961,16 @@ _process_config() {
     local domain="$1"
     local le_path="/etc/letsencrypt/live/$domain"
     
-    echo -e "\n${ORANGE}--- Config SSL (Inbounds) ---${NC}"
-    
+    echo ""
+    ui_section "Inbound SSL"
+
     if [[ ! -f "$le_path/fullchain.pem" ]]; then
-        ui_error "Source certificate not found!"
+        ui_error "Source certificate not found: $le_path"
         return 1
     fi
-    
+
     local target_dir="$PANEL_DEF_CERTS/$domain"
-    mkdir -p "$target_dir" || { ui_error "Cannot create directory!"; return 1; }
+    mkdir -p "$target_dir" || { ui_error "Cannot create $target_dir"; return 1; }
     
     if cp -L "$le_path/fullchain.pem" "$target_dir/" && \
        cp -L "$le_path/privkey.pem" "$target_dir/"; then
@@ -2109,23 +1979,20 @@ _process_config() {
         chmod 644 "$target_dir/fullchain.pem"
         chmod 600 "$target_dir/privkey.pem"
         
-        ui_success "Inbound SSL configured!"
-        echo -e "\n${YELLOW}╔══════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${YELLOW}║     Copy these paths to your Inbound Settings:           ║${NC}"
-        echo -e "${YELLOW}╠══════════════════════════════════════════════════════════╣${NC}"
-        echo -e "${YELLOW}║${NC}  Cert: ${CYAN}$target_dir/fullchain.pem${NC}"
-        echo -e "${YELLOW}║${NC}  Key:  ${CYAN}$target_dir/privkey.pem${NC}"
-        echo -e "${YELLOW}╚══════════════════════════════════════════════════════════╝${NC}"
+        ui_success "Inbound SSL files ready"
+        echo ""
+        ui_box_start info "Use these paths in the inbound TLS settings"
+        ui_box_line "Certificate" "$target_dir/fullchain.pem"
+        ui_box_line "Private key" "$target_dir/privkey.pem"
+        ui_box_end
         log_success "Inbound SSL configured for $domain"
     else
-        ui_error "Failed to copy certificates!"
+        ui_error "Failed to copy the certificate files"
         return 1
     fi
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# MULTI-SERVER SYNC
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Multi-Server Sync ─────────────────────────────────────────────────
 
 _offer_sync() {
     local -a domains=("$@")
@@ -2135,11 +2002,9 @@ _offer_sync() {
     local count
     count=$(wc -l < "$SERVERS_FILE" 2>/dev/null || echo "0")
     
-    echo -e "\n${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}$count server(s) configured.${NC}"
-    read -r -p "Sync to other servers? (y/N): " sync_now
-    
-    if [[ "$sync_now" =~ ^[Yy]$ ]]; then
+    echo ""
+    ui_kv "Remote servers" "$count configured"
+    if ui_confirm "Sync the certificate(s) to the remote servers?"; then
         for domain in "${domains[@]}"; do
             _sync_domain_to_all "$domain"
         done
@@ -2152,17 +2017,16 @@ _sync_domain_to_all() {
     
     [[ ! -d "$cert_path" ]] && return 1
     
-    echo -e "\n${YELLOW}Syncing $domain to all servers...${NC}"
-    
+    echo ""
+    ui_note "Syncing $domain to all servers"
+
     while IFS='|' read -r name host port user path panel; do
         [[ -z "$name" ]] && continue
-        
-        echo -ne "  ${YELLOW}[$name]${NC} $host ... "
-        
+        ui_task "$name ($host)"
         if _sync_to_server "$host" "$port" "$user" "$path" "$domain" "$cert_path" "$panel"; then
-            echo -e "${GREEN}✔${NC}"
+            ui_task_done ok
         else
-            echo -e "${RED}✘${NC}"
+            ui_task_done bad
         fi
     done < "$SERVERS_FILE"
 }
@@ -2200,26 +2064,24 @@ _sync_to_server() {
     return 0
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# SERVER MANAGEMENT MENU
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Server Management Menu ────────────────────────────────────────────
 
 multi_server_menu() {
+    local opt
     while true; do
-        ui_header "🌐 MULTI-SERVER SSL SYNC"
-        
-        echo "1) 📋 List Servers"
-        echo "2) ➕ Add Server"
-        echo "3) ➖ Remove Server"
-        echo "4) 🔄 Sync to All"
-        echo "5) 🔄 Sync to Specific"
-        echo "6) 🔑 Setup SSH Key"
-        echo "7) 🧪 Test Connections"
-        echo ""
-        echo "0) ↩️  Back"
-        echo ""
-        read -r -p "Select: " opt
-        
+        local count=0
+        [[ -f "$SERVERS_FILE" ]] && count=$(grep -c . "$SERVERS_FILE" 2>/dev/null || echo 0)
+        ui_header "Multi-Server SSL Sync" "Servers: $count · $SERVERS_FILE"
+        ui_menu_item 1 "List servers"
+        ui_menu_item 2 "Add server"
+        ui_menu_item 3 "Remove server"
+        ui_menu_item 4 "Sync a certificate to all servers"
+        ui_menu_item 5 "Sync a certificate to one server"
+        ui_menu_item 6 "Set up SSH key" "ssh-copy-id"
+        ui_menu_item 7 "Test connections"
+        ui_menu_back
+        ui_select opt
+
         case "$opt" in
             1) _list_servers ;;
             2) _add_server ;;
@@ -2229,105 +2091,138 @@ multi_server_menu() {
             6) _setup_ssh_keys ;;
             7) _test_all_connections ;;
             0) return ;;
+            *) ui_invalid ;;
         esac
     done
 }
 
-_list_servers() {
-    ui_header "📋 CONFIGURED SERVERS"
-    
-    if [[ ! -f "$SERVERS_FILE" || ! -s "$SERVERS_FILE" ]]; then
-        ui_warning "No servers configured."
-        pause
-        return
-    fi
-    
-    printf "${GREEN}%-3s │ %-15s │ %-20s │ %-5s │ %s${NC}\n" "ID" "Name" "Host" "Port" "Path"
-    echo "────┼─────────────────┼──────────────────────┼───────┼────────────────────"
-    
-    local idx=1
+# Prints numbered menu items for every configured server; fills the given
+# array name with "name|host|port|user|path|panel" (1-based).
+_server_menu_items() {
+    local -n __out="$1"
+    local idx=1 name host port user path panel
+    __out=()
     while IFS='|' read -r name host port user path panel; do
         [[ -z "$name" ]] && continue
-        printf "%-3s │ %-15s │ %-20s │ %-5s │ %s\n" "$idx" "$name" "$host" "$port" "$path"
+        ui_menu_item "$idx" "$name" "$user@$host:$port"
+        __out[$idx]="$name|$host|$port|$user|$path|$panel"
         ((idx++))
     done < "$SERVERS_FILE"
-    
+    return 0
+}
+
+# Prints numbered menu items for every Let's Encrypt certificate; fills the
+# given array name with domains (1-based).
+_cert_menu_items() {
+    local -n __out="$1"
+    local idx=1 dir domain
+    __out=()
+    for dir in /etc/letsencrypt/live/*/; do
+        [[ ! -d "$dir" ]] && continue
+        domain=$(basename "$dir")
+        [[ "$domain" == "README" ]] && continue
+        __out[$idx]="$domain"
+        ui_menu_item "$idx" "$domain"
+        ((idx++))
+    done
+    return 0
+}
+
+_no_servers() {
+    ui_warning "No servers configured yet — add one first."
+    pause
+}
+
+_list_servers() {
+    ui_header "Configured Servers" "$SERVERS_FILE"
+
+    if [[ ! -f "$SERVERS_FILE" || ! -s "$SERVERS_FILE" ]]; then
+        _no_servers
+        return
+    fi
+
+    ui_table_header "%-3s  %-16s  %-22s  %-5s  %-6s  %s" "ID" "Name" "Host" "Port" "User" "Remote path"
+    local idx=1 name host port user path panel
+    while IFS='|' read -r name host port user path panel; do
+        [[ -z "$name" ]] && continue
+        ui_table_row "$idx" "$(ui_truncate "$name" 16)" "$(ui_truncate "$host" 22)" "$port" "$user" "$path"
+        ((idx++))
+    done < "$SERVERS_FILE"
+
     pause
 }
 
 _add_server() {
-    ui_header "➕ ADD SERVER"
-    
+    ui_header "Add Server"
+
     local name host port user path panel_type panel_name
-    
-    read -r -p "Server name: " name
+
+    ui_ask name "Server name"
     name=$(sanitize_input "$name")
-    [[ -z "$name" ]] && ui_error "Required." && pause && return
-    
-    read -r -p "Host/IP: " host
+    [[ -z "$name" ]] && { ui_error "Server name is required."; pause; return; }
+
+    ui_ask host "Host / IP"
     host=$(sanitize_input "$host")
-    [[ -z "$host" ]] && ui_error "Required." && pause && return
-    
-    read -r -p "SSH Port [22]: " port
+    [[ -z "$host" ]] && { ui_error "Host is required."; pause; return; }
+
+    ui_ask port "SSH port" "22"
     port="${port:-22}"
-    
-    read -r -p "SSH User [root]: " user
+
+    ui_ask user "SSH user" "root"
     user="${user:-root}"
-    
-    echo -e "\nPanel type:"
-    echo "1) Pasarguard"
-    echo "2) Custom"
-    read -r -p "Select: " panel_type
-    
+
+    echo ""
+    ui_menu_title "Remote panel type"
+    ui_menu_item 1 "PasarGuard" "/var/lib/pasarguard/certs"
+    ui_menu_item 2 "Custom path"
+    ui_select panel_type
+
     case "$panel_type" in
         1) panel_name="pasarguard"; path="/var/lib/pasarguard/certs" ;;
-        2) 
+        2)
             panel_name="custom"
-            read -r -p "Remote cert path: " path
+            ui_ask path "Remote certificate directory"
             path=$(sanitize_input "$path")
             ;;
-        *) ui_error "Invalid." && pause && return ;;
+        *) ui_invalid; return ;;
     esac
-    
+
     mkdir -p "$(dirname "$SERVERS_FILE")"
     echo "${name}|${host}|${port}|${user}|${path}|${panel_name}" >> "$SERVERS_FILE"
-    
-    ui_success "Server added!"
+
+    echo ""
+    ui_success "Server added: $name ($user@$host:$port)"
     log_info "Added server: $name ($host)"
-    
-    read -r -p "Test connection? (Y/n): " test_now
-    [[ ! "$test_now" =~ ^[Nn]$ ]] && _test_connection "$host" "$port" "$user"
-    
+
+    if ui_confirm "Test the connection now?" y; then
+        _test_connection "$host" "$port" "$user"
+    fi
     pause
 }
 
 _remove_server() {
-    ui_header "➖ REMOVE SERVER"
-    
-    [[ ! -f "$SERVERS_FILE" || ! -s "$SERVERS_FILE" ]] && ui_warning "No servers." && pause && return
-    
-    local idx=1
-    local -a names=()
-    
-    while IFS='|' read -r name host port user path panel; do
-        [[ -z "$name" ]] && continue
-        echo "$idx) $name ($host)"
-        names[$idx]="$name"
-        ((idx++))
-    done < "$SERVERS_FILE"
-    
-    read -r -p "Select (0=cancel): " sel
+    ui_header "Remove Server"
+
+    [[ ! -f "$SERVERS_FILE" || ! -s "$SERVERS_FILE" ]] && { _no_servers; return; }
+
+    local -a servers=()
+    _server_menu_items servers
+    ui_menu_back "Cancel"
+    local sel
+    ui_select sel
     [[ "$sel" == "0" || -z "$sel" ]] && return
-    
-    local remove_name="${names[$sel]}"
-    [[ -z "$remove_name" ]] && ui_error "Invalid." && pause && return
-    
+
+    local remove_name="${servers[$sel]%%|*}"
+    [[ -z "$remove_name" ]] && { ui_error "Invalid selection."; pause; return; }
+
+    if ! ui_confirm "Remove $remove_name?"; then ui_cancelled; pause; return; fi
+
     # Safe removal using temp file
     local tmp_file
     tmp_file=$(mktemp /tmp/ssl-manager-XXXXXX.tmp)
     grep -v "^${remove_name}|" "$SERVERS_FILE" > "$tmp_file"
     mv "$tmp_file" "$SERVERS_FILE"
-    
+
     ui_success "Removed: $remove_name"
     log_info "Removed server: $remove_name"
     pause
@@ -2335,248 +2230,224 @@ _remove_server() {
 
 _test_connection() {
     local host="$1" port="$2" user="$3"
-    
-    echo -e "${YELLOW}Testing $user@$host:$port...${NC}"
-    
+
+    ui_task "Connecting to $user@$host:$port"
     if ssh -o ConnectTimeout="$SSH_TIMEOUT" -o BatchMode=yes -p "$port" "$user@$host" "echo OK" &>/dev/null; then
-        ui_success "Connected!"
+        ui_task_done ok "connected"
         return 0
-    else
-        ui_error "Failed!"
-        echo -e "${YELLOW}Check: SSH running, key configured, firewall allows port $port${NC}"
-        return 1
     fi
+    ui_task_done bad "failed"
+    ui_note "Check that SSH is running, the key is installed and the firewall allows port $port."
+    return 1
 }
 
 _test_all_connections() {
-    ui_header "🧪 TEST ALL CONNECTIONS"
-    
-    [[ ! -f "$SERVERS_FILE" || ! -s "$SERVERS_FILE" ]] && ui_warning "No servers." && pause && return
-    
-    local success=0 failed=0
-    
+    ui_header "Test Connections"
+
+    [[ ! -f "$SERVERS_FILE" || ! -s "$SERVERS_FILE" ]] && { _no_servers; return; }
+
+    local success=0 failed=0 name host port user path panel
+
     while IFS='|' read -r name host port user path panel; do
         [[ -z "$name" ]] && continue
-        
-        echo -ne "${YELLOW}[$name]${NC} $host:$port ... "
-        
+        ui_task "$name ($user@$host:$port)"
         if ssh -n -o ConnectTimeout=5 -o BatchMode=yes -p "$port" "$user@$host" "exit" &>/dev/null; then
-            echo -e "${GREEN}✔${NC}"
+            ui_task_done ok
             ((success++))
         else
-            echo -e "${RED}✘${NC}"
+            ui_task_done bad
             ((failed++))
         fi
     done < "$SERVERS_FILE"
-    
-    echo -e "\n${GREEN}Success: $success${NC} | ${RED}Failed: $failed${NC}"
+
+    echo ""
+    ui_kv "Reachable" "$success"
+    ui_kv "Failed" "$failed"
     pause
 }
 
 _setup_ssh_keys() {
-    ui_header "🔑 SETUP SSH KEY"
-    
+    ui_header "SSH Key Setup" "installs this server's public key on the remote servers"
+
     if [[ ! -f ~/.ssh/id_rsa ]]; then
-        echo -e "${YELLOW}Generating SSH key...${NC}"
+        ui_note "Generating an SSH key pair…"
         ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
-        ui_success "Key generated."
+        ui_success "Key generated: ~/.ssh/id_rsa"
     else
-        ui_success "Key exists."
+        ui_success "Key present: ~/.ssh/id_rsa"
     fi
-    
-    [[ ! -f "$SERVERS_FILE" || ! -s "$SERVERS_FILE" ]] && ui_warning "No servers." && pause && return
-    
-    echo -e "\n${YELLOW}Select server:${NC}\n"
-    
-    local idx=1
-    local -a hosts=() ports=() users=()
-    
-    while IFS='|' read -r name host port user path panel; do
-        [[ -z "$name" ]] && continue
-        echo "$idx) $name ($host)"
-        hosts[$idx]="$host"
-        ports[$idx]="$port"
-        users[$idx]="$user"
-        ((idx++))
-    done < "$SERVERS_FILE"
-    
-    echo "$idx) All servers"
-    echo "0) Cancel"
-    read -r -p "Select: " sel
-    
-    [[ "$sel" == "0" ]] && return
-    
-    if [[ "$sel" == "$idx" ]]; then
-        for ((i=1; i<idx; i++)); do
-            echo -e "\n${YELLOW}Setting up ${hosts[$i]}...${NC}"
-            ssh-copy-id -p "${ports[$i]}" "${users[$i]}@${hosts[$i]}" 2>/dev/null || true
+
+    [[ ! -f "$SERVERS_FILE" || ! -s "$SERVERS_FILE" ]] && { _no_servers; return; }
+
+    echo ""
+    ui_menu_title "Select a server"
+    local -a servers=()
+    _server_menu_items servers
+    local all_idx=$(( ${#servers[@]} + 1 ))
+    ui_menu_item "$all_idx" "All servers"
+    ui_menu_back "Cancel"
+    local sel
+    ui_select sel
+    [[ "$sel" == "0" || -z "$sel" ]] && return
+
+    local entry name host port user path panel i
+    if [[ "$sel" == "$all_idx" ]]; then
+        for ((i=1; i<all_idx; i++)); do
+            IFS='|' read -r name host port user path panel <<< "${servers[$i]}"
+            echo ""
+            ui_note "Installing key on $name ($host)…"
+            ssh-copy-id -p "$port" "$user@$host" 2>/dev/null || true
         done
     else
-        [[ -z "${hosts[$sel]}" ]] && ui_error "Invalid." && pause && return
-        ssh-copy-id -p "${ports[$sel]}" "${users[$sel]}@${hosts[$sel]}"
+        entry="${servers[$sel]}"
+        [[ -z "$entry" ]] && { ui_error "Invalid selection."; pause; return; }
+        IFS='|' read -r name host port user path panel <<< "$entry"
+        ssh-copy-id -p "$port" "$user@$host"
     fi
-    
-    ui_success "SSH key setup complete!"
+
+    echo ""
+    ui_success "SSH key setup finished"
     pause
 }
 
 _sync_all_servers() {
-    ui_header "🔄 SYNC TO ALL SERVERS"
-    
-    [[ ! -f "$SERVERS_FILE" || ! -s "$SERVERS_FILE" ]] && ui_warning "No servers." && pause && return
-    
-    echo -e "${YELLOW}Select certificate:${NC}\n"
-    
-    local idx=1
+    ui_header "Sync to All Servers"
+
+    [[ ! -f "$SERVERS_FILE" || ! -s "$SERVERS_FILE" ]] && { _no_servers; return; }
+
+    ui_menu_title "Select a certificate"
     local -a domains=()
-    
-    for dir in /etc/letsencrypt/live/*/; do
-        [[ ! -d "$dir" ]] && continue
-        local domain
-        domain=$(basename "$dir")
-        [[ "$domain" == "README" ]] && continue
-        domains[$idx]="$domain"
-        echo "$idx) $domain"
-        ((idx++))
-    done
-    
-    [[ $idx -eq 1 ]] && ui_error "No certificates." && pause && return
-    
-    read -r -p "Select: " sel
+    _cert_menu_items domains
+    [[ ${#domains[@]} -eq 0 ]] && { ui_error "No Let's Encrypt certificates found."; pause; return; }
+    ui_menu_back "Cancel"
+
+    local sel
+    ui_select sel
+    [[ "$sel" == "0" || -z "$sel" ]] && return
     local selected="${domains[$sel]}"
-    [[ -z "$selected" ]] && ui_error "Invalid." && pause && return
-    
+    [[ -z "$selected" ]] && { ui_error "Invalid selection."; pause; return; }
+
     _sync_domain_to_all "$selected"
     pause
 }
 
 _sync_specific_server() {
-    ui_header "🔄 SYNC TO SPECIFIC SERVER"
-    
-    [[ ! -f "$SERVERS_FILE" || ! -s "$SERVERS_FILE" ]] && ui_warning "No servers." && pause && return
-    
-    # Select server
-    echo -e "${YELLOW}Select server:${NC}\n"
-    
-    local idx=1
-    local -a server_data=()
-    
-    while IFS='|' read -r name host port user path panel; do
-        [[ -z "$name" ]] && continue
-        echo "$idx) $name ($host)"
-        server_data[$idx]="$name|$host|$port|$user|$path|$panel"
-        ((idx++))
-    done < "$SERVERS_FILE"
-    
-    read -r -p "Select: " server_sel
-    [[ -z "${server_data[$server_sel]}" ]] && ui_error "Invalid." && pause && return
-    
-    # Select certificate
-    echo -e "\n${YELLOW}Select certificate:${NC}\n"
-    
-    idx=1
+    ui_header "Sync to One Server"
+
+    [[ ! -f "$SERVERS_FILE" || ! -s "$SERVERS_FILE" ]] && { _no_servers; return; }
+
+    ui_menu_title "Select a server"
+    local -a servers=()
+    _server_menu_items servers
+    ui_menu_back "Cancel"
+    local server_sel
+    ui_select server_sel
+    [[ "$server_sel" == "0" || -z "$server_sel" ]] && return
+    [[ -z "${servers[$server_sel]}" ]] && { ui_error "Invalid selection."; pause; return; }
+
+    echo ""
+    ui_menu_title "Select a certificate"
     local -a domains=()
-    
-    for dir in /etc/letsencrypt/live/*/; do
-        [[ ! -d "$dir" ]] && continue
-        local domain
-        domain=$(basename "$dir")
-        [[ "$domain" == "README" ]] && continue
-        domains[$idx]="$domain"
-        echo "$idx) $domain"
-        ((idx++))
-    done
-    
-    [[ $idx -eq 1 ]] && ui_error "No certificates." && pause && return
-    
-    read -r -p "Select: " cert_sel
+    _cert_menu_items domains
+    [[ ${#domains[@]} -eq 0 ]] && { ui_error "No Let's Encrypt certificates found."; pause; return; }
+    ui_menu_back "Cancel"
+
+    local cert_sel
+    ui_select cert_sel
+    [[ "$cert_sel" == "0" || -z "$cert_sel" ]] && return
     local selected_domain="${domains[$cert_sel]}"
-    [[ -z "$selected_domain" ]] && ui_error "Invalid." && pause && return
-    
-    # Parse server data
-    IFS='|' read -r name host port user path panel <<< "${server_data[$server_sel]}"
+    [[ -z "$selected_domain" ]] && { ui_error "Invalid selection."; pause; return; }
+
+    local name host port user path panel
+    IFS='|' read -r name host port user path panel <<< "${servers[$server_sel]}"
     local cert_path="/etc/letsencrypt/live/$selected_domain"
-    
-    echo -e "\n${YELLOW}Syncing $selected_domain to $name...${NC}"
-    
+
+    echo ""
+    ui_task "Syncing $selected_domain to $name ($host)"
     if _sync_to_server "$host" "$port" "$user" "$path" "$selected_domain" "$cert_path" "$panel"; then
-        ui_success "Sync completed!"
+        ui_task_done ok
     else
-        ui_error "Sync failed!"
+        ui_task_done bad
     fi
-    
+
     pause
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# BACKUP CERTIFICATES
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Backup Certificates ───────────────────────────────────────────────
 
 backup_certificates() {
-    ui_header "💾 BACKUP CERTIFICATES"
+    ui_header "Backup Certificates" "$SSL_BACKUP_DIR"
     init_logging
     detect_active_panel > /dev/null
-    
+
     local backup_name
     backup_name="ssl-backup-$(date +%Y%m%d-%H%M%S)"
     local backup_path="$SSL_BACKUP_DIR/$backup_name"
-    
-    mkdir -p "$backup_path" || { ui_error "Cannot create backup directory!"; pause; return; }
-    
-    echo -e "${YELLOW}Creating backup...${NC}\n"
-    
+
+    mkdir -p "$backup_path" || { ui_error "Cannot create $backup_path"; pause; return; }
+
     # Backup Let's Encrypt
     if [[ -d "/etc/letsencrypt" ]]; then
-        echo "  Backing up Let's Encrypt..."
-        cp -r /etc/letsencrypt "$backup_path/" 2>/dev/null
+        ui_task "Copying /etc/letsencrypt"
+        cp -r /etc/letsencrypt "$backup_path/" 2>/dev/null && ui_task_done ok || ui_task_done warn "partial"
     fi
-    
+
     # Backup panel certs
     if [[ -d "$PANEL_DEF_CERTS" ]]; then
-        echo "  Backing up panel certificates..."
+        ui_task "Copying panel certificates"
         mkdir -p "$backup_path/panel-certs"
-        cp -r "$PANEL_DEF_CERTS"/* "$backup_path/panel-certs/" 2>/dev/null
+        cp -r "$PANEL_DEF_CERTS"/* "$backup_path/panel-certs/" 2>/dev/null && ui_task_done ok || ui_task_done warn "partial"
     fi
-    
+
     # Create tarball
-    echo "  Creating archive..."
-    (cd "$SSL_BACKUP_DIR" && tar -czf "$backup_name.tar.gz" "$backup_name" 2>/dev/null)
+    ui_task "Compressing archive"
+    if (cd "$SSL_BACKUP_DIR" && tar -czf "$backup_name.tar.gz" "$backup_name" 2>/dev/null); then
+        ui_task_done ok
+    else
+        ui_task_done bad
+        rm -rf "$backup_path"
+        ui_error "Could not create the archive"
+        pause
+        return 1
+    fi
     rm -rf "$backup_path"
-    
+
     local final_path="$SSL_BACKUP_DIR/$backup_name.tar.gz"
     local size
     size=$(du -h "$final_path" 2>/dev/null | cut -f1)
-    
-    ui_success "Backup created!"
-    echo -e "  ${YELLOW}Path:${NC} $final_path"
-    echo -e "  ${YELLOW}Size:${NC} $size"
-    
+
+    echo ""
+    ui_box_start ok "Certificate backup created"
+    ui_box_line "File" "$final_path"
+    ui_box_line "Size" "$size"
+    ui_box_end
+
     log_success "Backup created: $final_path"
     pause
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# AUTO-RENEWAL SETUP
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Auto-Renewal Setup ────────────────────────────────────────────────
 # AUTO-RENEWAL SETUP
 # ═══════════════════════════════════════════════════════════════════════════
 
 setup_auto_renewal() {
-    ui_header "⏰ SETUP AUTO-RENEWAL"
+    ui_header "Auto-Renewal"
     detect_active_panel > /dev/null
 
     local cron_file="/etc/cron.d/ssl-auto-renew"
     local wrapper="/opt/mrm-manager/ssl-auto-renew.sh"
 
-    echo -e "${YELLOW}This will setup automatic certificate renewal.${NC}\n"
-    echo "Schedule: Daily at 3:00 AM"
-    echo "Action:  Stop web services + port-80 containers → renew →"
-    echo "         copy certs to panel/node dirs → restore services"
-    echo "Log:     ${SSL_LOG_DIR}/auto-renew.log"
+    if [[ -f "$cron_file" ]]; then
+        ui_kv_state "Status" ok "Configured" "$cron_file"
+    else
+        ui_kv_state "Status" off "Not configured"
+    fi
+    ui_kv "Schedule" "daily at 03:00"
+    ui_kv "Action" "stop web services and port-80 containers › renew › copy certs to panel / node dirs › restore"
+    ui_kv "Log" "${SSL_LOG_DIR}/auto-renew.log"
     echo ""
 
-    read -r -p "Proceed? (Y/n): " proceed
-    [[ "$proceed" =~ ^[Nn]$ ]] && return
+    ui_confirm "Install / refresh the auto-renewal job?" y || return
 
     mkdir -p "$(dirname "$wrapper")"
 
@@ -2651,144 +2522,164 @@ EOF
     # Legacy hook from previous versions — no longer used
     rm -f /opt/mrm-manager/ssl-renew-hook.sh
 
-    ui_success "Auto-renewal configured!"
-    echo -e "  ${YELLOW}Wrapper:${NC} $wrapper"
-    echo -e "  ${YELLOW}Cron:${NC} $cron_file"
-    echo -e "  ${YELLOW}Log:${NC} $SSL_LOG_DIR/auto-renew.log"
-    echo -e "\n${CYAN}Test now with:${NC} bash $wrapper"
-    echo -e "${CYAN}Dry-run only:${NC}  certbot renew --dry-run"
+    echo ""
+    ui_success "Auto-renewal configured"
+    ui_kv "Wrapper" "$wrapper"
+    ui_kv "Cron" "$cron_file"
+    ui_kv "Log" "$SSL_LOG_DIR/auto-renew.log"
+    echo ""
+    ui_cmd "bash $wrapper" "run the renewal now"
+    ui_cmd "certbot renew --dry-run" "dry run only"
 
     log_success "Auto-renewal configured (wrapper mode, MRM-040)"
     pause
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# SHOW SSL PATHS
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Show SSL Paths ────────────────────────────────────────────────────
 
 show_detailed_paths() {
-    ui_header "📁 SSL FILE PATHS"
     detect_active_panel > /dev/null
-    
-    echo -e "${GREEN}--- Panel Certificates ($PANEL_DEF_CERTS) ---${NC}"
-    if [[ -d "$PANEL_DEF_CERTS" ]]; then
-        for dir in "$PANEL_DEF_CERTS"/*; do
-            [[ -d "$dir" ]] || continue
-            local dom
-            dom=$(basename "$dir")
-            echo -e "  ${YELLOW}$dom${NC}"
-            [[ -f "$dir/fullchain.pem" ]] && echo -e "    Cert: ${CYAN}$dir/fullchain.pem${NC}"
-            [[ -f "$dir/privkey.pem" ]] && echo -e "    Key:  ${CYAN}$dir/privkey.pem${NC}"
-        done
-    else
-        echo "  No certificates."
+    ui_header "Certificate File Paths"
+
+    _list_cert_dir() {
+        local base="$1" title="$2" dir dom flat found=0
+        ui_section "$title · ${base:-unknown}"
+        if [[ -n "$base" && -d "$base" ]]; then
+            for dir in "$base"/*; do
+                [[ -d "$dir" ]] || continue
+                dom=$(basename "$dir")
+                [[ -f "$dir/fullchain.pem" || -f "$dir/privkey.pem" ]] || continue
+                found=1
+                ui_text "${BOLD}$dom${NC}"
+                [[ -f "$dir/fullchain.pem" ]] && ui_kv "  Certificate" "$dir/fullchain.pem"
+                [[ -f "$dir/privkey.pem" ]] && ui_kv "  Private key" "$dir/privkey.pem"
+            done
+            # Flat/default certs at the certs root (MRM-033)
+            for flat in fullchain.pem ssl_cert.pem; do
+                [[ -f "$base/$flat" ]] && { found=1; ui_kv "default (flat)" "$base/$flat"; }
+            done
+        fi
+        [[ $found -eq 0 ]] && ui_note "No certificates."
+        echo ""
+    }
+
+    _list_cert_dir "$PANEL_DEF_CERTS" "Panel certificates"
+    if [[ -n "$NODE_DEF_CERTS" && "$NODE_DEF_CERTS" != "$PANEL_DEF_CERTS" ]]; then
+        _list_cert_dir "$NODE_DEF_CERTS" "Node certificates"
     fi
-    # Flat/default certs at the certs root (MRM-033)
-    for flat in fullchain.pem ssl_cert.pem; do
-        [[ -f "$PANEL_DEF_CERTS/$flat" ]] && echo -e "  ${YELLOW}default (flat)${NC} ${CYAN}$PANEL_DEF_CERTS/$flat${NC}"
+    ui_section "Let's Encrypt · /etc/letsencrypt/live"
+    local le_found=0 dir
+    for dir in /etc/letsencrypt/live/*/; do
+        [[ -d "$dir" && "$(basename "$dir")" != "README" ]] || continue
+        le_found=1
+        ui_kv "$(basename "$dir")" "${dir%/}"
     done
-    
-    echo -e "\n${PURPLE}--- Node Certificates ($NODE_DEF_CERTS) ---${NC}"
-    if [[ -d "$NODE_DEF_CERTS" && "$NODE_DEF_CERTS" != "$PANEL_DEF_CERTS" ]]; then
-        for dir in "$NODE_DEF_CERTS"/*; do
-            [[ -d "$dir" ]] || continue
-            local dom
-            dom=$(basename "$dir")
-            echo -e "  ${YELLOW}$dom${NC}"
-            [[ -f "$dir/fullchain.pem" ]] && echo -e "    Cert: ${CYAN}$dir/fullchain.pem${NC}"
-            [[ -f "$dir/privkey.pem" ]] && echo -e "    Key:  ${CYAN}$dir/privkey.pem${NC}"
-        done
-    else
-        echo "  No certificates."
-    fi
-    # Flat/default certs at the certs root (MRM-033)
-    for flat in ssl_cert.pem fullchain.pem; do
-        [[ -f "$NODE_DEF_CERTS/$flat" ]] && echo -e "  ${YELLOW}default (flat)${NC} ${CYAN}$NODE_DEF_CERTS/$flat${NC}"
-    done
-    
+    [[ $le_found -eq 0 ]] && ui_note "No certificates."
+
     pause
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# VIEW LOGS
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── View Logs ─────────────────────────────────────────────────────────
 
 view_ssl_logs() {
-    ui_header "📋 SSL LOGS"
-    
-    echo "1) SSL Manager Log (last 50)"
-    echo "2) Certbot Log (last 50)"
-    echo "3) Clear Logs"
-    echo "0) Back"
-    read -r -p "Select: " opt
-    
+    ui_header "SSL Logs" "$SSL_LOG_DIR"
+
+    ui_menu_item 1 "SSL manager log" "last 50 lines"
+    ui_menu_item 2 "certbot log" "last 50 lines"
+    ui_menu_item 3 "Clear logs"
+    ui_menu_back
+    local opt
+    ui_select opt
+
     case "$opt" in
-        1) 
-            [[ -f "$SSL_LOG_FILE" ]] && tail -n 50 "$SSL_LOG_FILE" || echo "Not found."
+        1)
+            echo ""
+            if [[ -s "$SSL_LOG_FILE" ]]; then tail -n 50 "$SSL_LOG_FILE"; else ui_note "No entries yet."; fi
             pause
             ;;
-        2) 
-            [[ -f "$CERTBOT_DEBUG_LOG" ]] && tail -n 50 "$CERTBOT_DEBUG_LOG" || echo "Not found."
+        2)
+            echo ""
+            if [[ -s "$CERTBOT_DEBUG_LOG" ]]; then tail -n 50 "$CERTBOT_DEBUG_LOG"; else ui_note "No entries yet."; fi
             pause
             ;;
-        3) 
-            : > "$SSL_LOG_FILE" 2>/dev/null
-            : > "$CERTBOT_DEBUG_LOG" 2>/dev/null
-            ui_success "Cleared."
+        3)
+            if ui_confirm "Clear both log files?"; then
+                : > "$SSL_LOG_FILE" 2>/dev/null
+                : > "$CERTBOT_DEBUG_LOG" 2>/dev/null
+                ui_success "Logs cleared"
+            else
+                ui_cancelled
+            fi
             pause
             ;;
     esac
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# MAIN MENU
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Main Menu ─────────────────────────────────────────────────────────
 
 ssl_menu() {
     init_logging
-    
+    local opt
+
     while true; do
-        # FIX: only clear on a real terminal (MRM-034)
-        if [ -t 1 ]; then
-            clear
-        fi
-        ui_header "🔐 SSL MANAGEMENT v${SSL_VERSION}"
         detect_active_panel > /dev/null
-        
-        echo -e "${CYAN}Panel: $(basename "$PANEL_DIR" 2>/dev/null || echo 'unknown')${NC}\n"
-        
-        echo "1)  🔐 Request New SSL Certificate"
-        echo "2)  📅 View Certificate Expiry Status"
-        echo "3)  📁 Show SSL File Paths"
-        echo "4)  🔄 Renew Expiring Certificates"
-        echo "5)  🎯 Renew Specific Certificate"
-        echo "6)  🌐 Multi-Server Sync"
-        echo "7)  💾 Backup Certificates"
-        echo "8)  ⏰ Setup Auto-Renewal"
-        echo "9)  📋 View Logs"
+        ui_header "SSL Certificates" "Panel: $(basename "$PANEL_DIR" 2>/dev/null || echo unknown) · Certs: ${PANEL_DEF_CERTS:-unknown}"
+
+        # Compact status line: how many certs and the nearest expiry
+        local -a certs=()
+        mapfile -t certs < <(discover_all_certificates 2>/dev/null)
+        if [[ ${#certs[@]} -gt 0 ]]; then
+            local min_days=99999 min_dom="" c source domain cert_path days status
+            for c in "${certs[@]}"; do
+                IFS='|' read -r source domain cert_path days status <<< "$c"
+                if [[ "$days" =~ ^-?[0-9]+$ && "$days" -lt "$min_days" ]]; then min_days=$days; min_dom=$domain; fi
+            done
+            if [[ $min_days -le $EXPIRY_CRITICAL_DAYS ]]; then
+                ui_kv_state "Certificates" bad "${#certs[@]} found" "$min_dom expires in $min_days days"
+            elif [[ $min_days -le $EXPIRY_WARNING_DAYS ]]; then
+                ui_kv_state "Certificates" warn "${#certs[@]} found" "$min_dom expires in $min_days days"
+            else
+                ui_kv_state "Certificates" ok "${#certs[@]} found" "nearest expiry: $min_dom in $min_days days"
+            fi
+        else
+            ui_kv_state "Certificates" off "None found"
+        fi
+        if [[ -f /etc/cron.d/ssl-auto-renew ]]; then
+            ui_kv_state "Auto-renewal" ok "Enabled" "daily 03:00"
+        else
+            ui_kv_state "Auto-renewal" off "Disabled"
+        fi
         echo ""
-        echo "0)  ↩️  Back"
-        echo ""
-        read -r -p "Select: " opt
-        
+
+        ui_menu_item 1 "Request a new certificate"
+        ui_menu_item 2 "Certificate expiry status"
+        ui_menu_item 3 "Renew expiring certificates"
+        ui_menu_item 4 "Renew a specific certificate"
+        ui_menu_item 5 "Set up auto-renewal"
+        ui_menu_item 6 "Multi-server sync"
+        ui_menu_item 7 "Back up certificates"
+        ui_menu_item 8 "Certificate file paths"
+        ui_menu_item 9 "View logs"
+        ui_menu_back
+        ui_select opt
+
         case "$opt" in
             1) ssl_wizard ;;
             2) show_certificate_expiry ;;
-            3) show_detailed_paths ;;
-            4) renew_expiring_certificates ;;
-            5) renew_specific_certificate ;;
+            3) renew_expiring_certificates ;;
+            4) renew_specific_certificate ;;
+            5) setup_auto_renewal ;;
             6) multi_server_menu ;;
             7) backup_certificates ;;
-            8) setup_auto_renewal ;;
+            8) show_detailed_paths ;;
             9) view_ssl_logs ;;
             0) return ;;
+            *) ui_invalid ;;
         esac
     done
 }
 
-# ═══════════════════════════════════════════════════════════════════════════
-# ENTRY POINT
-# ═══════════════════════════════════════════════════════════════════════════
+# ─── Entry Point ───────────────────────────────────────────────────────
 
 main() {
     # Check root

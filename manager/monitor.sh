@@ -1,15 +1,17 @@
 #!/bin/bash
-
-# ==========================================
-# MRM MONITOR & ALERTS v1.0.0
-# Telegram alerts for: Panel Down, CPU >90%, Disk Full, RAM High
-# ==========================================
+# MRM Manager monitor.sh — Monitor & Alerts
+# Telegram alerts for: panel down, CPU high, disk full, RAM high (cron-driven).
 
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 export HOME="${HOME:-/root}"
 
-if [ -f "/opt/mrm-manager/utils.sh" ]; then source /opt/mrm-manager/utils.sh; fi
-if [ -f "/opt/mrm-manager/ui.sh" ]; then source /opt/mrm-manager/ui.sh; fi
+# ─── Shared libraries ────────────────────────────────────────────────────────
+MRM_DIR="${MRM_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)}"
+[ -r "$MRM_DIR/utils.sh" ] || MRM_DIR="/opt/mrm-manager"
+# shellcheck source=/dev/null
+if [ -f "$MRM_DIR/utils.sh" ]; then source "$MRM_DIR/utils.sh"; fi
+# shellcheck source=/dev/null
+if ! declare -f ui_header >/dev/null 2>&1 && [ -f "$MRM_DIR/ui.sh" ]; then source "$MRM_DIR/ui.sh"; fi
 
 BACKUP_DIR="/root/mrm-backups"
 TG_CONFIG="/root/.mrm_telegram"
@@ -19,8 +21,8 @@ MONITOR_STATE="/tmp/mrm-monitor-state"
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 
 init_monitor_logging() {
-    mkdir -p "$(dirname "$MONITOR_LOG")"
-    touch "$MONITOR_LOG"
+    mkdir -p "$(dirname "$MONITOR_LOG")" 2>/dev/null
+    touch "$MONITOR_LOG" 2>/dev/null
     chmod 600 "$MONITOR_LOG" 2>/dev/null || true
 }
 
@@ -29,7 +31,7 @@ log_monitor() {
     local MESSAGE=$2
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$LEVEL] $MESSAGE" >> "$MONITOR_LOG"
     # Rotate log if >5MB
-    if [ -f "$MONITOR_LOG" ] && [ $(stat -c%s "$MONITOR_LOG" 2>/dev/null || echo 0) -gt 5242880 ]; then
+    if [ -f "$MONITOR_LOG" ] && [ "$(stat -c%s "$MONITOR_LOG" 2>/dev/null || echo 0)" -gt 5242880 ]; then
         mv "$MONITOR_LOG" "$MONITOR_LOG.1" 2>/dev/null
         touch "$MONITOR_LOG"
     fi
@@ -294,7 +296,7 @@ Top processes:
 setup_monitor_config() {
     if [ ! -f "$MONITOR_CONFIG" ]; then
         cat > "$MONITOR_CONFIG" << EOF
-# MRM Monitor Config v1.0.0
+# MRM Manager monitor.conf — thresholds and switches for monitor.sh
 ENABLED=true
 CHECK_PANEL_DOWN=true
 CHECK_DISK=true
@@ -311,27 +313,23 @@ EOF
 }
 
 setup_cron() {
-    clear
-    ui_header "MONITOR - TELEGRAM ALERTS v1.0.0"
-    echo "Monitors: Panel Down, CPU>90%, Disk>85%, RAM>90%"
-    echo ""
-    echo "Current cron status:"
+    local c CURRENT
+    ui_header "Monitor Schedule" "Checks: panel down · CPU · disk · RAM"
     if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH check"; then
-        local CURRENT=$(crontab -l | grep "$SCRIPT_PATH")
-        echo -e "${GREEN}Active:${NC} $CURRENT"
+        CURRENT=$(crontab -l | grep "$SCRIPT_PATH" | awk '{print $1" "$2" "$3" "$4" "$5}')
+        ui_kv_state "Schedule" ok "Active" "$CURRENT"
     else
-        echo -e "${YELLOW}No monitor scheduled${NC}"
+        ui_kv_state "Schedule" off "Not scheduled"
     fi
     echo ""
-    echo "Select check interval:"
-    echo "1) Every 2 minutes (Recommended)"
-    echo "2) Every 5 minutes"
-    echo "3) Every 10 minutes"
-    echo "4) Every 30 minutes"
-    echo "5) Disable monitor"
-    echo "0) Cancel"
-    echo ""
-    read -p "Select: " c
+    ui_menu_title "Check interval"
+    ui_menu_item 1 "Every 2 minutes" "recommended"
+    ui_menu_item 2 "Every 5 minutes"
+    ui_menu_item 3 "Every 10 minutes"
+    ui_menu_item 4 "Every 30 minutes"
+    ui_menu_item 5 "Disable the monitor"
+    ui_menu_back "Cancel"
+    ui_select c
     local CRON_TIME=""
     case $c in
         1) CRON_TIME="*/2 * * * *" ;;
@@ -340,7 +338,7 @@ setup_cron() {
         4) CRON_TIME="*/30 * * * *" ;;
         5) CRON_TIME="" ;;
         0) return ;;
-        *) ui_error "Invalid selection"; pause; return ;;
+        *) ui_invalid; return ;;
     esac
     # Build the new crontab in a temp file — works even when no crontab
     # exists yet (crontab -l fails there and the old pipe version could
@@ -354,7 +352,7 @@ setup_cron() {
     if crontab "$TMP_CRON"; then
         rm -f "$TMP_CRON"
         if [ -n "$CRON_TIME" ]; then
-            ui_success "Monitor enabled: $CRON_TIME - Checks every $(echo $CRON_TIME | cut -d' ' -f1)"
+            ui_success "Monitor enabled — cron: $CRON_TIME"
             log_monitor "INFO" "Monitor cron scheduled: $CRON_TIME"
             setup_monitor_config
         else
@@ -363,21 +361,21 @@ setup_cron() {
         fi
     else
         rm -f "$TMP_CRON"
-        ui_error "Failed to install crontab"
+        ui_error "Failed to install the crontab"
         log_monitor "ERROR" "Failed to install crontab"
     fi
     pause
 }
 
 test_alerts() {
-    clear
-    ui_header "TEST TELEGRAM ALERTS"
+    ui_header "Test Telegram Alert"
     if [ ! -f "$TG_CONFIG" ]; then
-        ui_error "Telegram not configured! Go to Backup & Restore -> Setup Telegram Bot first"
+        ui_error "Telegram is not configured"
+        ui_note "Set it up first: Backup & Restore › Telegram bot"
         pause
         return
     fi
-    echo -e "${CYAN}Sending test alerts...${NC}"
+    ui_task "Sending a test alert"
     local HOST=$(hostname)
     local DISK=$(get_disk_usage)
     local CPU=$(get_cpu_usage)
@@ -391,89 +389,105 @@ test_alerts() {
 🧠 RAM: ${RAM}%
 ⏰ $(date '+%Y-%m-%d %H:%M:%S')
 ✅ Alert system is working!
-Version: $(get_mrm_version 2>/dev/null || echo v1.4.27)
+Version: $(get_mrm_version 2>/dev/null || echo unknown)
 "
     if send_telegram_alert "$MSG"; then
-        ui_success "Test alert sent to Telegram!"
+        ui_task_done ok "delivered"
     else
-        ui_error "Failed to send test alert - Check Telegram config"
+        ui_task_done bad "check the Telegram configuration"
     fi
     pause
 }
 
 view_logs() {
-    clear
-    ui_header "MONITOR LOGS"
+    ui_header "Monitor Logs" "$MONITOR_LOG"
     if [ -f "$MONITOR_LOG" ]; then
-        echo -e "${YELLOW}Last 50 lines:${NC}\n"
-        tail -n 50 "$MONITOR_LOG"
+        ui_note "Last 50 lines"
+        echo ""
+        tail -n 50 "$MONITOR_LOG" | sed "s/^/${UI_PAD}/"
     else
-        ui_warning "No logs found at $MONITOR_LOG"
+        ui_warning "No log file yet"
     fi
     pause
 }
 
 clear_states() {
     rm -rf "$MONITOR_STATE" 2>/dev/null
-    ui_success "Alert states cleared - Next alerts will be sent immediately on next check"
+    ui_success "Alert states cleared — the next check sends alerts immediately"
+    pause
+}
+
+show_monitor_config() {
+    ui_header "Monitor Configuration" "$MONITOR_CONFIG"
+    if [ -f "$MONITOR_CONFIG" ]; then
+        grep -v '^#' "$MONITOR_CONFIG" | grep '=' | while IFS='=' read -r K V; do ui_kv "$K" "$V"; done
+    else
+        ui_warning "No configuration file yet"
+    fi
+    echo ""
+    ui_section "Alert cooldown states"
+    if [ -d "$MONITOR_STATE" ] && [ -n "$(ls -A "$MONITOR_STATE" 2>/dev/null)" ]; then
+        ls -lh "$MONITOR_STATE" 2>/dev/null | tail -n +2 | sed "s/^/${UI_PAD}/"
+    else
+        ui_note "none (no recent alerts)"
+    fi
     pause
 }
 
 monitor_menu() {
+    local opt
     init_monitor_logging
     setup_monitor_config 2>/dev/null || true
     while true; do
-        clear
-        ui_header "MONITOR & ALERTS v1.0.0"
-        local PANEL_STATUS=$(get_panel_status)
-        local DISK_USAGE=$(get_disk_usage)
-        local DISK_FREE=$(get_disk_free)
-        local CPU_USAGE=$(get_cpu_usage)
-        local RAM_PERCENT=$(get_ram_usage_percent)
-        local TG_STATUS="${RED}Not Configured${NC}"
-        [ -f "$TG_CONFIG" ] && TG_STATUS="${GREEN}Configured${NC}"
-        local CRON_STATUS="${RED}Disabled${NC}"
-        crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH check" && CRON_STATUS="${GREEN}Active${NC}"
+        ui_header "Monitor & Alerts" "Telegram alerts for panel, CPU, disk and RAM"
+        local PANEL_STATUS DISK_USAGE DISK_FREE CPU_USAGE RAM_PERCENT
+        PANEL_STATUS=$(get_panel_status)
+        DISK_USAGE=$(get_disk_usage)
+        DISK_FREE=$(get_disk_free)
+        CPU_USAGE=$(get_cpu_usage)
+        RAM_PERCENT=$(get_ram_usage_percent)
 
-        echo -e "Panel: ${PANEL_STATUS} | Disk: ${DISK_USAGE}% (${DISK_FREE} free) | CPU: ${CPU_USAGE}% | RAM: ${RAM_PERCENT}%"
-        echo -e "Telegram: $TG_STATUS | Monitor: $CRON_STATUS"
-        if [ ! -f "$TG_CONFIG" ]; then
-            echo -e "${YELLOW}Tip: configure Telegram in Backup & Restore -> Setup Telegram Bot${NC}"
+        if [ "$PANEL_STATUS" = "up" ]; then
+            ui_kv_state "Panel" ok "Running"
+        else
+            ui_kv_state "Panel" bad "Down"
+        fi
+        ui_kv "Resources" "Disk ${DISK_USAGE}% (${DISK_FREE} free) · CPU ${CPU_USAGE}% · RAM ${RAM_PERCENT}%"
+        if [ -f "$TG_CONFIG" ]; then
+            ui_kv_state "Telegram" ok "Configured"
+        else
+            ui_kv_state "Telegram" off "Not configured" "Backup & Restore › Telegram bot"
+        fi
+        if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH check"; then
+            ui_kv_state "Schedule" ok "Active" "$(crontab -l 2>/dev/null | grep "$SCRIPT_PATH check" | awk '{print $1}' | head -1)"
+        else
+            ui_kv_state "Schedule" off "Not scheduled"
         fi
         echo ""
-        echo "1)  ⏰ Setup Monitor Schedule (Every 2/5/10/30 min)"
-        echo "2)  🧪 Send Test Alert to Telegram"
-        echo "3)  🔍 Run Check Now (Manual)"
-        echo "4)  📋 View Monitor Logs"
-        echo "5)  🧹 Clear Alert States (Reset cooldown)"
-        echo "6)  📦 View Current Config"
-        echo ""
-        echo "0)  ↩️  Back"
-        echo ""
-        read -p "Select: " opt
+        ui_menu_item 1 "Monitor schedule" "every 2/5/10/30 min"
+        ui_menu_item 2 "Send a test alert"
+        ui_menu_item 3 "Run a check now"
+        ui_menu_item 4 "View monitor logs"
+        ui_menu_item 5 "Clear alert states" "reset cooldown"
+        ui_menu_item 6 "View configuration"
+        ui_menu_back
+        ui_select opt
         case $opt in
             1) setup_cron ;;
             2) test_alerts ;;
             3)
-                echo -e "${BLUE}Running check now...${NC}"
+                ui_header "Manual Check"
+                ui_task "Running all checks"
                 check_and_alert
-                echo -e "${GREEN}Check completed - See logs${NC}"
+                ui_task_done ok "see the monitor log for details"
                 log_monitor "INFO" "Manual check executed"
                 pause
                 ;;
             4) view_logs ;;
             5) clear_states ;;
-            6)
-                clear
-                ui_header "MONITOR CONFIG"
-                cat "$MONITOR_CONFIG" 2>/dev/null || echo "No config found"
-                echo ""
-                echo "State dir: $MONITOR_STATE"
-                ls -lh "$MONITOR_STATE" 2>/dev/null || echo "No states (no recent alerts)"
-                pause
-                ;;
+            6) show_monitor_config ;;
             0) return ;;
-            *) ui_error "Invalid option"; sleep 1 ;;
+            *) ui_invalid ;;
         esac
     done
 }

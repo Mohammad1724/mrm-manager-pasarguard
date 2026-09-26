@@ -70,72 +70,76 @@ send_to_telegram() {
 test_telegram() {
     local TK CH PROXY RESULT
     local -a CURL_PROXY_ARGS=()
-    if [ ! -f "$TG_CONFIG" ]; then ui_error "Telegram not configured!"; return 1; fi
-    ui_spinner_start "Testing Telegram connection..."
+    if [ ! -f "$TG_CONFIG" ]; then ui_error "Telegram is not configured"; return 1; fi
+    ui_spinner_start "Testing Telegram connection"
     TK=$(grep "^TG_TOKEN=" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
     CH=$(grep "^TG_CHAT=" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
     PROXY=$(grep "^TG_PROXY=" "$TG_CONFIG" | cut -d'=' -f2 | tr -d '"')
     mapfile -t CURL_PROXY_ARGS < <(build_telegram_proxy_args "$PROXY")
-    RESULT=$(curl -4 -s "${CURL_PROXY_ARGS[@]}" -X POST "https://api.telegram.org/bot$TK/sendMessage" -d chat_id="$CH" --data-urlencode "text=🧪 MRM Backup test - $(date '+%Y-%m-%d %H:%M')" 2>&1)
+    RESULT=$(curl -4 -s "${CURL_PROXY_ARGS[@]}" -X POST "https://api.telegram.org/bot$TK/sendMessage" -d chat_id="$CH" --data-urlencode "text=MRM Backup test - $(date '+%Y-%m-%d %H:%M')" 2>&1)
     ui_spinner_stop
-    if echo "$RESULT" | grep -q '"ok":true'; then ui_success "Telegram connection successful!"; return 0; else ui_error "Telegram connection failed!"; echo -e "${YELLOW}Error: $RESULT${NC}"; return 1; fi
+    if echo "$RESULT" | grep -q '"ok":true'; then
+        ui_success "Telegram connection successful"
+        return 0
+    fi
+    ui_error "Telegram connection failed"
+    ui_note "Response: $(ui_truncate "$RESULT" 200)"
+    return 1
 }
 
 setup_telegram() {
-    clear
-    ui_header "SETUP TELEGRAM BOT - v${BACKUP_VERSION}"
-    echo -e "${CYAN}To get Bot Token:${NC}\n  1. Message @BotFather on Telegram\n  2. Send /newbot and follow instructions\n  3. Copy the token\n"
-    echo -e "${CYAN}To get Chat ID:${NC}\n  1. Message @userinfobot on Telegram\n  2. It will show your Chat ID\n"
-    read -p "Enter Bot Token: " TK
-    if [ -z "$TK" ]; then ui_error "Token is required!"; pause; return; fi
-    read -p "Enter Chat ID: " CI
-    if [ -z "$CI" ]; then ui_error "Chat ID is required!"; pause; return; fi
+    ui_header "Telegram Bot Setup" "backups and alerts are delivered to this chat"
+    ui_section "How to get the values"
+    ui_text "Bot token:  message @BotFather, send /newbot and copy the token"
+    ui_text "Chat ID:    message @userinfobot — it replies with your numeric ID"
     echo ""
-    read -p "Use SOCKS5 proxy for Telegram? (y/N): " USE_PROXY
-    if [[ "$USE_PROXY" =~ ^[Yy]$ ]]; then
-        echo ""
-        echo "Enter proxy format: socks5://127.0.0.1:1080 or socks5://user:pass@127.0.0.1:1080"
-        read -p "Proxy: " PROXY_URL
+    local TK CI USE_PROXY PROXY_URL
+    ui_ask_secret TK "Bot token"
+    if [ -z "$TK" ]; then ui_error "Bot token is required"; ui_pause; return; fi
+    ui_ask CI "Chat ID"
+    if [ -z "$CI" ]; then ui_error "Chat ID is required"; ui_pause; return; fi
+    echo ""
+    if ui_confirm "Use a proxy to reach Telegram?"; then
+        ui_note "Formats: socks5://127.0.0.1:1080 · socks5://user:pass@host:1080 · http://host:8080"
+        ui_ask PROXY_URL "Proxy URL"
     else
         PROXY_URL=""
     fi
     if declare -f mrm_create_restore_point >/dev/null 2>&1; then
         local RESTORE_POINT_ID
         RESTORE_POINT_ID="$(mrm_create_restore_point "telegram-settings" "none" "$TG_CONFIG")"
-        [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point created: $RESTORE_POINT_ID${NC}"
+        [ -n "$RESTORE_POINT_ID" ] && ui_note "Restore point: $RESTORE_POINT_ID"
     fi
-    # FIX: values written verbatim — unquoted heredoc would expand $VAR,
+    # Values written verbatim — an unquoted heredoc would expand $VAR,
     # backticks and $(...) inside the token/chat/proxy (MRM-071, same class
     # as MRM-005). printf keeps the shared KEY="value" format (monitor.sh reads it).
     printf 'TG_TOKEN="%s"\nTG_CHAT="%s"\nTG_PROXY="%s"\n' "$TK" "$CI" "$PROXY_URL" > "$TG_CONFIG"
     chmod 600 "$TG_CONFIG"
-    ui_success "Telegram configured!"
+    echo ""
+    ui_success "Telegram configured"
     log_backup "INFO" "Telegram bot configured"
     echo ""
-    read -p "Test connection now? (Y/n): " TEST
-    if [[ ! "$TEST" =~ ^[Nn]$ ]]; then test_telegram; fi
-    pause
+    if ui_confirm "Send a test message now?" y; then test_telegram; fi
+    ui_pause
 }
 
 remove_telegram_settings() {
-    clear
-    ui_header "REMOVE TELEGRAM SETTINGS"
-    if [ ! -f "$TG_CONFIG" ]; then ui_warning "Telegram settings are not configured."; pause; return; fi
-    echo -e "${YELLOW}This will delete Telegram bot settings.${NC}"
-    echo -e "${CYAN}Scheduled backups will keep working locally.${NC}\n"
-    read -p "Delete? (y/N): " CONFIRM
-    if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+    ui_header "Remove Telegram Settings"
+    if [ ! -f "$TG_CONFIG" ]; then ui_warning "Telegram is not configured"; ui_pause; return; fi
+    ui_text "This deletes the saved bot token and chat ID."
+    ui_note "Scheduled backups keep running locally."
+    echo ""
+    if ui_confirm "Remove Telegram settings?"; then
         if declare -f mrm_create_restore_point >/dev/null 2>&1; then
             local RESTORE_POINT_ID
             RESTORE_POINT_ID="$(mrm_create_restore_point "telegram-settings-remove" "none" "$TG_CONFIG")"
-            [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point: $RESTORE_POINT_ID${NC}"
+            [ -n "$RESTORE_POINT_ID" ] && ui_note "Restore point: $RESTORE_POINT_ID"
         fi
         rm -f "$TG_CONFIG"
-        ui_success "Telegram settings removed."
+        ui_success "Telegram settings removed"
         log_backup "INFO" "Telegram settings removed"
     else
-        echo "Cancelled"
+        ui_cancelled
     fi
-    pause
+    ui_pause
 }
-

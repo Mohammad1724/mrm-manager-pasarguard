@@ -1,19 +1,24 @@
 #!/bin/bash
-# MRM Manager utils.sh v1.4.27
+# MRM Manager utils.sh — shared helpers (panel detection, compose, services)
 
-export RED='\033[0;31m'
-export GREEN='\033[0;32m'
-export YELLOW='\033[1;33m'
-export BLUE='\033[0;34m'
-export CYAN='\033[0;36m'
-export PURPLE='\033[0;35m'
-export ORANGE='\033[0;33m'
-export NC='\033[0m'
+# The palette and every UI helper live in ui.sh; load it first so any module
+# that sources utils.sh gets the same look without extra work.
+MRM_DIR="${MRM_DIR:-/opt/mrm-manager}"
+if ! declare -f ui_header >/dev/null 2>&1; then
+    _MRM_UI_CANDIDATE="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/ui.sh"
+    if [ -r "$_MRM_UI_CANDIDATE" ]; then
+        # shellcheck source=/dev/null
+        source "$_MRM_UI_CANDIDATE"
+    elif [ -r "$MRM_DIR/ui.sh" ]; then
+        # shellcheck source=/dev/null
+        source "$MRM_DIR/ui.sh"
+    fi
+    unset _MRM_UI_CANDIDATE
+fi
 
 CONFIG_FILE="/opt/mrm-manager/panel.conf"
 MRM_VERSION_FILE="/opt/mrm-manager/VERSION"
-# FIX: Default version matches current release (was "1.0.3")
-MRM_DEFAULT_VERSION="1.4.27"
+MRM_DEFAULT_VERSION="1.5.0"
 
 ensure_mrm_config_dir() {
     mkdir -p "$(dirname "$CONFIG_FILE")"
@@ -167,32 +172,45 @@ export THEME_CLASSIC_HTML_URL="https://raw.githubusercontent.com/Mohammad1724/mr
 # Initialize - NON-BLOCKING, no prompt
 load_panel_config >/dev/null 2>&1 || apply_panel_config "pasarguard" >/dev/null 2>&1 || true
 
-pause() {
-    echo ""
-    read -p "Press Enter to continue..."
-}
+# pause / invalid_menu_option are provided by ui.sh (ui_pause / ui_invalid).
+# Minimal stand-ins keep standalone runs working if ui.sh could not be loaded.
+declare -f pause >/dev/null 2>&1 || pause() { echo ""; [ -t 0 ] && read -r -p "  Press Enter to continue… " _; echo ""; }
+declare -f ui_error >/dev/null 2>&1 || ui_error() { echo "  ✘ $1" >&2; }
+declare -f ui_success >/dev/null 2>&1 || ui_success() { echo "  ✔ $1"; }
+declare -f ui_warning >/dev/null 2>&1 || ui_warning() { echo "  ⚠ $1"; }
+declare -f ui_info >/dev/null 2>&1 || ui_info() { echo "  ℹ $1"; }
+declare -f ui_note >/dev/null 2>&1 || ui_note() { echo "  $1"; }
 
 restart_service() {
     local SERVICE="$1" COMPOSE_FILE=""
     load_panel_config >/dev/null 2>&1 || true
     if [ "$SERVICE" == "panel" ]; then
-        [ ! -d "$PANEL_DIR" ] && { echo -e "${RED}Panel not found at $PANEL_DIR${NC}"; return 1; }
+        [ ! -d "$PANEL_DIR" ] && { ui_error "Panel not found at $PANEL_DIR"; return 1; }
         COMPOSE_FILE="$(get_panel_compose_file 2>/dev/null)"
-        [ -z "$COMPOSE_FILE" ] && { echo -e "${RED}No compose file found${NC}"; return 1; }
-        # FIX: restart only the panel service — down/up would also stop DB/helpers
-        (cd "$PANEL_DIR" && (docker compose up -d --no-deps pasarguard 2>/dev/null || docker compose restart pasarguard 2>/dev/null || docker-compose up -d --no-deps pasarguard 2>/dev/null || docker-compose restart pasarguard 2>/dev/null)) && echo -e "${GREEN}Done.${NC}" || { echo -e "${RED}Failed${NC}"; return 1; }
+        [ -z "$COMPOSE_FILE" ] && { ui_error "No compose file found in $PANEL_DIR"; return 1; }
+        ui_note "Restarting panel service…"
+        # Restart only the panel service — down/up would also stop DB/helpers
+        if (cd "$PANEL_DIR" && (docker compose up -d --no-deps pasarguard 2>/dev/null || docker compose restart pasarguard 2>/dev/null || docker-compose up -d --no-deps pasarguard 2>/dev/null || docker-compose restart pasarguard 2>/dev/null)); then
+            return 0
+        fi
+        ui_error "Panel restart failed"
+        return 1
     elif [ "$SERVICE" == "node" ]; then
         # PasarGuard nodes usually run on their own server and connect to the
         # panel over gRPC/rest. This only works when the node docker-compose
         # lives on THIS server — otherwise restart it on the node server.
-        echo -e "${YELLOW}Note: this restarts the node only if it runs on this server (${NODE_DIR}).${NC}"
-        echo -e "${YELLOW}If the node is on another server, restart it there (systemctl/docker).${NC}"
-        [ ! -d "$NODE_DIR" ] && { echo -e "${RED}Node not found${NC}"; return 1; }
+        ui_note "Only a node running on this server (${NODE_DIR}) can be restarted here."
+        [ ! -d "$NODE_DIR" ] && { ui_error "Node not found at $NODE_DIR"; return 1; }
         COMPOSE_FILE="$(get_node_compose_file 2>/dev/null)"
-        [ -z "$COMPOSE_FILE" ] && { echo -e "${RED}No compose file${NC}"; return 1; }
-        (cd "$NODE_DIR" && docker compose restart) && echo -e "${GREEN}Done.${NC}" || { echo -e "${RED}Failed${NC}"; return 1; }
+        [ -z "$COMPOSE_FILE" ] && { ui_error "No compose file found in $NODE_DIR"; return 1; }
+        ui_note "Restarting node…"
+        if (cd "$NODE_DIR" && docker compose restart); then
+            return 0
+        fi
+        ui_error "Node restart failed"
+        return 1
     else
-        echo -e "${RED}Unknown service: $SERVICE${NC}" >&2
+        ui_error "Unknown service: $SERVICE"
         return 1
     fi
 }

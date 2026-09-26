@@ -1,13 +1,17 @@
 #!/bin/bash
+# MRM Manager offline.sh — OFFLINE / IRAN MODE v1.5.0
+# Iran-friendly APT/Docker mirrors and local (tarball) PasarGuard installs.
+# Safe handling of sources.list.d: third-party repos are always preserved.
 
-# ==========================================
-# OFFLINE / IRAN MODE v1.4.27
-# Fixed: safe handling of sources.list.d, preserve 3rd party repos
-# ==========================================
-
-if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
-if ! declare -f ui_header >/dev/null 2>&1 && [ -r /opt/mrm-manager/ui.sh ]; then source /opt/mrm-manager/ui.sh; fi
-if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manager/safe_ops.sh ]; then source /opt/mrm-manager/safe_ops.sh; fi
+# ─── Shared libraries ────────────────────────────────────────────────────────
+MRM_DIR="${MRM_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)}"
+[ -r "$MRM_DIR/utils.sh" ] || MRM_DIR="/opt/mrm-manager"
+# shellcheck source=/dev/null
+if [ -z "$PANEL_DIR" ]; then source "$MRM_DIR/utils.sh"; fi
+# shellcheck source=/dev/null
+if ! declare -f ui_header >/dev/null 2>&1 && [ -r "$MRM_DIR/ui.sh" ]; then source "$MRM_DIR/ui.sh"; fi
+# shellcheck source=/dev/null
+if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r "$MRM_DIR/safe_ops.sh" ]; then source "$MRM_DIR/safe_ops.sh"; fi
 
 OFFLINE_BACKUP_ROOT="/opt/mrm-manager/offline-backups"
 OFFLINE_UBUNTU_MIRRORS=(
@@ -25,13 +29,14 @@ OFFLINE_RECOMMENDED_DOCKER_MIRROR="https://docker.arvancloud.ir"
 OFFLINE_LOCAL_PANEL_ARCHIVE="/root/pasarguard-standalone.tar.gz"
 OFFLINE_LOCAL_NODE_ARCHIVE="/root/pg-node-standalone.tar.gz"
 
-offline_invalid_option() {
-    if declare -f invalid_menu_option >/dev/null 2>&1; then
-        invalid_menu_option
-    else
-        ui_error "Invalid option"
-        sleep 1
-    fi
+offline_invalid_option() { ui_invalid; }
+
+# Shared "Ubuntu only" guard for the interactive actions
+offline_require_ubuntu_or_pause() {
+    offline_require_ubuntu && return 0
+    ui_error "This module currently supports Ubuntu only"
+    pause
+    return 1
 }
 
 offline_require_ubuntu() {
@@ -112,13 +117,10 @@ offline_prepare_local_install_mirrors() {
     if offline_is_known_apt_mirror "$CURRENT_APT" && offline_is_known_docker_mirror "$CURRENT_DOCKER"; then
         return 0
     fi
-    echo -e "${YELLOW}Internal mirrors are not fully configured yet.${NC}"
-    echo -e "${CYAN}MRM can apply the recommended Ubuntu and Docker mirrors before installation.${NC}"
+    ui_warning "Internal mirrors are not fully configured yet."
+    ui_note "MRM can apply the recommended Ubuntu and Docker mirrors before the installation."
     echo ""
-    read -r -p "Apply recommended mirrors first? (Y/n): " CONFIRM
-    if [[ "$CONFIRM" =~ ^[Nn]$ ]]; then
-        return 0
-    fi
+    ui_confirm "Apply the recommended mirrors first?" y || return 0
     BACKUP_DIR="$(offline_create_backup)"
     [ -n "$BACKUP_DIR" ] || return 1
     offline_apply_apt_mirror "$OFFLINE_RECOMMENDED_APT_MIRROR" "$BACKUP_DIR" || return 1
@@ -175,7 +177,7 @@ offline_restore_backup_dir() {
     [ -d "$BACKUP_DIR" ] || return 1
     # Safety check: backup must contain at least sources.list or sources.list.d
     if [ ! -f "$BACKUP_DIR/apt/sources.list" ] && [ -z "$(ls -A "$BACKUP_DIR/apt/sources.list.d" 2>/dev/null)" ]; then
-        echo -e "${RED}Backup dir is empty or invalid, aborting restore to avoid data loss${NC}"
+        ui_error "Backup directory is empty or invalid — restore aborted to avoid data loss"
         return 1
     fi
     mkdir -p /etc/apt/sources.list.d /etc/docker
@@ -218,7 +220,7 @@ offline_apply_apt_mirror() {
     CODENAME="$(offline_get_codename)"
     [ -n "$CODENAME" ] || return 1
     [ -d "$BACKUP_DIR" ] || {
-        echo -e "${RED}No backup dir, aborting for safety${NC}"
+        ui_error "No backup directory — aborting for safety"
         return 1
     }
 
@@ -251,7 +253,7 @@ offline_apply_apt_mirror() {
     # But to stay safe, if we have ubuntu.com in main sources.list, we will overwrite it
 
     cat > /etc/apt/sources.list <<EOF
-# Managed by MRM Iran/Offline Mode v1.4.27
+# Managed by MRM Manager (Iran/Offline Mode)
 deb ${MIRROR} ${CODENAME} main restricted universe multiverse
 deb ${MIRROR} ${CODENAME}-updates main restricted universe multiverse
 deb ${MIRROR} ${CODENAME}-backports main restricted universe multiverse
@@ -261,7 +263,7 @@ EOF
     # Restore third-party repos
     if [ -n "$(ls -A "$TMP_THIRD" 2>/dev/null)" ]; then
         cp -a "$TMP_THIRD"/* /etc/apt/sources.list.d/ 2>/dev/null || true
-        echo -e "${GREEN}✔ Third-party repos preserved: $(ls "$TMP_THIRD" | tr '\n' ' ')${NC}"
+        ui_success "Third-party repos preserved: $(ls "$TMP_THIRD" | tr '\n' ' ')"
     fi
     rm -rf "$TMP_THIRD"
 
@@ -270,7 +272,7 @@ EOF
     fi
 
     if [ "$UPDATE_OK" != true ]; then
-        echo -e "${RED}apt-get update failed, restoring backup...${NC}"
+        ui_error "apt-get update failed — restoring the previous configuration"
         offline_restore_backup_dir "$BACKUP_DIR" >/dev/null 2>&1 || true
         return 1
     fi
@@ -313,293 +315,228 @@ PYEOF
 }
 
 offline_show_status() {
-    local CODENAME CURRENT_APT CURRENT_DOCKER
-    clear
-    ui_header "IRAN / OFFLINE MODE v1.4.27"
-    if ! offline_require_ubuntu; then
-        ui_error "This module currently supports Ubuntu only"
-        echo ""
-        ui_info "Use Ubuntu servers for safe mirror automation in Phase 2."
-        echo ""
-        pause
-        return
-    fi
+    local CODENAME CURRENT_APT CURRENT_DOCKER F
+    ui_header "Mirror Status"
+    offline_require_ubuntu_or_pause || return
     CODENAME="$(offline_get_codename)"
-    CURRENT_APT="$(offline_get_current_apt_mirror 2>/dev/null || echo Not)"
-    CURRENT_DOCKER="$(offline_get_current_docker_mirror 2>/dev/null || echo Not)"
+    CURRENT_APT="$(offline_get_current_apt_mirror 2>/dev/null || true)"
+    CURRENT_DOCKER="$(offline_get_current_docker_mirror 2>/dev/null || true)"
     ui_section "Environment"
-    ui_kv "Ubuntu Codename" "${CODENAME:-Unknown}"
-    ui_kv "Current APT Mirror" "$CURRENT_APT"
-    ui_kv "Current Docker Mirror" "$CURRENT_DOCKER"
-    echo ""
-    ui_section "Third-Party Repos (Preserved)"
-    if [ -d /etc/apt/sources.list.d ]; then
-        ls /etc/apt/sources.list.d/ 2>/dev/null | head -n 20
-    else
-        echo "No sources.list.d"
-    fi
-    echo ""
-    ui_section "Current State"
+    ui_kv "Ubuntu codename" "${CODENAME:-unknown}"
     if offline_is_known_apt_mirror "$CURRENT_APT"; then
-        ui_success "APT is using a known Iran/internal mirror"
+        ui_kv_state "APT mirror" ok "${CURRENT_APT}" "known Iran mirror"
     else
-        ui_warning "APT is not using a known Iran/internal mirror"
+        ui_kv_state "APT mirror" warn "${CURRENT_APT:-not set}" "not a known Iran mirror"
     fi
-    if [ "$CURRENT_DOCKER" != "Not" ] && offline_is_known_docker_mirror "$CURRENT_DOCKER"; then
-        ui_success "Docker is using a known Iran/internal mirror"
+    if [ -n "$CURRENT_DOCKER" ] && offline_is_known_docker_mirror "$CURRENT_DOCKER"; then
+        ui_kv_state "Docker mirror" ok "${CURRENT_DOCKER}" "known Iran mirror"
     else
-        ui_warning "Docker mirror is not configured to a known Iran/internal mirror"
+        ui_kv_state "Docker mirror" warn "${CURRENT_DOCKER:-not set}" "not a known Iran mirror"
     fi
     echo ""
+    ui_section "Third-party repos (always preserved)"
+    if [ -d /etc/apt/sources.list.d ] && [ -n "$(ls -A /etc/apt/sources.list.d 2>/dev/null)" ]; then
+        for F in $(ls /etc/apt/sources.list.d/ 2>/dev/null | head -n 20); do ui_bullet "$F"; done
+    else
+        ui_note "none"
+    fi
     pause
 }
 
 offline_test_mirrors() {
     local CODENAME MIRROR
-    clear
-    ui_header "TEST IRAN MIRRORS"
-    if ! offline_require_ubuntu; then
-        ui_error "This module currently supports Ubuntu only"
-        pause
-        return
-    fi
+    ui_header "Test Iran Mirrors"
+    offline_require_ubuntu_or_pause || return
     CODENAME="$(offline_get_codename)"
     [ -n "$CODENAME" ] || {
         ui_error "Could not detect Ubuntu codename"
         pause
         return
     }
-    ui_section "APT Mirrors"
+    ui_section "APT mirrors"
     for MIRROR in "${OFFLINE_UBUNTU_MIRRORS[@]}"; do
-        if offline_test_apt_mirror "$MIRROR" "$CODENAME"; then
-            ui_success "$MIRROR"
-        else
-            ui_warning "$MIRROR"
-        fi
+        ui_task "$MIRROR"
+        if offline_test_apt_mirror "$MIRROR" "$CODENAME"; then ui_task_done ok "reachable"; else ui_task_done warn "unreachable"; fi
     done
     echo ""
-    ui_section "Docker Mirrors"
+    ui_section "Docker mirrors"
     for MIRROR in "${OFFLINE_DOCKER_MIRRORS[@]}"; do
-        if offline_test_docker_mirror "$MIRROR"; then
-            ui_success "$MIRROR"
-        else
-            ui_warning "$MIRROR"
-        fi
+        ui_task "$MIRROR"
+        if offline_test_docker_mirror "$MIRROR"; then ui_task_done ok "reachable"; else ui_task_done warn "unreachable"; fi
     done
-    echo ""
     pause
 }
 
 offline_apply_recommended_apt() {
     local BACKUP_DIR
-    clear
-    ui_header "APPLY IRAN APT MIRROR v1.4.27"
-    if ! offline_require_ubuntu; then
-        ui_error "This module currently supports Ubuntu only"
-        pause
-        return
-    fi
-    echo -e "${YELLOW}Recommended Ubuntu mirror:${NC} $OFFLINE_RECOMMENDED_APT_MIRROR"
-    echo -e "${CYAN}A full backup will be created and 3rd-party repos (docker, etc) will be preserved.${NC}"
+    ui_header "Apply Ubuntu APT Mirror"
+    offline_require_ubuntu_or_pause || return
+    ui_kv "Recommended mirror" "$OFFLINE_RECOMMENDED_APT_MIRROR"
+    ui_note "A backup is created first; third-party repos (docker, nginx, …) are preserved."
     echo ""
-    read -r -p "Apply this Ubuntu mirror now? (y/N): " CONFIRM
-    if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
-        echo "Cancelled"
-        pause
-        return
-    fi
+    ui_confirm "Apply this Ubuntu mirror now?" || { ui_cancelled; pause; return; }
     BACKUP_DIR="$(offline_create_backup)"
     if [ -z "$BACKUP_DIR" ]; then
-        ui_error "Failed to create offline backup"
+        ui_error "Failed to create the mirror backup"
         pause
         return
     fi
     if offline_apply_apt_mirror "$OFFLINE_RECOMMENDED_APT_MIRROR" "$BACKUP_DIR"; then
-        ui_success "Ubuntu APT mirror updated successfully (3rd-party repos preserved)"
-        ui_info "Backup saved in: $BACKUP_DIR"
+        ui_success "Ubuntu APT mirror updated (third-party repos preserved)"
+        ui_note "Backup: $BACKUP_DIR"
     else
-        ui_error "Failed to apply Ubuntu APT mirror. Previous config restored."
+        ui_error "Failed to apply the Ubuntu APT mirror — previous configuration restored"
     fi
     pause
 }
 
 offline_apply_recommended_docker() {
     local BACKUP_DIR
-    clear
-    ui_header "APPLY IRAN DOCKER MIRROR"
-    echo -e "${YELLOW}Recommended Docker mirror:${NC} $OFFLINE_RECOMMENDED_DOCKER_MIRROR"
-    echo -e "${CYAN}A full backup will be created first.${NC}"
+    ui_header "Apply Docker Mirror"
+    ui_kv "Recommended mirror" "$OFFLINE_RECOMMENDED_DOCKER_MIRROR"
+    ui_note "A backup of /etc/docker/daemon.json is created first."
     echo ""
-    read -r -p "Apply this Docker mirror now? (y/N): " CONFIRM
-    if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
-        echo "Cancelled"
-        pause
-        return
-    fi
+    ui_confirm "Apply this Docker mirror now?" || { ui_cancelled; pause; return; }
     BACKUP_DIR="$(offline_create_backup)"
     if [ -z "$BACKUP_DIR" ]; then
-        ui_error "Failed to create offline backup"
+        ui_error "Failed to create the mirror backup"
         pause
         return
     fi
     if offline_apply_docker_mirror "$OFFLINE_RECOMMENDED_DOCKER_MIRROR" "$BACKUP_DIR"; then
-        ui_success "Docker mirror updated successfully"
-        ui_info "Backup saved in: $BACKUP_DIR"
+        ui_success "Docker mirror updated"
+        ui_note "Backup: $BACKUP_DIR"
     else
-        ui_error "Failed to apply Docker mirror. Previous config restored."
+        ui_error "Failed to apply the Docker mirror — previous configuration restored"
     fi
     pause
 }
 
 offline_apply_both_recommended() {
     local BACKUP_DIR
-    clear
-    ui_header "APPLY IRAN MIRRORS v1.4.27"
-    if ! offline_require_ubuntu; then
-        ui_error "This module currently supports Ubuntu only"
-        pause
-        return
-    fi
-    echo -e "${YELLOW}APT Mirror:${NC} $OFFLINE_RECOMMENDED_APT_MIRROR"
-    echo -e "${YELLOW}Docker Mirror:${NC} $OFFLINE_RECOMMENDED_DOCKER_MIRROR"
-    echo -e "${CYAN}Backup + preserve 3rd-party repos (docker, nginx).${NC}"
+    ui_header "Apply Ubuntu + Docker Mirrors"
+    offline_require_ubuntu_or_pause || return
+    ui_kv "APT mirror" "$OFFLINE_RECOMMENDED_APT_MIRROR"
+    ui_kv "Docker mirror" "$OFFLINE_RECOMMENDED_DOCKER_MIRROR"
+    ui_note "A backup is created first; third-party repos (docker, nginx, …) are preserved."
     echo ""
-    read -r -p "Apply both recommended mirrors now? (y/N): " CONFIRM
-    if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
-        echo "Cancelled"
-        pause
-        return
-    fi
+    ui_confirm "Apply both recommended mirrors now?" || { ui_cancelled; pause; return; }
     BACKUP_DIR="$(offline_create_backup)"
     if [ -z "$BACKUP_DIR" ]; then
-        ui_error "Failed to create offline backup"
+        ui_error "Failed to create the mirror backup"
         pause
         return
     fi
     if ! offline_apply_apt_mirror "$OFFLINE_RECOMMENDED_APT_MIRROR" "$BACKUP_DIR"; then
-        ui_error "Failed to apply Ubuntu APT mirror. Previous config restored."
+        ui_error "Failed to apply the Ubuntu APT mirror — previous configuration restored"
         pause
         return
     fi
     if ! offline_apply_docker_mirror "$OFFLINE_RECOMMENDED_DOCKER_MIRROR" "$BACKUP_DIR"; then
-        ui_error "Failed to apply Docker mirror. Previous config restored."
+        ui_error "Failed to apply the Docker mirror — previous configuration restored"
         pause
         return
     fi
-    ui_success "APT and Docker mirrors updated successfully (3rd-party preserved)"
-    ui_info "Backup saved in: $BACKUP_DIR"
+    ui_success "APT and Docker mirrors updated (third-party repos preserved)"
+    ui_note "Backup: $BACKUP_DIR"
     pause
 }
 
 offline_check_readiness() {
     local CMD FOUND_ANY=false
     local REQUIRED_COMMANDS=(curl tar unzip python3 jq docker nginx certbot)
-    clear
-    ui_header "OFFLINE READINESS CHECK"
+    ui_header "Offline Readiness Check"
     if ! offline_require_ubuntu; then
-        ui_warning "Ubuntu-only automation is available in this module"
+        ui_kv_state "OS" warn "not Ubuntu" "mirror automation is Ubuntu-only"
     else
-        ui_success "Ubuntu detected: $(offline_get_codename)"
+        ui_kv_state "OS" ok "Ubuntu $(offline_get_codename)"
     fi
-    echo ""
-    ui_section "Mirror Status"
     if offline_is_known_apt_mirror "$(offline_get_current_apt_mirror 2>/dev/null || true)"; then
-        ui_success "APT uses an internal/Iran mirror"
+        ui_kv_state "APT mirror" ok "Iran mirror"
     else
-        ui_warning "APT is not configured with a known internal/Iran mirror"
+        ui_kv_state "APT mirror" warn "not a known Iran mirror"
     fi
     if offline_is_known_docker_mirror "$(offline_get_current_docker_mirror 2>/dev/null || true)"; then
-        ui_success "Docker uses an internal/Iran mirror"
+        ui_kv_state "Docker mirror" ok "Iran mirror"
     else
-        ui_warning "Docker mirror is not configured with a known internal/Iran mirror"
+        ui_kv_state "Docker mirror" warn "not a known Iran mirror"
     fi
     echo ""
-    ui_section "Required Commands"
+    ui_section "Required commands"
     for CMD in "${REQUIRED_COMMANDS[@]}"; do
         if command -v "$CMD" >/dev/null 2>&1; then
             ui_success "$CMD"
         else
-            ui_warning "$CMD"
+            ui_warning "$CMD — missing"
         fi
     done
     echo ""
-    ui_section "Expected Local Bundles"
+    ui_section "Local bundles"
     if [ -f "$OFFLINE_LOCAL_PANEL_ARCHIVE" ]; then
         ui_success "$OFFLINE_LOCAL_PANEL_ARCHIVE"
         FOUND_ANY=true
     else
-        ui_warning "$OFFLINE_LOCAL_PANEL_ARCHIVE (required for local panel install)"
+        ui_warning "$OFFLINE_LOCAL_PANEL_ARCHIVE — missing (needed for the local panel install)"
     fi
     if [ -f "$OFFLINE_LOCAL_NODE_ARCHIVE" ]; then
         ui_success "$OFFLINE_LOCAL_NODE_ARCHIVE"
         FOUND_ANY=true
     else
-        ui_warning "$OFFLINE_LOCAL_NODE_ARCHIVE (required for local node install)"
+        ui_warning "$OFFLINE_LOCAL_NODE_ARCHIVE — missing (needed for the local node install)"
     fi
     if [ "$FOUND_ANY" != true ]; then
-        ui_warning "Place the required tar.gz files in /root with the exact names shown above"
+        ui_note "Place the tar.gz bundles in /root with exactly these names."
     fi
-    echo ""
     pause
 }
 
 offline_restore_latest_backup() {
     local BACKUP_DIR
-    clear
-    ui_header "RESTORE MIRROR BACKUP"
+    ui_header "Restore Mirror Backup"
     BACKUP_DIR="$(offline_latest_backup_dir)"
     if [ -z "$BACKUP_DIR" ] || [ ! -d "$BACKUP_DIR" ]; then
-        ui_warning "No offline backup found"
+        ui_warning "No mirror backup found"
         pause
         return
     fi
-    echo -e "${YELLOW}Latest backup:${NC} $BACKUP_DIR"
-    ls -R "$BACKUP_DIR" | head -n 40
+    ui_kv "Latest backup" "$BACKUP_DIR"
     echo ""
-    read -r -p "Restore this backup now? (y/N): " CONFIRM
-    if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
-        echo "Cancelled"
-        pause
-        return
-    fi
+    ls -R "$BACKUP_DIR" | head -n 40 | sed "s/^/${UI_PAD}/"
+    echo ""
+    ui_confirm "Restore this backup now?" || { ui_cancelled; pause; return; }
     if offline_restore_backup_dir "$BACKUP_DIR"; then
-        ui_success "Backup restored successfully"
+        ui_success "Mirror configuration restored"
     else
-        ui_error "Failed to restore backup"
+        ui_error "Failed to restore the backup"
     fi
     pause
 }
 
 offline_install_panel_local() {
     local WORK_DIR EXTRACTED_ROOT RESPONSES="" SSL_MODE SSL_DOMAIN="" COMMAND_ARGS=()
-    clear
-    ui_header "LOCAL PASARGUARD INSTALL"
-    if ! offline_require_ubuntu; then
-        ui_error "This module currently supports Ubuntu only"
-        pause
-        return
-    fi
-    echo -e "${CYAN}Required file:${NC} $OFFLINE_LOCAL_PANEL_ARCHIVE"
-    echo -e "${YELLOW}Place the panel standalone package in /root with this exact name.${NC}"
+    ui_header "Install PasarGuard from Local Tarball"
+    offline_require_ubuntu_or_pause || return
+    ui_kv "Required file" "$OFFLINE_LOCAL_PANEL_ARCHIVE"
+    ui_note "Place the panel standalone package in /root with exactly this name."
     echo ""
     if [ ! -f "$OFFLINE_LOCAL_PANEL_ARCHIVE" ]; then
-        ui_error "Required archive not found: $OFFLINE_LOCAL_PANEL_ARCHIVE"
+        ui_error "Archive not found: $OFFLINE_LOCAL_PANEL_ARCHIVE"
         pause
         return
     fi
     if ! offline_prepare_local_install_mirrors; then
-        ui_error "Failed to prepare internal mirrors"
+        ui_error "Failed to prepare the internal mirrors"
         pause
         return
     fi
-    echo "Choose panel installation mode:"
-    echo "1) With SSL"
-    echo "2) Without SSL"
+    ui_menu_title "Installation mode"
+    ui_menu_item 1 "With SSL" "Let's Encrypt via the installer"
+    ui_menu_item 2 "Without SSL"
     echo ""
-    read -r -p "Select [1-2]: " SSL_MODE
+    ui_ask SSL_MODE "Select" "2"
     case "$SSL_MODE" in
         1)
-            read -r -p "Enter panel domain for SSL (example: panel.example.com): " SSL_DOMAIN
+            ui_ask SSL_DOMAIN "Panel domain for SSL (e.g. panel.example.com)"
             if ! offline_validate_domain "$SSL_DOMAIN"; then
                 ui_error "Invalid domain format"
                 pause
@@ -616,13 +553,8 @@ offline_install_panel_local() {
             ;;
     esac
     if [ -d "/opt/pasarguard" ]; then
-        echo -e "${YELLOW}Existing PasarGuard installation detected at /opt/pasarguard.${NC}"
-        read -r -p "Continue and allow standalone installer to override it? (y/N): " CONFIRM
-        if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
-            echo "Cancelled"
-            pause
-            return
-        fi
+        ui_warning "An existing PasarGuard installation was found at /opt/pasarguard."
+        ui_confirm "Continue and let the standalone installer override it?" || { ui_cancelled; pause; return; }
         # FIX (MRM-096): the official installer asks "override?" FIRST, then
         # the mirror recalibrate questions — the stream must start with the
         # "y" captured above. The old order (y appended last) shifted the
@@ -652,17 +584,19 @@ offline_install_panel_local() {
         return
     fi
     chmod +x "$EXTRACTED_ROOT/iran-sanction/pasarguard-standalone.sh"
-    ui_info "Installing standalone launcher..."
+    ui_step 1 2 "Installing the standalone launcher"
     if ! "$EXTRACTED_ROOT/iran-sanction/pasarguard-standalone.sh" install-script; then
-        ui_error "Failed to install standalone PasarGuard launcher"
+        ui_error "Failed to install the standalone PasarGuard launcher"
         rm -rf "$WORK_DIR" 2>/dev/null || true
         pause
         return
     fi
-    ui_info "Running local PasarGuard installation..."
+    ui_step 2 2 "Running the local PasarGuard installation"
     if printf '%b' "$RESPONSES" | pasarguard "${COMMAND_ARGS[@]}"; then
-        ui_success "PasarGuard installed successfully from local archive"
+        echo ""
+        ui_success "PasarGuard installed from the local archive"
     else
+        echo ""
         ui_error "PasarGuard installation failed"
     fi
     rm -rf "$WORK_DIR" 2>/dev/null || true
@@ -671,31 +605,25 @@ offline_install_panel_local() {
 
 offline_install_node_local() {
     local WORK_DIR EXTRACTED_ROOT RESPONSES=""
-    clear
-    ui_header "LOCAL PGNODE INSTALL"
-    if ! offline_require_ubuntu; then
-        ui_error "This module currently supports Ubuntu only"
-        pause
-        return
-    fi
-    echo -e "${CYAN}Required file:${NC} $OFFLINE_LOCAL_NODE_ARCHIVE"
-    echo -e "${YELLOW}Place the node standalone package in /root with this exact name.${NC}"
-    echo -e "${YELLOW}Run this on the node server, not on the panel server.${NC}"
+    ui_header "Install PgNode from Local Tarball"
+    offline_require_ubuntu_or_pause || return
+    ui_kv "Required file" "$OFFLINE_LOCAL_NODE_ARCHIVE"
+    ui_note "Place the node standalone package in /root with exactly this name."
+    ui_note "Run this on the node server, not on the panel server."
     echo ""
     if [ ! -f "$OFFLINE_LOCAL_NODE_ARCHIVE" ]; then
-        ui_error "Required archive not found: $OFFLINE_LOCAL_NODE_ARCHIVE"
+        ui_error "Archive not found: $OFFLINE_LOCAL_NODE_ARCHIVE"
         pause
         return
     fi
     if [ -d "/opt/pg-node" ]; then
-        ui_warning "Existing PgNode installation detected at /opt/pg-node"
-        ui_info "For safety, local node install is only supported on a clean server in MRM."
-        ui_info "If you need reinstall, uninstall the old node first and retry."
+        ui_warning "An existing PgNode installation was found at /opt/pg-node."
+        ui_note "For safety, the local node install only runs on a clean server — uninstall the old node first."
         pause
         return
     fi
     if ! offline_prepare_local_install_mirrors; then
-        ui_error "Failed to prepare internal mirrors"
+        ui_error "Failed to prepare the internal mirrors"
         pause
         return
     fi
@@ -716,17 +644,19 @@ offline_install_node_local() {
         return
     fi
     chmod +x "$EXTRACTED_ROOT/iran-sanction/pg-node-standalone.sh"
-    ui_info "Installing standalone PgNode launcher..."
+    ui_step 1 2 "Installing the standalone PgNode launcher"
     if ! "$EXTRACTED_ROOT/iran-sanction/pg-node-standalone.sh" install-script; then
-        ui_error "Failed to install standalone PgNode launcher"
+        ui_error "Failed to install the standalone PgNode launcher"
         rm -rf "$WORK_DIR" 2>/dev/null || true
         pause
         return
     fi
-    ui_info "Running local PgNode installation..."
+    ui_step 2 2 "Running the local PgNode installation"
     if printf '%b' "$RESPONSES" | pg-node install -y; then
-        ui_success "PgNode installed successfully from local archive"
+        echo ""
+        ui_success "PgNode installed from the local archive"
     else
+        echo ""
         ui_error "PgNode installation failed"
     fi
     rm -rf "$WORK_DIR" 2>/dev/null || true
@@ -734,21 +664,23 @@ offline_install_node_local() {
 }
 
 offline_menu() {
+    local OPT
     while true; do
-        clear
-        ui_header "IRAN / OFFLINE MODE v1.4.27"
-        echo "1) 🇮🇷 Show Current Mirror Status"
-        echo "2) 🧪 Test Iran Mirrors"
-        echo "3) 📦 Apply Recommended Ubuntu APT Mirror [Preserves 3rd-party]"
-        echo "4) 🐳 Apply Recommended Docker Mirror"
-        echo "5) 🚀 Apply Both Recommended Mirrors"
-        echo "6) 🧰 Offline Readiness Check"
-        echo "7) 📦 Install PasarGuard Panel from Local Tarball"
-        echo "8) ⚙️  Install PgNode from Local Tarball"
-        echo "9) ♻️  Restore Last Mirror Backup"
-        echo "0) ↩️  Back"
+        ui_header "Iran / Offline Mode" "Mirrors and local installs for restricted networks"
+        ui_menu_title "Mirrors"
+        ui_menu_item 1 "Mirror status"
+        ui_menu_item 2 "Test Iran mirrors"
+        ui_menu_item 3 "Apply Ubuntu APT mirror" "third-party repos preserved"
+        ui_menu_item 4 "Apply Docker mirror"
+        ui_menu_item 5 "Apply both mirrors"
+        ui_menu_item 9 "Restore last mirror backup"
         echo ""
-        read -p "Select: " OPT
+        ui_menu_title "Local install"
+        ui_menu_item 6 "Offline readiness check"
+        ui_menu_item 7 "Install PasarGuard from local tarball"
+        ui_menu_item 8 "Install PgNode from local tarball"
+        ui_menu_back
+        ui_select OPT
         case "$OPT" in
             1) offline_show_status ;;
             2) offline_test_mirrors ;;

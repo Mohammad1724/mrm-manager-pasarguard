@@ -1,18 +1,20 @@
 #!/bin/bash
-# MRM Manager Backup v1.4.27
-
-# ==========================================
-# MRM Backup & Restore v1.4.27
-# ==========================================
+# MRM Backup — init module (paths, logging, environment, DB credentials)
 
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 export HOME="${HOME:-/root}"
 
-# Load MRM modules safely
-if [ -f "/opt/mrm-manager/utils.sh" ]; then source /opt/mrm-manager/utils.sh; fi
-if [ -f "/opt/mrm-manager/ui.sh" ]; then source /opt/mrm-manager/ui.sh; fi
-if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r "/opt/mrm-manager/safe_ops.sh" ]; then source /opt/mrm-manager/safe_ops.sh; fi
-[ -r "/opt/mrm-manager/versions.conf" ] && source /opt/mrm-manager/versions.conf
+# ─── Shared libraries ────────────────────────────────────────────────────────
+MRM_DIR="${MRM_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)}"
+[ -r "$MRM_DIR/utils.sh" ] || MRM_DIR="/opt/mrm-manager"
+# shellcheck source=/dev/null
+declare -f load_panel_config >/dev/null 2>&1 || { [ -r "$MRM_DIR/utils.sh" ] && source "$MRM_DIR/utils.sh"; }
+# shellcheck source=/dev/null
+declare -f ui_header >/dev/null 2>&1 || { [ -r "$MRM_DIR/ui.sh" ] && source "$MRM_DIR/ui.sh"; }
+# shellcheck source=/dev/null
+if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r "$MRM_DIR/safe_ops.sh" ]; then source "$MRM_DIR/safe_ops.sh"; fi
+# shellcheck source=/dev/null
+[ -r "$MRM_DIR/versions.conf" ] && source "$MRM_DIR/versions.conf"
 
 # Configuration
 BACKUP_DIR="/root/mrm-backups"

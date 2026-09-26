@@ -1,51 +1,36 @@
 #!/bin/bash
+# MRM Manager diagnostics.sh — status panel, doctor report, service restarts
 
-# ==========================================
-# DIAGNOSTICS & DOCTOR v1.4.27
-# Full system check: Docker, Disk, RAM, Logs, Panel, Node, Nginx
-# ==========================================
-
-# FIX #15: ui_section fallback (not defined in ui.sh)
-if ! declare -f ui_section >/dev/null 2>&1; then
-    ui_section() { echo -e "\n\033[0;36m══ $1 ══\033[0m"; }
-fi
-
-# FIX #3: Add ui_kv fallback if missing
-if ! declare -f ui_kv >/dev/null 2>&1; then
-    ui_kv() { printf "  \033[0;34m%-20s\033[0m %s\n" "$1:" "$2"; }
-fi
-
-if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
-if ! declare -f ui_header >/dev/null 2>&1 && [ -r /opt/mrm-manager/ui.sh ]; then source /opt/mrm-manager/ui.sh; fi
-if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manager/safe_ops.sh ]; then source /opt/mrm-manager/safe_ops.sh; fi
-
-# Load monitor if available for health checks
-if [ -r /opt/mrm-manager/monitor.sh ]; then source /opt/mrm-manager/monitor.sh 2>/dev/null || true; fi
+# ─── Shared libraries ────────────────────────────────────────────────────────
+MRM_DIR="${MRM_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)}"
+[ -r "$MRM_DIR/utils.sh" ] || MRM_DIR="/opt/mrm-manager"
+# shellcheck source=/dev/null
+declare -f load_panel_config >/dev/null 2>&1 || source "$MRM_DIR/utils.sh"
+# shellcheck source=/dev/null
+declare -f ui_header >/dev/null 2>&1 || source "$MRM_DIR/ui.sh"
+# shellcheck source=/dev/null
+if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r "$MRM_DIR/safe_ops.sh" ]; then source "$MRM_DIR/safe_ops.sh"; fi
+# Monitor helpers are reused for health checks
+# shellcheck source=/dev/null
+if [ -r "$MRM_DIR/monitor.sh" ]; then source "$MRM_DIR/monitor.sh" 2>/dev/null || true; fi
 
 mrm_panel_running() {
+    # Fast path: the official pasarguard/panel image is up (MRM-087 — an exact
+    # image match, so pasarguard-node/exporter containers never count as the
+    # panel). Compose state is only consulted for custom image names.
+    docker ps --format '{{.Image}}' 2>/dev/null | grep -qE "^pasarguard/panel(:|$)" && return 0
     local COMPOSE_FILE
     COMPOSE_FILE="$(get_panel_compose_file 2>/dev/null || true)"
-    if [ -n "$COMPOSE_FILE" ]; then
-        docker compose -f "$COMPOSE_FILE" ps 2>/dev/null | grep -q "Up"
-    else
-        # FIX: match the official pasarguard/panel image (MRM-087) — a loose
-        # "grep -i pasarguard" counts pasarguard-node-1/exporter etc. as the
-        # panel, so the panel-down alert never fires (same class as MRM-080)
-        docker ps --format '{{.Image}}' 2>/dev/null | grep -qE "^pasarguard/panel(:|$)"
-    fi
+    [ -n "$COMPOSE_FILE" ] && docker compose -f "$COMPOSE_FILE" ps 2>/dev/null | grep -q "Up"
 }
 
 mrm_node_running() {
+    # Same strategy as mrm_panel_running for the official pasarguard/node image
+    # (MRM-087/MRM-039: the old "pg-node" pattern never matched pasarguard-node-1).
+    docker ps --format '{{.Image}}' 2>/dev/null | grep -qE "^pasarguard/node(:|$)" && return 0
     local COMPOSE_FILE
     COMPOSE_FILE="$(get_node_compose_file 2>/dev/null || true)"
-    if [ -n "$COMPOSE_FILE" ]; then
-        docker compose -f "$COMPOSE_FILE" ps 2>/dev/null | grep -q "Up"
-    else
-        # FIX: match the official pasarguard/node image (MRM-087) — the old
-        # "pg-node" pattern never matched the official compose name
-        # pasarguard-node-1 -> false "Node containers stopped" (MRM-039 class)
-        docker ps --format '{{.Image}}' 2>/dev/null | grep -qE "^pasarguard/node(:|$)"
-    fi
+    [ -n "$COMPOSE_FILE" ] && docker compose -f "$COMPOSE_FILE" ps 2>/dev/null | grep -q "Up"
 }
 
 mrm_nginx_running() {
@@ -75,16 +60,22 @@ mrm_ssl_cert_count() {
     fi
 }
 
-mrm_ssl_status_text() {
+# Prints "<mode> <text>" for the SSL row: ok|warn|bad + label
+mrm_ssl_state() {
     local CERT_COUNT
     CERT_COUNT="$(mrm_ssl_cert_count)"
     if [ "$CERT_COUNT" -gt 0 ] 2>/dev/null; then
-        printf '%b' "${GREEN}Ready (${CERT_COUNT})${NC}"
+        if [ "$CERT_COUNT" -eq 1 ]; then echo "ok 1 certificate"; else echo "ok ${CERT_COUNT} certificates"; fi
     elif grep -qE "^[[:space:]]*(UVICORN_SSL_CERTFILE|UVICORN_SSL_KEYFILE)[[:space:]]*=" "$PANEL_ENV" "$NODE_ENV" 2>/dev/null; then
-        printf '%b' "${YELLOW}Custom Path${NC}"
+        echo "warn Custom certificate path"
     else
-        printf '%b' "${RED}Inactive${NC}"
+        echo "bad No certificates"
     fi
+}
+
+mrm_ssl_status_text() {
+    local STATE; STATE="$(mrm_ssl_state)"
+    ui_state "${STATE%% *}" "${STATE#* }"
 }
 
 mrm_backup_dir() {
@@ -111,14 +102,12 @@ mrm_latest_backup_text() {
 }
 
 mrm_colored_state() {
+    # Legacy signature: OK_TEXT BAD_TEXT MODE — now rendered through ui_state
     local OK_TEXT="$1" BAD_TEXT="$2" MODE="$3"
-    if [ "$MODE" = "ok" ]; then
-        printf '%b' "${GREEN}● ${OK_TEXT}${NC}"
-    elif [ "$MODE" = "warn" ]; then
-        printf '%b' "${YELLOW}● ${OK_TEXT}${NC}"
-    else
-        printf '%b' "${RED}● ${BAD_TEXT}${NC}"
-    fi
+    case "$MODE" in
+        ok|warn) ui_state "$MODE" "$OK_TEXT" ;;
+        *)       ui_state bad "$BAD_TEXT" ;;
+    esac
 }
 
 mrm_check_disk() {
@@ -171,45 +160,65 @@ mrm_check_panel_logs() {
     echo "$ERRORS"
 }
 
-mrm_render_home_dashboard() {
-    local ACTIVE_PANEL PANEL_STATUS NODE_STATUS NGINX_STATUS THEME_STATUS DOMAIN_STATUS TG_STATUS BACKUP_STATUS
-    detect_active_panel > /dev/null
-    ACTIVE_PANEL="$(cat "$CONFIG_FILE" 2>/dev/null || echo unknown)"
-    if mrm_panel_running; then PANEL_STATUS="$(mrm_colored_state "Running" "Stopped" ok)"; else PANEL_STATUS="$(mrm_colored_state "Running" "Stopped" bad)"; fi
-    if [ -n "$NODE_DIR" ] && [ -d "$NODE_DIR" ]; then
-        if mrm_node_running; then NODE_STATUS="$(mrm_colored_state "Running" "Stopped" ok)"; else NODE_STATUS="$(mrm_colored_state "Expected" "Stopped" warn)"; fi
-    else
-        NODE_STATUS="$(mrm_colored_state "Optional" "Not Installed" warn)"
-    fi
-    if mrm_nginx_running; then NGINX_STATUS="$(mrm_colored_state "Running" "Stopped" ok)"; else NGINX_STATUS="$(mrm_colored_state "Running" "Stopped" bad)"; fi
-    if mrm_theme_enabled; then THEME_STATUS="$(mrm_colored_state "Active" "Inactive" ok)"; else THEME_STATUS="$(mrm_colored_state "Active" "Inactive" bad)"; fi
-    if mrm_domain_split_enabled; then DOMAIN_STATUS="$(mrm_colored_state "Configured" "Inactive" ok)"; else DOMAIN_STATUS="$(mrm_colored_state "Configured" "Inactive" bad)"; fi
-    if mrm_telegram_enabled; then TG_STATUS="$(mrm_colored_state "Configured" "Not Configured" ok)"; else TG_STATUS="$(mrm_colored_state "Configured" "Not Configured" bad)"; fi
-    if [ -n "$(mrm_latest_backup_file)" ]; then BACKUP_STATUS="$(mrm_colored_state "Ready" "Missing" ok)"; else BACKUP_STATUS="$(mrm_colored_state "Ready" "Missing" bad)"; fi
+# ─── Shared status panel (main menu + diagnostics) ───────────────────────────
+mrm_status_panel() {
+    local PANEL_NAME DISK_INFO RAM_INFO CPU_INFO SSL THEME_TXT BK
+    detect_active_panel > /dev/null 2>&1 || true
+    PANEL_NAME="$(cat "$CONFIG_FILE" 2>/dev/null || echo pasarguard)"
 
-    ui_section "HOME DASHBOARD - $(get_mrm_version 2>/dev/null || echo v1.4.27)"
-    ui_kv "Active Panel" "$ACTIVE_PANEL"
-    ui_kv "Panel Directory" "${PANEL_DIR:-unknown}"
-    echo -e "${UI_DIM:-}\033[2mServices:\033[0m${NC:-} Panel ${PANEL_STATUS} Node ${NODE_STATUS} Nginx ${NGINX_STATUS}"
-    echo -e "${UI_DIM:-}\033[2mFeatures:\033[0m${NC:-} SSL $(mrm_ssl_status_text) Backup ${BACKUP_STATUS} Telegram ${TG_STATUS}"
-    echo -e "${UI_DIM:-}\033[2mExtras:\033[0m${NC:-} Theme ${THEME_STATUS} Domain Split ${DOMAIN_STATUS}"
-    ui_kv "Last Backup" "$(mrm_latest_backup_text)"
-    if declare -f mrm_latest_restore_point_text >/dev/null 2>&1; then
-        ui_kv "Last Restore Point" "$(mrm_latest_restore_point_text)"
-    fi
-    local DISK_INFO=$(mrm_check_disk)
-    local DISK_USAGE=$(echo "$DISK_INFO" | awk '{print $1}')
-    local DISK_FREE=$(echo "$DISK_INFO" | awk '{print $2}')
-    local RAM_INFO=$(mrm_check_ram)
-    local RAM_USED=$(echo "$RAM_INFO" | awk '{print $1}')
-    local RAM_TOTAL=$(echo "$RAM_INFO" | awk '{print $2}')
-    if [ "$DISK_USAGE" -gt 85 ] 2>/dev/null; then
-        echo -e "${RED}⚠ Disk Usage: ${DISK_USAGE}% (Free: $DISK_FREE)${NC}"
+    # Panel
+    if [ -d "${PANEL_DIR:-}" ]; then
+        if mrm_panel_running; then ui_kv_state "Panel" ok "Running" "$PANEL_NAME · $PANEL_DIR"
+        else ui_kv_state "Panel" bad "Stopped" "$PANEL_NAME · $PANEL_DIR"; fi
     else
-        echo -e "${CYAN}Disk: ${DISK_USAGE}% used, Free: $DISK_FREE | RAM: ${RAM_USED}MB/${RAM_TOTAL}MB${NC}"
+        ui_kv_state "Panel" off "Not installed" "${PANEL_DIR:-}"
+    fi
+    # Node (optional, usually on its own server)
+    if [ -n "${NODE_DIR:-}" ] && [ -d "$NODE_DIR" ]; then
+        if mrm_node_running; then ui_kv_state "Node" ok "Running" "$NODE_DIR"
+        else ui_kv_state "Node" warn "Stopped" "$NODE_DIR"; fi
+    else
+        ui_kv_state "Node" off "Not on this server"
+    fi
+    # Nginx
+    if mrm_nginx_running; then ui_kv_state "Nginx" ok "Running"; else ui_kv_state "Nginx" off "Not running"; fi
+    # SSL
+    SSL="$(mrm_ssl_state)"
+    ui_kv_state "SSL" "${SSL%% *}" "${SSL#* }"
+    # Backup
+    BK="$(mrm_latest_backup_file)"
+    if [ -n "$BK" ] && [ -f "$BK" ]; then
+        ui_kv_state "Backup" ok "$(date -r "$BK" '+%Y-%m-%d %H:%M' 2>/dev/null)" "$(basename "$BK") · $(du -h "$BK" | cut -f1)"
+    else
+        ui_kv_state "Backup" bad "No backup yet"
+    fi
+    # Telegram
+    if [ -f "${TG_CONFIG:-/root/.mrm_telegram}" ]; then ui_kv_state "Telegram" ok "Configured"; else ui_kv_state "Telegram" off "Not configured"; fi
+    # Template / domain split
+    if mrm_theme_enabled; then THEME_TXT="Custom template active"; ui_kv_state "Template" ok "$THEME_TXT"; else ui_kv_state "Template" off "PasarGuard default"; fi
+    if mrm_domain_split_enabled; then ui_kv_state "Domains" ok "Panel / sub separated"; fi
+    if declare -f mrm_latest_restore_point_text >/dev/null 2>&1; then
+        local RP; RP="$(mrm_latest_restore_point_text 2>/dev/null)"
+        [ -n "$RP" ] && [ "$RP" != "None" ] && ui_kv "Restore point" "$RP"
+    fi
+    # System
+    DISK_INFO="$(mrm_check_disk)"; RAM_INFO="$(mrm_check_ram)"; CPU_INFO="$(mrm_check_cpu)"
+    local DISK_USAGE="${DISK_INFO%% *}" DISK_FREE="${DISK_INFO#* }"
+    local RAM_USED RAM_TOTAL LOAD
+    RAM_USED="$(echo "$RAM_INFO" | awk '{print $1}')"
+    RAM_TOTAL="$(echo "$RAM_INFO" | awk '{print $2}')"
+    LOAD="${CPU_INFO#* }"
+    local SYS="Disk ${DISK_USAGE}% used · ${DISK_FREE} free · RAM ${RAM_USED}/${RAM_TOTAL} MB · Load ${LOAD:-?}"
+    if [ "$DISK_USAGE" -gt 85 ] 2>/dev/null; then
+        ui_kv_state "System" warn "$SYS"
+    else
+        ui_kv "System" "$SYS"
     fi
     echo ""
 }
+
+# Backwards-compatible name used by older callers
+mrm_render_home_dashboard() { mrm_status_panel; }
 
 diag_report_line() {
     local TYPE="$1" MESSAGE="$2"
@@ -223,9 +232,8 @@ diag_report_line() {
 
 run_full_diagnostics() {
     local PANEL_COMPOSE NODE_COMPOSE CERT_COUNT DISK_INFO DISK_USAGE DISK_FREE RAM_INFO RAM_USED RAM_TOTAL RAM_PERCENT CPU_INFO CPU_USED LOAD DOCKER_INFO
-    clear
     detect_active_panel > /dev/null
-    ui_header "DOCTOR - FULL SYSTEM DIAGNOSTICS v1.4.27"
+    ui_header "Doctor — Full System Diagnostics" "Panel: $(cat "$CONFIG_FILE" 2>/dev/null || echo unknown) · $(date '+%Y-%m-%d %H:%M')"
 
     PANEL_COMPOSE="$(get_panel_compose_file 2>/dev/null || true)"
     NODE_COMPOSE="$(get_node_compose_file 2>/dev/null || true)"
@@ -303,7 +311,7 @@ run_full_diagnostics() {
     local LOG_ERRORS=$(mrm_check_panel_logs "$PANEL_COMPOSE")
     if [ "$LOG_ERRORS" -gt 10 ] 2>/dev/null; then
         diag_report_line error "Found $LOG_ERRORS errors in panel logs (last 100 lines)"
-        echo -e "${YELLOW}--- Last errors ---${NC}"
+        ui_note "Last errors:"
         if [ -n "$PANEL_COMPOSE" ]; then
             docker compose -f "$PANEL_COMPOSE" logs --tail 100 2>/dev/null | grep -iE "error|failed|exception|critical" | tail -n 5
         else
@@ -351,44 +359,38 @@ run_full_diagnostics() {
     [ "$LOG_ERRORS" -gt 5 ] 2>/dev/null && diag_report_line warn "Check panel logs: docker compose logs -f"
     ! mrm_panel_running && diag_report_line error "ACTION: Panel is DOWN - Run: cd $PANEL_DIR && docker compose up -d"
     ! mrm_nginx_running && [ -f "/etc/nginx/conf.d/panel_separate.conf" ] && diag_report_line warn "Nginx down but domain split enabled"
-    echo ""
-    echo -e "${CYAN}Run 'mrm monitor' to setup Telegram alerts for down/CPU/disk${NC}"
-    echo ""
-
-    pause
+    ui_note "Run 'mrm monitor' to set up Telegram alerts for panel-down / CPU / disk."
+    ui_pause
 }
 
 run_doctor_cli() {
     local MODE="${1:-full}"
     detect_active_panel > /dev/null
-    echo "=== MRM DOCTOR v1.4.27"
-    echo "Date: $(date)"
-    echo "Version: $(get_mrm_version 2>/dev/null || echo v1.4.27)"
-    echo "Panel: $(cat "$CONFIG_FILE" 2>/dev/null || echo unknown) - $PANEL_DIR"
+    echo "MRM Doctor v$(get_mrm_version 2>/dev/null || echo "$MRM_DEFAULT_VERSION")"
+    echo "Date:   $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "Panel:  $(cat "$CONFIG_FILE" 2>/dev/null || echo unknown) ($PANEL_DIR)"
     echo ""
 
-    local DISK_INFO=$(mrm_check_disk)
-    local DISK_USAGE=$(echo "$DISK_INFO" | awk '{print $1}')
-    local DISK_FREE=$(echo "$DISK_INFO" | awk '{print $2}')
-    local RAM_INFO=$(mrm_check_ram)
-    local RAM_USED=$(echo "$RAM_INFO" | awk '{print $1}')
-    local RAM_TOTAL=$(echo "$RAM_INFO" | awk '{print $2}')
-    local RAM_PERCENT=$(echo "$RAM_INFO" | awk '{print $3}')
+    local DISK_INFO DISK_USAGE DISK_FREE RAM_INFO RAM_USED RAM_TOTAL RAM_PERCENT ERRORS
+    DISK_INFO=$(mrm_check_disk)
+    DISK_USAGE=$(echo "$DISK_INFO" | awk '{print $1}')
+    DISK_FREE=$(echo "$DISK_INFO" | awk '{print $2}')
+    RAM_INFO=$(mrm_check_ram)
+    RAM_USED=$(echo "$RAM_INFO" | awk '{print $1}')
+    RAM_TOTAL=$(echo "$RAM_INFO" | awk '{print $2}')
+    RAM_PERCENT=$(echo "$RAM_INFO" | awk '{print $3}')
+    ERRORS=$(mrm_check_panel_logs "$(get_panel_compose_file 2>/dev/null || true)")
 
-    echo "[Disk] Usage: ${DISK_USAGE}% Free: $DISK_FREE"
-    [ "$DISK_USAGE" -gt 90 ] 2>/dev/null && echo " -> CRITICAL"
-    echo "[RAM]  Usage: ${RAM_USED}MB/${RAM_TOTAL}MB (${RAM_PERCENT}%)"
-    echo "[Panel] $(mrm_panel_running && echo Running || echo STOPPED)"
-    echo "[Node] $( [ -d "$NODE_DIR" ] && (mrm_node_running && echo Running || echo Stopped) || echo Not Installed)"
-    echo "[Nginx] $(mrm_nginx_running && echo Running || echo Stopped)"
-    echo "[Docker] $(command -v docker >/dev/null 2>&1 && echo OK || echo NOT INSTALLED)"
-
-    local ERRORS=$(mrm_check_panel_logs "$(get_panel_compose_file 2>/dev/null || true)")
-    echo "[Logs] $ERRORS errors in last 100 lines"
-
+    printf '%-8s %s\n' "Disk"   "${DISK_USAGE}% used, ${DISK_FREE} free$( [ "$DISK_USAGE" -gt 90 ] 2>/dev/null && echo '  <- CRITICAL')"
+    printf '%-8s %s\n' "RAM"    "${RAM_USED}MB/${RAM_TOTAL}MB (${RAM_PERCENT}%)"
+    printf '%-8s %s\n' "Panel"  "$(mrm_panel_running && echo Running || echo STOPPED)"
+    printf '%-8s %s\n' "Node"   "$( [ -d "$NODE_DIR" ] && (mrm_node_running && echo Running || echo Stopped) || echo 'Not on this server')"
+    printf '%-8s %s\n' "Nginx"  "$(mrm_nginx_running && echo Running || echo Stopped)"
+    printf '%-8s %s\n' "Docker" "$(command -v docker >/dev/null 2>&1 && echo OK || echo 'NOT INSTALLED')"
+    printf '%-8s %s\n' "Logs"   "$ERRORS errors in the last 100 lines"
     echo ""
     if [ "$DISK_USAGE" -gt 90 ] 2>/dev/null || ! mrm_panel_running; then
-        echo "STATUS: CRITICAL - Action required!"
+        echo "STATUS: CRITICAL - action required"
         return 1
     elif [ "$DISK_USAGE" -gt 80 ] 2>/dev/null || [ "${RAM_PERCENT%.*}" -gt 90 ] 2>/dev/null; then
         echo "STATUS: WARNING"
@@ -401,94 +403,82 @@ run_doctor_cli() {
 
 diagnostics_restart_nginx() {
     if nginx -t >/dev/null 2>&1 && systemctl restart nginx >/dev/null 2>&1; then
-        ui_success "Nginx restarted successfully"
+        ui_success "Nginx restarted"
     else
         ui_error "Nginx restart failed"
         nginx -t 2>&1 | tail -n 5
     fi
-    pause
+    ui_pause
 }
 
 diagnostics_restart_panel() {
     if restart_service "panel"; then
-        ui_success "Panel restart completed"
-    else
-        ui_error "Panel restart failed"
+        ui_success "Panel restarted"
     fi
-    pause
+    ui_pause
 }
 
 diagnostics_restart_node() {
     # PasarGuard nodes normally run on their OWN server and connect to the
     # panel via gRPC/rest — docker restart here only works for a co-located node.
-    ui_info "This restarts the node only if it runs on this server ($NODE_DIR)."
-    ui_info "Remote node? Restart it on the node server instead."
     if [ -d "$NODE_DIR" ]; then
         if restart_service "node"; then
-            ui_success "Node restart completed"
-        else
-            ui_error "Node restart failed"
+            ui_success "Node restarted"
         fi
     else
-        ui_warning "Node directory not found"
+        ui_warning "No node directory on this server ($NODE_DIR) — restart the node on its own server."
     fi
-    pause
+    ui_pause
+}
+
+diagnostics_test_nginx() {
+    if nginx -t >/dev/null 2>&1; then
+        ui_success "Nginx configuration is valid"
+    else
+        ui_error "Nginx configuration test failed"
+        nginx -t 2>&1 | tail -n 10
+    fi
+    ui_pause
 }
 
 diagnostics_menu() {
+    local OPT
     while true; do
-        clear
-        ui_header "DIAGNOSTICS & DOCTOR v1.4.27"
-        mrm_render_home_dashboard
-
-        echo "1) 🩺 Run Full Doctor Diagnostics"
-        echo "2) 🔄 Restart Panel"
-        echo "3) 🔄 Restart Node (only if node runs on THIS server)"
-        echo "4) 🌐 Test Nginx Config"
-        echo "5) 🌐 Restart Nginx"
-        echo "6) 📊 Quick Doctor (CLI mode)"
-        echo "7) 🤖 Setup Monitor Alerts (Telegram)"
-        echo "0) ↩️ Back"
-        echo ""
-        read -p "Select: " OPT
+        ui_header "Diagnostics & Doctor"
+        mrm_status_panel
+        ui_menu_item 1 "Run full doctor diagnostics"
+        ui_menu_item 2 "Quick doctor" "plain summary"
+        ui_menu_item 3 "Restart panel"
+        ui_menu_item 4 "Restart node" "only if the node runs on this server"
+        ui_menu_item 5 "Test nginx configuration"
+        ui_menu_item 6 "Restart nginx"
+        ui_menu_item 7 "Monitor & alerts" "Telegram"
+        ui_menu_back
+        ui_select OPT
         case "$OPT" in
             1) run_full_diagnostics ;;
-            2) diagnostics_restart_panel ;;
-            3) diagnostics_restart_node ;;
-            4)
-                if nginx -t; then
-                    ui_success "Nginx configuration is valid"
-                else
-                    ui_error "Nginx configuration test failed"
-                fi
-                pause
-                ;;
-            5) diagnostics_restart_nginx ;;
-            6) clear; run_doctor_cli; echo ""; pause ;;
+            2) ui_header "Quick Doctor"; run_doctor_cli; ui_pause ;;
+            3) diagnostics_restart_panel ;;
+            4) diagnostics_restart_node ;;
+            5) diagnostics_test_nginx ;;
+            6) diagnostics_restart_nginx ;;
             7)
-                if [ -f "/opt/mrm-manager/monitor.sh" ]; then
-                    bash /opt/mrm-manager/monitor.sh menu
+                if [ -f "$MRM_DIR/monitor.sh" ]; then
+                    bash "$MRM_DIR/monitor.sh" menu
                 else
-                    ui_error "monitor.sh not found, reinstall MRM"
-                    pause
+                    ui_error "monitor.sh not found — reinstall MRM Manager"
+                    ui_pause
                 fi
                 ;;
             0) return ;;
-            *)
-                if declare -f invalid_menu_option >/dev/null 2>&1; then
-                    invalid_menu_option
-                else
-                    ui_error "Invalid option"
-                    sleep 1
-                fi
-                ;;
+            *) ui_invalid ;;
         esac
     done
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    if [[ "$1" == "doctor" ]]; then
-        run_doctor_cli "$2"
+    if [[ "${1:-}" == "doctor" ]]; then
+        run_doctor_cli "${2:-}"
     else
         diagnostics_menu
     fi

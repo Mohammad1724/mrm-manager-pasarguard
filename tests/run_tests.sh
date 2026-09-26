@@ -382,7 +382,7 @@ else
 fi
 
 # Check smart_fix.sh verifies node certs exist before success (MRM-077)
-if grep -qF 'generation FAILED' "$PROJECT_DIR/manager/backup/smart_fix.sh"; then
+if grep -qiF 'generation failed' "$PROJECT_DIR/manager/backup/smart_fix.sh"; then
     pass "smart_fix.sh checks openssl output before claiming certs"
 else
     fail "smart_fix.sh claims certs generated on openssl failure"
@@ -445,14 +445,14 @@ else
 fi
 
 # Check pg_health.sh does not mark official defaults as failures (MRM-085)
-if grep -qF 'پیشفرض رسمی' "$PROJECT_DIR/manager/pg_health.sh"; then
+if grep -qF 'official default' "$PROJECT_DIR/manager/pg_health.sh"; then
     pass "pg_health.sh marks undefined JOB_* as official default (not ✘)"
 else
     fail "pg_health.sh reports undefined JOB_* as failure"
 fi
 
 # Check pg_health.sh handles unreadable cert honestly (MRM-086)
-if grep -qF 'نتوانستم سرتیفیکت را بخوانم' "$PROJECT_DIR/manager/pg_health.sh"; then
+if grep -qF 'Could not read the certificate' "$PROJECT_DIR/manager/pg_health.sh"; then
     pass "pg_health.sh warns on unreadable cert (no false 'public CA')"
 else
     fail "pg_health.sh claims 'issued by public CA' on unreadable cert"
@@ -604,7 +604,7 @@ else
 fi
 
 # Check domain_separator.sh header version matches VERSION (MRM-094)
-DS_HDR_V=$(grep -oP '^# MRM Manager v\K[0-9.]+' "$DS" 2>/dev/null | head -1)
+DS_HDR_V=$(grep -oP '^# MRM Manager v\K[0-9.]+' "$DS" 2>/dev/null | head -1 || true)
 DS_REAL_V=$(cat "$PROJECT_DIR/VERSION" 2>/dev/null | head -1)
 if [ -n "$DS_HDR_V" ] && [ "$DS_HDR_V" = "$DS_REAL_V" ]; then
     pass "domain_separator header version = $DS_REAL_V (matches VERSION)"
@@ -655,7 +655,7 @@ if grep -q 'v1.0.0' "$OFF"; then
 else
     pass "offline.sh has no stale v1.0.0 literals (MRM-099)"
 fi
-OFF_HDR=$(grep -oP 'OFFLINE / IRAN MODE v\K[0-9.]+' "$OFF" 2>/dev/null | head -1)
+OFF_HDR=$(grep -oP 'OFFLINE / IRAN MODE v\K[0-9.]+' "$OFF" 2>/dev/null | head -1 || true)
 OFF_VER=$(cat "$PROJECT_DIR/VERSION" 2>/dev/null | head -1)
 if [ -n "$OFF_HDR" ] && [ "$OFF_HDR" = "$OFF_VER" ]; then
     pass "offline.sh header version = $OFF_VER (matches VERSION)"
@@ -679,7 +679,7 @@ else
 fi
 
 # Check safe_ops.sh header version matches VERSION (MRM-102)
-SO_HDR=$(grep -oP '^# MRM Manager v\K[0-9.]+' "$SO" 2>/dev/null | head -1)
+SO_HDR=$(grep -oP '^# MRM Manager v\K[0-9.]+' "$SO" 2>/dev/null | head -1 || true)
 SO_VER=$(cat "$PROJECT_DIR/VERSION" 2>/dev/null | head -1)
 if [ -n "$SO_HDR" ] && [ "$SO_HDR" = "$SO_VER" ]; then
     pass "safe_ops.sh header version = $SO_VER (matches VERSION)"
@@ -1058,17 +1058,6 @@ else
     fail "menu missing dedicated template install options"
 fi
 
-# ─── Summary ─────────────────────────────────────────────────────────────────
-echo "═══════════════════════════════════════════════════════════"
-echo "  Test Results"
-echo "═══════════════════════════════════════════════════════════"
-echo ""
-echo -e "  ${GREEN}Passed${NC}: $PASS"
-echo -e "  ${RED}Failed${NC}: $FAIL"
-echo -e "  ${YELLOW}Skipped${NC}: $SKIP"
-echo -e "  Total:  $((PASS + FAIL + SKIP))"
-echo ""
-
 # ─── v1.4.0: MRM Turquoise identity — فیروزه‌ای/زغالی ─────────────────────────
 if grep -qi -- "--treasury-gold: #2db7b2" templates/subscription-src/src/index.css && \
    grep -qi -- "--treasury-emerald: #0b6e6a" templates/subscription-src/src/index.css; then
@@ -1296,6 +1285,98 @@ if grep -qF 'theme_get_special_source' manager/theme.sh && \
 else
     fail "[180] template sources isolated in subscription-special & subscription-classic to prevent cross-contamination"
 fi
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Group 12: UI consistency (v1.5.0 design system — manager/ui.sh)
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "Group 12: UI consistency"
+UI_FILES=$(ls "$PROJECT_DIR"/manager/*.sh "$PROJECT_DIR"/manager/backup/*.sh "$PROJECT_DIR"/install.sh)
+
+# 12.1: every ui_* helper used by a module must exist in ui.sh
+UI_USED=$(grep -ohE '\bui_[a-z_]+' $UI_FILES | grep -vE '^ui_[a-z_]*_$' | sort -u)
+UI_DEFINED=$(grep -oE '^ui_[a-z_]+\(\)' "$PROJECT_DIR/manager/ui.sh" "$PROJECT_DIR/install.sh" | sed 's/.*://; s/()//' | sort -u)
+UI_MISSING=""
+for FN in $UI_USED; do
+    grep -qxF "$FN" <<< "$UI_DEFINED" || UI_MISSING="$UI_MISSING $FN"
+done
+if [ -z "$UI_MISSING" ]; then
+    pass "every ui_* helper referenced by the modules is defined in ui.sh"
+else
+    fail "ui_* helpers used but undefined:$UI_MISSING"
+fi
+
+# 12.2: no raw colour echo left in interactive modules (all output goes through ui_*)
+if grep -lE 'echo -e "\$\{(RED|GREEN|YELLOW|BLUE|CYAN)\}' $UI_FILES >/dev/null 2>&1; then
+    fail "raw coloured echo -e still present in: $(grep -lE 'echo -e "\$\{(RED|GREEN|YELLOW|BLUE|CYAN)\}' $UI_FILES | xargs -n1 basename | tr '\n' ' ')"
+else
+    pass "no raw coloured echo -e left in modules (unified ui_* output)"
+fi
+
+# 12.3: no ad-hoc prompts — every read uses ui_ask/ui_select/ui_confirm (stand-ins excluded)
+if grep -nE 'read (-r )?-p "' $UI_FILES | grep -vE 'Press Enter to continue' >/dev/null 2>&1; then
+    fail "ad-hoc 'read -p' prompts remain: $(grep -lE 'read (-r )?-p "' $UI_FILES | grep -v ui.sh | xargs -n1 basename | tr '\n' ' ')"
+else
+    pass "no ad-hoc read -p prompts (ui_ask / ui_select / ui_confirm everywhere)"
+fi
+
+# 12.4: y/n questions are unified through ui_confirm (no literal (y/n) variants)
+if grep -nE '\((y/n|y/N|Y/n)\)' $UI_FILES >/dev/null 2>&1; then
+    fail "literal (y/n) prompts remain: $(grep -lE '\((y/n|y/N|Y/n)\)' $UI_FILES | xargs -n1 basename | tr '\n' ' ')"
+else
+    pass "no literal (y/n) prompt variants — ui_confirm is the single yes/no prompt"
+fi
+
+# 12.5: no emoji in CLI menus (Telegram message bodies are exempt — they are chat content)
+EMOJI_HITS=$(LC_ALL=C.UTF-8 grep -nP '[\x{1F300}-\x{1FAFF}\x{1F000}-\x{1F2FF}\x{2B50}\x{2705}\x{274C}\x{2728}\x{23F0}\x{267B}\x{2699}\x{2B06}\x{21A9}]' $UI_FILES 2>/dev/null \
+    | grep -vE 'send_telegram|MSG=|CAPTION=|^[^:]+:[0-9]+:[^"]*[🖥🌐📊⏰🔧💾🔥🧠🧪✅⚠️🛡️🗓️📦🏷️ℹ️]' || true)
+if [ -z "$EMOJI_HITS" ]; then
+    pass "no emoji in CLI menus / prompts (unified glyph set)"
+else
+    fail "emoji still present in CLI text: $(echo "$EMOJI_HITS" | head -3 | tr '\n' ' ')"
+fi
+
+# 12.6: no "Press any key" / bare clear + === banners (ui_header / ui_pause only)
+if grep -nE 'Press any key|^\s*echo -e? "?\$?\{?[A-Z]*\}?=====' $UI_FILES >/dev/null 2>&1; then
+    fail "legacy pause/banner style remains: $(grep -lE 'Press any key|=====' $UI_FILES | xargs -n1 basename | tr '\n' ' ')"
+else
+    pass "no legacy 'Press any key' pauses or === banners"
+fi
+
+# 12.7: no hard-coded version numbers in titles (version comes from versions.conf)
+if grep -nE 'ui_header "[^"]*v[0-9]+\.[0-9]+\.[0-9]+' $UI_FILES >/dev/null 2>&1; then
+    fail "hard-coded version in a header title: $(grep -lE 'ui_header "[^"]*v[0-9]+\.[0-9]+\.[0-9]+' $UI_FILES | xargs -n1 basename | tr '\n' ' ')"
+else
+    pass "no hard-coded version numbers in ui_header titles"
+fi
+
+# 12.8: ui.sh renders headers/menus without colour when not a TTY (log-safe)
+UI_OUT=$(NO_COLOR=1 bash -c 'source "'"$PROJECT_DIR"'/manager/ui.sh"; ui_header "Test" "sub"; ui_menu_item 1 "One" "hint"; ui_kv_state "Panel" ok "Running" "x"' 2>&1)
+if printf '%s' "$UI_OUT" | grep -q $'\033\['; then
+    fail "ui.sh emits ANSI colours even with NO_COLOR / no TTY"
+elif printf '%s' "$UI_OUT" | grep -q '┌─ MRM Manager' && printf '%s' "$UI_OUT" | grep -q '   1  One'; then
+    pass "ui.sh renders plain, aligned output when colours are off"
+else
+    fail "ui.sh plain rendering unexpected: $(printf '%s' "$UI_OUT" | head -2 | tr '\n' ' ')"
+fi
+
+# 12.9: install.sh mini palette is self-contained (defines YELLOW etc. before use)
+if grep -q 'YELLOW=' "$PROJECT_DIR/install.sh" && ! grep -q 'BLUE' "$PROJECT_DIR/install.sh"; then
+    pass "install.sh palette is self-contained (YELLOW defined, no undefined BLUE)"
+else
+    fail "install.sh palette incomplete"
+fi
+
+# ─── Summary ─────────────────────────────────────────────────────────────────
+echo "═══════════════════════════════════════════════════════════"
+echo "  Test Results"
+echo "═══════════════════════════════════════════════════════════"
+echo ""
+echo -e "  ${GREEN}Passed${NC}: $PASS"
+echo -e "  ${RED}Failed${NC}: $FAIL"
+echo -e "  ${YELLOW}Skipped${NC}: $SKIP"
+echo -e "  Total:  $((PASS + FAIL + SKIP))"
+echo ""
 
 if [ "$FAIL" -eq 0 ]; then
     echo -e "  ${GREEN}✔ All tests passed!${NC}"

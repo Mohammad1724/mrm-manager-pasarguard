@@ -1,13 +1,11 @@
 #!/bin/bash
-# ═══════════════════════════════════════════════════════════════════════════════
-# MRM Manager - Post-Restore Auto-Fix Script
-# This runs automatically after backup restore to fix common issues:
-#   1. Install Nginx if not present
-#   2. Copy SSL certs to /etc/letsencrypt/live/
-#   3. Set XRAY_SUBSCRIPTION_URL_PREFIX in .env
-#   4. Test and start Nginx
-#   5. Restart panel
-# ═══════════════════════════════════════════════════════════════════════════════
+# MRM Backup — post-restore auto-fix
+# Runs automatically after a restore to fix the usual follow-up issues:
+#   1. Install nginx if missing
+#   2. Copy SSL certificates to /etc/letsencrypt/live/
+#   3. Set the subscription URL prefix in the panel DB
+#   4. Test and start nginx
+#   5. Restart the panel
 
 # Enable strict mode ONLY when run directly (standalone). When this file is
 # sourced by backup.sh a bare `set -e` would leak into the whole shell and
@@ -16,13 +14,16 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     set -e
 fi
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
-
-# Load MRM utils
-if [ -f "/opt/mrm-manager/utils.sh" ]; then
-    source /opt/mrm-manager/utils.sh
-    detect_active_panel >/dev/null 2>&1 || true
+# ─── Shared libraries ────────────────────────────────────────────────────────
+MRM_DIR="${MRM_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)}"
+[ -r "$MRM_DIR/utils.sh" ] || MRM_DIR="/opt/mrm-manager"
+if ! declare -f load_panel_config >/dev/null 2>&1 && [ -r "$MRM_DIR/utils.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$MRM_DIR/utils.sh"
 fi
+# shellcheck source=/dev/null
+declare -f ui_header >/dev/null 2>&1 || { [ -r "$MRM_DIR/ui.sh" ] && source "$MRM_DIR/ui.sh"; }
+declare -f detect_active_panel >/dev/null 2>&1 && { detect_active_panel >/dev/null 2>&1 || true; }
 
 # Fallback paths
 PANEL_DIR="${PANEL_DIR:-/opt/pasarguard}"
@@ -34,22 +35,30 @@ DOMAIN_SEP_CONF="/etc/nginx/conf.d/panel_separate.conf"
 PANEL_CERTS_DIR="$DATA_DIR/certs"
 LOG_FILE="/var/log/mrm-post-restore.log"
 
+# log_msg LEVEL TEXT — plain text goes to the log file, styled text to the screen.
+# LEVEL: ok | warn | err | info | step | text | blank
 log_msg() {
-    local MSG="[$(date '+%Y-%m-%d %H:%M:%S')] $1"
-    echo "$MSG" >> "$LOG_FILE"
-    echo -e "$1"
+    local LEVEL="$1" TEXT="${2:-}"
+    if [ "$LEVEL" = "blank" ]; then echo ""; return 0; fi
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [${LEVEL^^}] $TEXT" >> "$LOG_FILE" 2>/dev/null || true
+    case "$LEVEL" in
+        ok)   ui_success "$TEXT" ;;
+        warn) ui_warning "$TEXT" ;;
+        err)  ui_error "$TEXT" ;;
+        info) ui_info "$TEXT" ;;
+        step) ui_note "$TEXT" ;;
+        *)    ui_text "$TEXT" ;;
+    esac
 }
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# STEP 1: Install Nginx if not present
-# ═══════════════════════════════════════════════════════════════════════════════
+# ─── STEP 1: Install Nginx if not present ──────────────────────────────
 ensure_nginx_installed() {
     if command -v nginx >/dev/null 2>&1; then
-        log_msg "${GREEN}✅ Nginx is already installed: $(nginx -v 2>&1)${NC}"
+        log_msg ok "Nginx is already installed: $(nginx -v 2>&1)"
         return 0
     fi
 
-    log_msg "${YELLOW}⚠️  Nginx not found - installing...${NC}"
+    log_msg warn "Nginx not found — installing"
 
     # Stop panel temporarily to free port 80/443 if needed
     local NEED_STOP_PANEL=false
@@ -65,10 +74,10 @@ ensure_nginx_installed() {
     apt-get install -y nginx certbot >/dev/null 2>&1
 
     if command -v nginx >/dev/null 2>&1; then
-        log_msg "${GREEN}✅ Nginx installed successfully${NC}"
+        log_msg ok "Nginx installed successfully"
         systemctl enable nginx >/dev/null 2>&1
     else
-        log_msg "${RED}❌ Nginx installation failed!${NC}"
+        log_msg err "Nginx installation failed"
         # Restart panel if we stopped it
         if [ "$NEED_STOP_PANEL" = true ]; then
             cd "$PANEL_DIR" && docker compose start 2>/dev/null || true
@@ -79,18 +88,16 @@ ensure_nginx_installed() {
     return 0
 }
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# STEP 2: Copy SSL certs to /etc/letsencrypt/live/
-# ═══════════════════════════════════════════════════════════════════════════════
+# ─── STEP 2: Copy SSL certs to /etc/letsencrypt/live/ ──────────────────
 copy_ssl_certs() {
-    log_msg "${CYAN}📋 Checking SSL certificates...${NC}"
+    log_msg step "Checking SSL certificates"
 
     local COPIED=0
     local NEED_COPY=0
 
     # Extract domain names from panel_separate.conf
     if [ ! -f "$DOMAIN_SEP_CONF" ]; then
-        log_msg "${YELLOW}⚠️  Domain separator config not found - skipping cert copy${NC}"
+        log_msg warn "Domain separator config not found — certificate copy skipped"
         return 0
     fi
 
@@ -99,14 +106,14 @@ copy_ssl_certs() {
     DOMAINS=$(grep -oP 'server_name\s+\K[^;]+' "$DOMAIN_SEP_CONF" 2>/dev/null | tr -d ' ' | sort -u)
 
     if [ -z "$DOMAINS" ]; then
-        log_msg "${YELLOW}⚠️  No domains found in $DOMAIN_SEP_CONF${NC}"
+        log_msg warn "No domains found in $DOMAIN_SEP_CONF"
         return 0
     fi
 
     for DOMAIN in $DOMAINS; do
         # SECURITY: Validate domain format before use
         if ! [[ "$DOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$ ]]; then
-            log_msg "${RED}  ⚠️  Skipping invalid domain: $DOMAIN${NC}"
+            log_msg warn "Skipping invalid domain: $DOMAIN"
             continue
         fi
         local LETS_DIR="/etc/letsencrypt/live/$DOMAIN"
@@ -114,14 +121,14 @@ copy_ssl_certs() {
 
         # Check if letsencrypt dir already has valid certs
         if [ -f "$LETS_DIR/fullchain.pem" ] && [ -f "$LETS_DIR/privkey.pem" ]; then
-            log_msg "${GREEN}  ✅ $DOMAIN: certs already in /etc/letsencrypt/live/${NC}"
+            log_msg ok "$DOMAIN: certificates already in /etc/letsencrypt/live/"
             COPIED=$((COPIED + 1))
             continue
         fi
 
         # Check if panel certs dir has certs
         if [ -f "$PANEL_CERT_DIR/fullchain.pem" ] && [ -f "$PANEL_CERT_DIR/privkey.pem" ]; then
-            log_msg "${YELLOW}  📁 $DOMAIN: copying from $PANEL_CERT_DIR to $LETS_DIR${NC}"
+            log_msg step "$DOMAIN: copying from $PANEL_CERT_DIR to $LETS_DIR"
             mkdir -p "$LETS_DIR"
             cp "$PANEL_CERT_DIR/fullchain.pem" "$LETS_DIR/fullchain.pem"
             cp "$PANEL_CERT_DIR/privkey.pem" "$LETS_DIR/privkey.pem"
@@ -130,23 +137,21 @@ copy_ssl_certs() {
             COPIED=$((COPIED + 1))
             NEED_COPY=$((NEED_COPY + 1))
         else
-            log_msg "${RED}  ❌ $DOMAIN: no certs found in $PANEL_CERT_DIR${NC}"
-            log_msg "${YELLOW}     Will need certbot to generate new certs${NC}"
+            log_msg err "$DOMAIN: no certificates in $PANEL_CERT_DIR"
+            log_msg warn "Issue a new certificate for it from the SSL menu"
         fi
     done
 
-    log_msg "${GREEN}✅ SSL certs: $COPIED domains checked, $NEED_COPY copied${NC}"
+    log_msg ok "SSL certificates: $COPIED domains checked, $NEED_COPY copied"
     return 0
 }
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# STEP 3: Update the subscription URL prefix in the panel DB (settings.subscription.url_prefix)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ─── STEP 3: Update the subscription URL prefix in the panel DB (settings.subscription.url_prefix) 
 set_subscription_url_prefix() {
-    log_msg "${CYAN}🔗 Updating subscription URL prefix in panel DB...${NC}"
+    log_msg step "Updating the subscription URL prefix in the panel DB"
 
     if [ ! -f "$PANEL_ENV" ]; then
-        log_msg "${RED}❌ Panel .env not found at $PANEL_ENV${NC}"
+        log_msg err "Panel .env not found at $PANEL_ENV"
         return 1
     fi
 
@@ -220,7 +225,7 @@ set_subscription_url_prefix() {
         PANEL_PORT=$(grep -oP 'UVICORN_PORT\s*=\s*\K[0-9]+' "$PANEL_ENV" 2>/dev/null)
         [ -z "$PANEL_PORT" ] && PANEL_PORT="8000"
         SUB_URL="https://$SERVER_IP:$PANEL_PORT"
-        log_msg "${YELLOW}⚠️  Using server IP as fallback${NC}"
+        log_msg warn "Using server IP as fallback"
     fi
 
     # PasarGuard reads XRAY_SUBSCRIPTION_URL_PREFIX from .env ONLY during the
@@ -228,11 +233,11 @@ set_subscription_url_prefix() {
     # from the panel DB (settings.subscription -> url_prefix) — writing .env
     # here would be a no-op, so we update the panel DB instead.
     if _apply_subscription_url_db "$SUB_URL"; then
-        log_msg "${GREEN}✅ Subscription URL prefix updated in panel DB: $SUB_URL${NC}"
+        log_msg ok "Subscription URL prefix updated in panel DB: $SUB_URL"
         return 0
     else
-        log_msg "${YELLOW}⚠️  Could not update the panel DB automatically.${NC}"
-        log_msg "${YELLOW}    Set it manually: Dashboard → Settings → Subscription → URL prefix = $SUB_URL${NC}"
+        log_msg warn "Could not update the panel DB automatically"
+        log_msg warn "Set it manually: Dashboard › Settings › Subscription › URL prefix = $SUB_URL"
         # FIX: propagate failure so main() reports this step as failed
         # instead of printing "All 5 steps completed successfully" (MRM-063)
         return 1
@@ -299,29 +304,27 @@ _apply_subscription_url_db() {
     esac
 }
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# STEP 4: Test and start Nginx
-# ═══════════════════════════════════════════════════════════════════════════════
+# ─── STEP 4: Test and start Nginx ──────────────────────────────────────
 test_and_start_nginx() {
     if ! command -v nginx >/dev/null 2>&1; then
-        log_msg "${RED}❌ Nginx not installed - skipping${NC}"
+        log_msg err "Nginx is not installed — skipped"
         return 1
     fi
 
-    log_msg "${CYAN}🔍 Testing Nginx configuration...${NC}"
+    log_msg step "Testing nginx configuration"
 
     if nginx -t 2>&1; then
-        log_msg "${GREEN}✅ Nginx config test passed${NC}"
+        log_msg ok "Nginx configuration is valid"
         systemctl restart nginx 2>/dev/null
         sleep 1
         if systemctl is-active --quiet nginx 2>/dev/null; then
-            log_msg "${GREEN}✅ Nginx is running${NC}"
+            log_msg ok "Nginx is running"
         else
-            log_msg "${YELLOW}⚠️  Nginx failed to start - check: journalctl -xeu nginx${NC}"
+            log_msg warn "Nginx failed to start — check: journalctl -xeu nginx"
             return 1
         fi
     else
-        log_msg "${RED}❌ Nginx config test failed!${NC}"
+        log_msg err "Nginx configuration test failed"
         nginx -t 2>&1 | head -5
         return 1
     fi
@@ -329,77 +332,62 @@ test_and_start_nginx() {
     return 0
 }
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# STEP 5: Restart panel
-# ═══════════════════════════════════════════════════════════════════════════════
+# ─── STEP 5: Restart panel ─────────────────────────────────────────────
 restart_panel() {
-    log_msg "${CYAN}🔄 Restarting panel...${NC}"
+    log_msg step "Restarting panel"
 
     if [ -d "$PANEL_DIR" ] && [ -f "$PANEL_DIR/docker-compose.yml" -o -f "$PANEL_DIR/compose.yml" ]; then
         cd "$PANEL_DIR"
         docker compose restart 2>/dev/null && {
-            log_msg "${GREEN}✅ Panel restarted${NC}"
+            log_msg ok "Panel restarted"
             return 0
         }
     fi
 
-    log_msg "${YELLOW}⚠️  Panel restart failed - try: cd $PANEL_DIR && docker compose restart${NC}"
+    log_msg warn "Panel restart failed — try: cd $PANEL_DIR && docker compose restart"
     return 1
 }
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# MAIN
-# ═══════════════════════════════════════════════════════════════════════════════
+# ─── MAIN ──────────────────────────────────────────────────────────────
 main() {
-    log_msg ""
-    log_msg "${CYAN}╔══════════════════════════════════════════════════════════╗${NC}"
-    log_msg "${CYAN}║     MRM Post-Restore Auto-Fix (Nginx + SSL + Sub URL)   ║${NC}"
-    log_msg "${CYAN}╚══════════════════════════════════════════════════════════╝${NC}"
-    log_msg ""
+    log_msg blank
+    log_msg text "Post-restore auto-fix: nginx · SSL certificates · subscription URL"
+    log_msg blank
 
     local STEP=0
     local TOTAL=5
     local FAILED=0
 
-    # Step 1: Ensure Nginx installed
     STEP=$((STEP + 1))
-    log_msg "${BLUE}[$STEP/$TOTAL] Ensuring Nginx is installed...${NC}"
+    ui_step "$STEP" "$TOTAL" "Ensuring nginx is installed"
     ensure_nginx_installed || FAILED=$((FAILED + 1))
-    log_msg ""
+    log_msg blank
 
-    # Step 2: Copy SSL certs
     STEP=$((STEP + 1))
-    log_msg "${BLUE}[$STEP/$TOTAL] Copying SSL certificates...${NC}"
+    ui_step "$STEP" "$TOTAL" "Copying SSL certificates"
     copy_ssl_certs || FAILED=$((FAILED + 1))
-    log_msg ""
+    log_msg blank
 
-    # Step 3: Set XRAY_SUBSCRIPTION_URL_PREFIX
     STEP=$((STEP + 1))
-    log_msg "${BLUE}[$STEP/$TOTAL] Updating subscription URL prefix in panel DB...${NC}"
+    ui_step "$STEP" "$TOTAL" "Updating the subscription URL prefix in the panel DB"
     set_subscription_url_prefix || FAILED=$((FAILED + 1))
-    log_msg ""
+    log_msg blank
 
-    # Step 4: Test and start Nginx
     STEP=$((STEP + 1))
-    log_msg "${BLUE}[$STEP/$TOTAL] Testing and starting Nginx...${NC}"
+    ui_step "$STEP" "$TOTAL" "Testing and starting nginx"
     test_and_start_nginx || FAILED=$((FAILED + 1))
-    log_msg ""
+    log_msg blank
 
-    # Step 5: Restart panel
     STEP=$((STEP + 1))
-    log_msg "${BLUE}[$STEP/$TOTAL] Restarting panel...${NC}"
+    ui_step "$STEP" "$TOTAL" "Restarting the panel"
     restart_panel || FAILED=$((FAILED + 1))
-    log_msg ""
+    log_msg blank
 
-    # Summary
-    log_msg "${CYAN}══════════════════════════════════════════════════════════${NC}"
     if [ "$FAILED" -eq 0 ]; then
-        log_msg "${GREEN}✅ All $TOTAL steps completed successfully!${NC}"
-        log_msg "${GREEN}   New users' subscription links should work now.${NC}"
+        log_msg ok "All $TOTAL post-restore steps completed — subscription links should work now"
     else
-        log_msg "${YELLOW}⚠️  $FAILED/$TOTAL steps had issues - check log: $LOG_FILE${NC}"
+        log_msg warn "$FAILED of $TOTAL steps had issues — see $LOG_FILE"
     fi
-    log_msg "${CYAN}══════════════════════════════════════════════════════════${NC}"
 }
 
 # Only run main if executed directly, not sourced

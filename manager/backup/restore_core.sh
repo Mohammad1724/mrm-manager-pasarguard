@@ -2,14 +2,11 @@
 # MRM Backup - Restore Core Module
 # Main restore logic: extract, safety backup, restore files, restore DB, start services
 
-# ==========================================
-# RESTORE v${BACKUP_VERSION}
-# ==========================================
+# ─── Restore ─────────────────────────────────────────────────────────────────
 do_restore() {
-    clear
-    ui_header "RESTORE FROM BACKUP - v${BACKUP_VERSION}"
     setup_env
     init_backup_logging
+    ui_header "Restore from Backup" "$BACKUP_DIR"
 
     # FIX: exclude pre_restore_* safety backups from the restore list — their
     # tar layout has no MRM root, so selecting one silently restores nothing
@@ -17,39 +14,40 @@ do_restore() {
     local FILES=($(ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null | grep -v '/pre_restore_'))
     if [ ${#FILES[@]} -eq 0 ]; then
         ui_error "No backups found in $BACKUP_DIR"
-        echo -e "Upload backup manually to $BACKUP_DIR or download from Telegram"
-        pause
+        ui_note "Upload an archive to $BACKUP_DIR (or download one from Telegram) and try again."
+        ui_pause
         return 1
     fi
 
-    echo -e "${YELLOW}Select backup to restore:${NC}\n"
-    if ls "$BACKUP_DIR"/pre_restore_*.tar.gz >/dev/null 2>&1; then
-        echo -e "  ${CYAN}(pre_restore_* safety backups are hidden - they are not restorable)${NC}\n"
-    fi
+    ui_menu_title "Select a backup to restore"
     for i in "${!FILES[@]}"; do
-        local SIZE=$(du -h "${FILES[$i]}" | cut -f1)
-        local DATE=$(stat -c %y "${FILES[$i]}" | cut -d' ' -f1)
-        local TYPE="v${BACKUP_VERSION}"
+        local SIZE DATE TYPE
+        SIZE=$(du -h "${FILES[$i]}" | cut -f1)
+        DATE=$(stat -c %y "${FILES[$i]}" | cut -d' ' -f1)
+        TYPE="BACKUP"
         [[ "$(basename "${FILES[$i]}")" == *"Full"* ]] && TYPE="FULL-OLD"
         [[ "$(basename "${FILES[$i]}")" == *"Lite"* ]] && TYPE="LITE-OLD"
-        [[ "$(basename "${FILES[$i]}")" == *"V1"* ]] && TYPE="v${BACKUP_VERSION}"
-        echo "$((i+1))) [$TYPE] $(basename "${FILES[$i]}") [$SIZE] - $DATE"
+        ui_menu_item "$((i+1))" "$(basename "${FILES[$i]}")" "$TYPE · $SIZE · $DATE"
     done
-    echo ""
-    read -p "Select (0 to cancel): " SEL
+    ui_menu_back "Cancel"
+    if ls "$BACKUP_DIR"/pre_restore_*.tar.gz >/dev/null 2>&1; then
+        ui_note "pre_restore_* safety copies are hidden — they are not restorable."
+    fi
+    local SEL
+    ui_select SEL
     [ "$SEL" == "0" ] && return
-    # FIX: validate numeric input — otherwise $((SEL-1)) treats non-numeric
+    # validate numeric input — otherwise $((SEL-1)) treats non-numeric
     # input as empty var -> -1 -> FILES[-1] wraps to the LAST backup (MRM-069)
-    if ! [[ "$SEL" =~ ^[0-9]+$ ]]; then ui_error "Invalid selection"; pause; return 1; fi
+    if ! [[ "$SEL" =~ ^[0-9]+$ ]]; then ui_error "Invalid selection"; ui_pause; return 1; fi
     local SELECTED="${FILES[$((SEL-1))]}"
-    if [ -z "$SELECTED" ] || [ ! -f "$SELECTED" ]; then ui_error "Invalid selection"; pause; return 1; fi
+    if [ -z "$SELECTED" ] || [ ! -f "$SELECTED" ]; then ui_error "Invalid selection"; ui_pause; return 1; fi
 
     echo ""
-    echo -e "${RED}⚠️  WARNING: This will overwrite current panel data!${NC}"
-    echo -e "${YELLOW}Selected: $(basename "$SELECTED") ($(du -h "$SELECTED" | cut -f1))${NC}"
-    echo -e "${CYAN}Safety backup will be created automatically.${NC}\n"
-    read -p "Continue restore? (y/N): " CONFIRM
-    if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then echo "Cancelled"; pause; return; fi
+    ui_warning "Restoring overwrites the current panel data (database, .env, certificates)."
+    ui_kv "Archive" "$(basename "$SELECTED") ($(du -h "$SELECTED" | cut -f1))"
+    ui_note "A safety backup of the current state is created first."
+    echo ""
+    if ! ui_confirm "Start the restore?"; then ui_cancelled; ui_pause; return; fi
 
     log_backup "INFO" "Starting restore v${BACKUP_VERSION} from: $(basename "$SELECTED")"
 
@@ -59,13 +57,13 @@ do_restore() {
     # Cleanup trap with safety guard
     trap '[[ -n "${WORK_DIR:-}" && -d "${WORK_DIR:-}" && "$WORK_DIR" != "/" ]] && rm -rf "$WORK_DIR"; trap - RETURN' RETURN
 
-    ui_spinner_start "Extracting backup..."
+    ui_spinner_start "Extracting archive"
     if ! tar -xzf "$SELECTED" -C "$WORK_DIR" 2>/dev/null; then
         ui_spinner_stop
-        ui_error "Failed to extract backup! File may be corrupted."
+        ui_error "Failed to extract the archive — the file may be corrupted"
         rm -rf "$WORK_DIR"
         trap - RETURN
-        pause
+        ui_pause
         return 1
     fi
     ui_spinner_stop
@@ -77,11 +75,11 @@ do_restore() {
         ROOT=$(find "$WORK_DIR" -mindepth 1 -maxdepth 1 -type d | head -1)
     fi
     if [ -z "$ROOT" ] || [ ! -d "$ROOT" ]; then
-        ui_error "Invalid backup structure - no root found"
+        ui_error "Invalid archive structure — MRM backup root not found"
         log_backup "ERROR" "Invalid backup structure"
         rm -rf "$WORK_DIR"
         trap - RETURN
-        pause
+        ui_pause
         return 1
     fi
 
@@ -96,8 +94,8 @@ do_restore() {
 
     # Show info if available
     if [ -f "$ROOT/backup_info.txt" ]; then
-        echo -e "\n${CYAN}Backup Info:${NC}"
-        cat "$ROOT/backup_info.txt"
+        ui_section "Archive info"
+        sed "s/^/${UI_PAD}/" "$ROOT/backup_info.txt"
         echo ""
     fi
 
@@ -106,7 +104,7 @@ do_restore() {
     #    Includes a live export of the current database, so a failed
     #    restore can NEVER destroy the original data.
     # =========================================================
-    ui_spinner_start "Creating safety backup (with live database)..."
+    ui_spinner_start "Creating safety backup of the current state"
     local SAFETY_BACKUP="$BACKUP_DIR/pre_restore_$(date +%Y%m%d_%H%M%S).tar.gz"
     local SAFETY_DIR="$TEMP_BASE/safety_$(date +%s)"
     mkdir -p "$SAFETY_DIR"
@@ -129,31 +127,31 @@ do_restore() {
         if tar -czf "$SAFETY_BACKUP" "${SAFETY_ITEMS[@]}" 2>/dev/null; then
             ui_spinner_stop
             if [ "$SAFETY_DB_OK" = true ]; then
-                ui_success "Safety backup incl. live DB: $(basename "$SAFETY_BACKUP")"
+                ui_success "Safety backup created (with live database): $(basename "$SAFETY_BACKUP")"
             else
-                ui_warning "Safety backup created WITHOUT database"
+                ui_warning "Safety backup created without a database"
             fi
             log_backup "INFO" "Safety backup created: $SAFETY_BACKUP (db=$SAFETY_DB_OK)"
             rm -rf "$SAFETY_DIR"
         else
             ui_spinner_stop
-            ui_warning "Safety backup FAILED - keeping raw files for manual recovery:"
+            ui_warning "Safety backup failed — raw files kept for manual recovery:"
             if [ -f "$SAFETY_DIR/current_db_backup" ]; then
                 local KEEP_DB="$BACKUP_DIR/pre_restore_db_$(date +%Y%m%d_%H%M%S)$(basename "$DB_BACKUP_FILE")"
                 mv -f "$SAFETY_DIR/current_db_backup" "$KEEP_DB" 2>/dev/null
-                echo -e "  ${RED}⚠ Raw DB saved: ${YELLOW}$KEEP_DB${NC}"
+                ui_bullet "Raw database saved: $KEEP_DB"
                 log_backup "ERROR" "Safety tar failed; raw DB kept at $KEEP_DB"
             fi
         fi
     else
         ui_spinner_stop
-        ui_warning "No existing data for safety backup"
+        ui_warning "No existing data to protect — safety backup skipped"
         rm -rf "$SAFETY_DIR"
     fi
 
     # Stop services. We use `stop` (NOT `down`) so the container and its
     # writable layer are preserved - needed to copy the DB in/out safely.
-    ui_spinner_start "Stopping services..."
+    ui_spinner_start "Stopping services"
     local PANEL_COMPOSE_FILE NODE_COMPOSE_FILE
     PANEL_COMPOSE_FILE="$(get_existing_compose_file panel 2>/dev/null || true)"
     NODE_COMPOSE_FILE="$(get_existing_compose_file node 2>/dev/null || true)"
@@ -167,7 +165,7 @@ do_restore() {
     if [ "$IS_FULL" = true ]; then
         # FULL LEGACY RESTORE
         log_backup "INFO" "Restoring FULL legacy backup"
-        ui_spinner_start "Restoring FULL backup files..."
+        ui_spinner_start "Restoring files (legacy full archive)"
         mkdir -p "$PANEL_DIR" "$DATA_DIR"
         # Remove old (except we already have safety)
         # For FULL, we restore everything but still exclude heavy files loop
@@ -205,11 +203,11 @@ do_restore() {
         chmod -R 755 "$DATA_DIR" 2>/dev/null || true
         chown -R 1000:1000 "$DATA_DIR" 2>/dev/null || true
         ui_spinner_stop
-        ui_success "FULL files restored"
+        ui_success "Files restored"
     else
         # Restore essentials
         log_backup "INFO" "Restoring v${BACKUP_VERSION} essentials"
-        ui_spinner_start "Restoring v${BACKUP_VERSION} essentials..."
+        ui_spinner_start "Restoring panel and node files"
 
         mkdir -p "$PANEL_DIR" "$DATA_DIR"
 
@@ -302,28 +300,26 @@ do_restore() {
         chown -R 1000:1000 "$DATA_DIR" 2>/dev/null || true
 
         ui_spinner_stop
-        ui_success "v${BACKUP_VERSION} essentials restored"
+        ui_success "Panel and node files restored"
     fi
 
     # NOTE: We deliberately do NOT rewrite .env / apply smart fixes here.
     # fix_env_file + apply_smart_fix used to mangle the panel .env during
     # restore, which caused DB connection errors after restore.
     # Restored files are used as-is from the backup.
-    echo -e "${CYAN}✓ Restored files are used as-is (no auto .env rewrite).${NC}"
-    echo -e "${YELLOW}If you need firewall fixes, use 'Smart Fix' from the Backup menu.${NC}"
-    sleep 1
+    ui_note "Restored files are used as-is (.env is never rewritten). Firewall fixes: Backup menu › Smart fix."
 
     # Fix IPs in docker-compose ONLY (safe: touches the compose file, NEVER .env).
     # Needed when restoring on a server with a different IP (e.g. pgadmin
     # "Address not available" because PGADMIN_LISTEN_ADDRESS points to an
     # IP that no longer exists on this host).
-    ui_spinner_start "Updating IPs in docker-compose..."
+    ui_spinner_start "Updating IPs in docker-compose"
     if fix_docker_compose; then
         ui_spinner_stop
-        ui_success "Docker compose IPs updated to current server IP"
+        ui_success "docker-compose IPs updated to this server"
     else
         ui_spinner_stop
-        ui_warning "Compose IP update skipped (compose not found or IP undetectable)"
+        ui_warning "Compose IP update skipped (no compose file or IP not detectable)"
     fi
 
     # =========================================================
@@ -346,7 +342,7 @@ do_restore() {
 
         if [ "$DB_IS_SQLITE" = true ]; then
             # --- SQLite restore (panel stopped -> plain file copy is safe) ---
-            ui_spinner_start "Restoring SQLite database..."
+            ui_spinner_start "Restoring SQLite database"
             local DB_IMPORTED=false
             local SQLITE_OK=true
             # FIX (MRM-108): validate the SQLite file (magic header) BEFORE
@@ -355,7 +351,7 @@ do_restore() {
             if ! mrm_is_sqlite_file "$DB_RESTORE_PATH"; then
                 SQLITE_OK=false
                 log_backup "ERROR" "SQLite backup file is not a valid SQLite database - refusing to restore"
-                ui_error "SQLite backup file is invalid - skipping database restore"
+                ui_error "SQLite backup file is invalid — database restore skipped"
             fi
             local TARGET_SQLITE=""
             # Where does the RESTORED config want the DB? (parse the restored .env)
@@ -422,15 +418,15 @@ do_restore() {
 
             ui_spinner_stop
             if [ "$DB_IMPORTED" = true ]; then
-                ui_success "SQLite database restored!"
+                ui_success "SQLite database restored"
             else
-                ui_error "SQLite import failed - check /var/log/mrm-backup.log"
+                ui_error "SQLite import failed — see $BACKUP_LOG"
             fi
         else
             # --- PostgreSQL / MySQL dump restore (panel stopped -> no locks) ---
             local DB_IMPORTED=false
             if grep -qiE "postgresql|postgres" "$PANEL_ENV" 2>/dev/null; then
-                ui_spinner_start "Importing PostgreSQL database..."
+                ui_spinner_start "Importing PostgreSQL database"
                 # Find the DB container even if stopped; start it if needed
                 local DB_CONT
                 # FIX: precise compose-name match first (MRM-060); bare
@@ -594,7 +590,7 @@ do_restore() {
                 ui_spinner_stop
                 if [ "$DB_IMPORTED" = true ]; then ui_success "PostgreSQL database imported successfully!"; log_backup "SUCCESS" "PostgreSQL DB imported"; else ui_error "PostgreSQL database import failed! Check logs"; log_backup "ERROR" "PostgreSQL DB import failed"; fi
             elif grep -qiE "mysql|mariadb" "$PANEL_ENV" 2>/dev/null; then
-                ui_spinner_start "Importing MySQL/MariaDB database..."
+                ui_spinner_start "Importing MySQL/MariaDB database"
                 local DB_CONT
                 # FIX: precise compose-name match first (MRM-060), loose grep
                 # only as fallback — avoids picking an unrelated mysql container
@@ -653,7 +649,7 @@ do_restore() {
         fi
     else
         log_backup "WARNING" "No database file found in backup to restore"
-        ui_warning "No database found in backup - only files restored"
+        ui_warning "No database in this archive — only files were restored"
     fi
 
     # Ensure xray-core binary BEFORE starting services (fixes Error_Node on restore)
@@ -667,27 +663,26 @@ do_restore() {
     [ -z "$XRAY_BIN_PATH" ] && XRAY_BIN_PATH="/var/lib/pg-node"
     XRAY_BIN_PATH="$XRAY_BIN_PATH/xray-core/xray"
 
-    ui_spinner_start "Checking xray-core binary (must exist before node starts)..."
+    ui_spinner_start "Checking xray-core binary"
     if [ -x "$XRAY_BIN_PATH" ] && "$XRAY_BIN_PATH" -version >/dev/null 2>&1; then
         ui_spinner_stop
-        ui_success "xray-core already present and working"
+        ui_success "xray-core present and working"
         log_backup "INFO" "xray-core already present: $XRAY_BIN_PATH"
     else
         ui_spinner_stop
         log_backup "INFO" "xray-core missing at $XRAY_BIN_PATH - downloading before service start"
-        ui_spinner_start "Downloading xray-core (needed before node starts)..."
+        ui_spinner_start "Downloading xray-core"
         if mrm_ensure_xray_core; then
             XRAY_WAS_DOWNLOADED=true
             ui_spinner_stop
-            ui_success "xray-core downloaded successfully"
+            ui_success "xray-core downloaded"
             log_backup "SUCCESS" "xray-core downloaded to $XRAY_BIN_PATH"
         else
             ui_spinner_stop
-            ui_error "xray-core download FAILED! Node will not work."
-            echo -e "    ${YELLOW}Possible causes:${NC}"
-            echo -e "    ${YELLOW}- GitHub is blocked on this server (common in Iran)${NC}"
-            echo -e "    ${YELLOW}- No internet connection${NC}"
-            echo -e "    ${YELLOW}- Try: mrm fix-node${NC}"
+            ui_error "xray-core download failed — the node will not start"
+            ui_bullet "GitHub may be blocked on this server (common in Iran)"
+            ui_bullet "Check the internet connection"
+            ui_bullet "Retry later with: mrm fix-node"
             log_backup "ERROR" "xray-core download failed during restore"
         fi
     fi
@@ -697,7 +692,7 @@ do_restore() {
     PANEL_COMPOSE_FILE="$(get_existing_compose_file panel 2>/dev/null || true)"
     NODE_COMPOSE_FILE="$(get_existing_compose_file node 2>/dev/null || true)"
 
-    ui_spinner_start "Starting services..."
+    ui_spinner_start "Starting services"
     if [ -n "$NODE_COMPOSE_FILE" ]; then
         if run_compose_file "$NODE_COMPOSE_FILE" up -d >/dev/null 2>&1; then STARTED_ANY=true; else START_FAILED=true; fi
     fi
@@ -710,14 +705,14 @@ do_restore() {
 
     # If xray was freshly downloaded, restart the node container to pick it up
     if [ "$XRAY_WAS_DOWNLOADED" = true ] && [ -n "$NODE_COMPOSE_FILE" ]; then
-        ui_spinner_start "Restarting node to apply new xray-core..."
+        ui_spinner_start "Restarting node with the new xray-core"
         if run_compose_file "$NODE_COMPOSE_FILE" restart >/dev/null 2>&1; then
             ui_spinner_stop
-            ui_success "Node restarted with new xray-core"
+            ui_success "Node restarted"
             log_backup "INFO" "Node restarted after xray-core download"
         else
             ui_spinner_stop
-            ui_warning "Node restart failed - try: docker restart \$(docker ps -a --format '{{.Names}}' | grep -i node | head -1)"
+            ui_warning "Node restart failed — restart it manually with docker restart <node-container>"
             log_backup "WARNING" "Node restart failed after xray-core download"
         fi
     fi
@@ -732,15 +727,14 @@ do_restore() {
     #   - Restart panel with new settings
     # ═══════════════════════════════════════════════════════════════
     if declare -f main >/dev/null 2>&1; then
-        echo ""
-        echo -e "${CYAN}🔧 Running post-restore auto-fix...${NC}"
-        # FIX: main() already appends to /var/log/mrm-post-restore.log via
+        ui_section "Post-restore auto-fix"
+        # main() already appends to /var/log/mrm-post-restore.log via
         # log_msg; the old `tee -a` duplicated every line (MRM-067)
         main 2>&1
-        echo -e "${GREEN}✔ Post-restore auto-fix completed${NC}"
+        ui_success "Post-restore auto-fix completed"
         log_backup "SUCCESS" "Post-restore auto-fix executed"
     else
-        echo -e "${YELLOW}⚠ post_restore module not loaded - skipping auto-fix${NC}"
+        ui_warning "post_restore module not loaded — auto-fix skipped"
         log_backup "WARNING" "post_restore module not loaded"
     fi
 
@@ -752,25 +746,19 @@ do_restore() {
     log_backup "SUCCESS" "Restore v${BACKUP_VERSION} completed from: $(basename "$SELECTED")"
 
     echo ""
-    echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║              ✔ RESTORE v${BACKUP_VERSION} COMPLETED!                     ║${NC}"
-    echo -e "${GREEN}╠══════════════════════════════════════════════════════════╣${NC}"
-    echo -e "${GREEN}║${NC} Server IP: ${CYAN}$NEW_SERVER_IP${NC}"
-    echo -e "${GREEN}║${NC} Backup: ${CYAN}$(basename "$SELECTED")${NC}"
-    echo -e "${GREEN}║${NC} Type: ${CYAN}v${BACKUP_VERSION}${NC}"
-    echo -e "${GREEN}║${NC} Data: ${CYAN}Safe & Complete${NC}"
-    echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
-    echo ""
-    echo -e "${YELLOW}Safety backup: $SAFETY_BACKUP${NC}"
+    ui_box_start ok "Restore completed"
+    ui_box_line "Archive" "$(basename "$SELECTED")"
+    ui_box_line "Server IP" "$NEW_SERVER_IP"
+    [ -n "${SAFETY_BACKUP:-}" ] && ui_box_line "Safety copy" "$(basename "$SAFETY_BACKUP")"
     if [ "$XRAY_WAS_DOWNLOADED" = true ]; then
-        echo -e "${YELLOW}Note: xray-core was downloaded during restore (not in backup)${NC}"
+        ui_box_line "xray-core" "$(ui_state ok "Downloaded") not part of the archive"
     elif [ -x "$XRAY_BIN_PATH" ]; then
-        echo -e "${CYAN}Note: xray-core was present or restored from backup${NC}"
+        ui_box_line "xray-core" "$(ui_state ok "Present")"
     else
-        echo -e "${RED}⚠ WARNING: xray-core is MISSING! Run: mrm fix-node${NC}"
+        ui_box_line "xray-core" "$(ui_state bad "Missing") run: mrm fix-node"
     fi
-    echo ""
-    pause
+    ui_box_end
+    ui_pause
 }
 
 # Xray release asset name for this machine's architecture.

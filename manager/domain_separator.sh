@@ -1,11 +1,20 @@
 #!/bin/bash
-# MRM Manager v1.4.27
+# MRM Manager v1.5.0
+# domain_separator.sh — separate panel and subscription domains via nginx
 
-if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
-if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manager/safe_ops.sh ]; then source /opt/mrm-manager/safe_ops.sh; fi
+# ─── Shared libraries ────────────────────────────────────────────────────────
+MRM_DIR="${MRM_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)}"
+[ -r "$MRM_DIR/utils.sh" ] || MRM_DIR="/opt/mrm-manager"
+# shellcheck source=/dev/null
+if [ -z "$PANEL_DIR" ] || ! declare -f load_panel_config >/dev/null 2>&1; then source "$MRM_DIR/utils.sh"; fi
+# shellcheck source=/dev/null
+declare -f ui_header >/dev/null 2>&1 || source "$MRM_DIR/ui.sh"
+# shellcheck source=/dev/null
+if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r "$MRM_DIR/safe_ops.sh" ]; then source "$MRM_DIR/safe_ops.sh"; fi
 # MRM-045: reuse ssl.sh's recovery helpers (stale live cleanup, broken
 # profile detection, days-remaining) when they are installed
-if ! declare -f _stale_live_cleanup >/dev/null 2>&1 && [ -r /opt/mrm-manager/ssl.sh ]; then source /opt/mrm-manager/ssl.sh; fi
+# shellcheck source=/dev/null
+if ! declare -f _stale_live_cleanup >/dev/null 2>&1 && [ -r "$MRM_DIR/ssl.sh" ]; then source "$MRM_DIR/ssl.sh"; fi
 
 NGINX_CONF="/etc/nginx/conf.d/panel_separate.conf"
 PANEL_CONFLICT_CONF="/etc/nginx/conf.d/panel.conf"
@@ -55,24 +64,24 @@ restore_domain_separator_state() {
 }
 
 install_requirements() {
-    echo -e "${BLUE}Checking requirements...${NC}"
+    ui_note "Checking requirements…"
     local NEED_INSTALL=false
 
     if ! command -v nginx &> /dev/null; then
-        echo -e "${YELLOW}Nginx not found. Installing...${NC}"
+        ui_warning "nginx not found — installing"
         NEED_INSTALL=true
     fi
 
     if ! command -v certbot &> /dev/null; then
-        echo -e "${YELLOW}Certbot not found. Installing...${NC}"
+        ui_warning "certbot not found — installing"
         NEED_INSTALL=true
     fi
 
     if [ "$NEED_INSTALL" = true ]; then
         apt update && apt install -y nginx certbot
-        echo -e "${GREEN}✔ Requirements installed.${NC}"
+        ui_success "Requirements installed"
     else
-        echo -e "${GREEN}✔ Requirements are already installed.${NC}"
+        ui_success "Requirements present (nginx, certbot)"
     fi
 
     systemctl enable nginx > /dev/null 2>&1
@@ -92,7 +101,7 @@ ensure_le_cert() {
         local days
         days=$(get_cert_days_remaining "$le_full" 2>/dev/null || echo 0)
         if [[ "${days:-0}" -gt 0 ]]; then
-            echo -e "${GREEN}✔ Existing valid certificate for $dom (${days} days) — reusing it.${NC}"
+            ui_success "Existing certificate for $dom is valid (${days} days) — reusing it"
             return 0
         fi
     fi
@@ -102,12 +111,12 @@ ensure_le_cert() {
         bb="${SSL_BACKUP_DIR:-/opt/mrm-manager/ssl-backups}/broken-conf-$dom-$(date +%Y%m%d-%H%M%S)"
         mkdir -p "$bb" 2>/dev/null && cp -a "/etc/letsencrypt/renewal/$dom.conf" "$bb/" 2>/dev/null
         rm -f "/etc/letsencrypt/renewal/$dom.conf" 2>/dev/null
-        echo -e "${YELLOW}↳ broken renewal profile backed up: $bb${NC}"
+        ui_note "broken renewal profile backed up: $bb"
     fi
 
     if declare -f _stale_live_cleanup >/dev/null 2>&1; then
         if ! _stale_live_cleanup "$dom"; then
-            echo -e "${RED}✘ Could not remove stale certificate data for $dom${NC}"
+            ui_error "Could not remove stale certificate data for $dom"
             return 1
         fi
     fi
@@ -127,10 +136,9 @@ setup_domain_separation() {
     local NGINX_BACKUP=""
     local CONFLICT_BACKUP=""
 
-    clear
-    echo -e "${CYAN}=============================================${NC}"
-    echo -e "${YELLOW}      DOMAIN SEPARATOR (Panel & Sub)         ${NC}"
-    echo -e "${CYAN}=============================================${NC}"
+    ui_header "Domain Separator" "nginx front for a separate dashboard and subscription domain"
+    ui_text "The dashboard and the subscription links get their own domains, both served by nginx"
+    ui_text "on one port with individual Let's Encrypt certificates."
     echo ""
 
     if declare -f init_logging >/dev/null 2>&1; then
@@ -141,23 +149,23 @@ setup_domain_separation() {
 
     echo ""
 
-    read -r -p "1. Admin Domain (e.g., admin.site.com): " ADMIN_DOM
-    if [ -z "$ADMIN_DOM" ]; then echo -e "${RED}Error: Admin Domain is required!${NC}"; pause; return; fi
-    if ! validate_domain_name "$ADMIN_DOM"; then echo -e "${RED}Error: Admin Domain format is invalid!${NC}"; pause; return; fi
+    ui_ask ADMIN_DOM "Dashboard domain (e.g. admin.example.com)"
+    if [ -z "$ADMIN_DOM" ]; then ui_error "Dashboard domain is required."; pause; return; fi
+    if ! validate_domain_name "$ADMIN_DOM"; then ui_error "Invalid domain format: $ADMIN_DOM"; pause; return; fi
 
-    read -r -p "2. Sub Domain (e.g., sub.site.com): " SUB_DOM
-    if [ -z "$SUB_DOM" ]; then echo -e "${RED}Error: Sub Domain is required!${NC}"; pause; return; fi
-    if ! validate_domain_name "$SUB_DOM"; then echo -e "${RED}Error: Sub Domain format is invalid!${NC}"; pause; return; fi
+    ui_ask SUB_DOM "Subscription domain (e.g. sub.example.com)"
+    if [ -z "$SUB_DOM" ]; then ui_error "Subscription domain is required."; pause; return; fi
+    if ! validate_domain_name "$SUB_DOM"; then ui_error "Invalid domain format: $SUB_DOM"; pause; return; fi
 
     if [ "$ADMIN_DOM" = "$SUB_DOM" ]; then
-        echo -e "${RED}Error: Admin Domain and Sub Domain cannot be the same!${NC}"
+        ui_error "The two domains must be different."
         pause; return
     fi
 
-    read -r -p "3. Port to use (default: 2096): " PORT
+    ui_ask PORT "Public HTTPS port for nginx" "2096"
     [ -z "$PORT" ] && PORT="2096"
     if ! validate_port_number "$PORT"; then
-        echo -e "${RED}Error: Port must be a number between 1 and 65535!${NC}"
+        ui_error "Port must be a number between 1 and 65535."
         pause; return
     fi
 
@@ -168,81 +176,81 @@ setup_domain_separation() {
     local PANEL_PORT_DEF
     PANEL_PORT_DEF="$(grep -oP '^\s*UVICORN_PORT\s*=\s*\K[0-9]+' "$PANEL_ENV" 2>/dev/null | head -1)" || true
     [ -z "$PANEL_PORT_DEF" ] && PANEL_PORT_DEF="8000"
-    read -r -p "4. Current Panel Port (default: $PANEL_PORT_DEF): " PANEL_PORT
+    ui_ask PANEL_PORT "Current panel port (UVICORN_PORT)" "$PANEL_PORT_DEF"
     [ -z "$PANEL_PORT" ] && PANEL_PORT="$PANEL_PORT_DEF"
     if ! validate_port_number "$PANEL_PORT"; then
-        echo -e "${RED}Error: Panel Port must be a number between 1 and 65535!${NC}"
+        ui_error "Panel port must be a number between 1 and 65535."
         pause; return
     fi
 
-    # Fix: Prevent loop
+    # Prevent a proxy loop
     if [ "$PORT" = "$PANEL_PORT" ]; then
-        echo -e "${RED}Error: Nginx port ($PORT) cannot be same as Panel port ($PANEL_PORT)!${NC}"
+        ui_error "The nginx port ($PORT) must differ from the panel port ($PANEL_PORT)."
         pause; return
     fi
 
     echo ""
-    echo -e "${BLUE}-------------------------------------${NC}"
-    echo -e "Admin: ${CYAN}$ADMIN_DOM${NC}"
-    echo -e "Sub:   ${CYAN}$SUB_DOM${NC}"
-    echo -e "Port:  ${CYAN}$PORT${NC}"
-    echo -e "Panel: ${CYAN}$PANEL_PORT${NC}"
-    echo -e "${BLUE}-------------------------------------${NC}"
-    read -r -p "Is this correct? (y/n): " CONFIRM
-    if [ "$CONFIRM" != "y" ]; then echo "Cancelled."; pause; return; fi
+    ui_section "Summary"
+    ui_kv "Dashboard" "https://$ADMIN_DOM:$PORT"
+    ui_kv "Subscription" "https://$SUB_DOM:$PORT"
+    ui_kv "Panel port" "$PANEL_PORT"
+    echo ""
+    if ! ui_confirm "Apply this configuration?" y; then ui_cancelled; pause; return; fi
 
     echo ""
     # MRM-045: prefer the email already registered with Let's Encrypt
     local CB_EMAIL
     CB_EMAIL=$(grep -h '^[[:space:]]*email[[:space:]]*=' /etc/letsencrypt/renewal/*.conf 2>/dev/null | head -1 | cut -d'=' -f2 | tr -d ' ')
     if [ -z "$CB_EMAIL" ]; then
-        read -r -p "Let's Encrypt email (default: admin@$ADMIN_DOM): " CB_EMAIL
+        ui_ask CB_EMAIL "Let's Encrypt email" "admin@$ADMIN_DOM"
         [ -z "$CB_EMAIL" ] && CB_EMAIL="admin@$ADMIN_DOM"
     fi
 
-    echo -e "${BLUE}Stopping Nginx to get SSL...${NC}"
+    ui_step 1 4 "Stopping nginx for the HTTP challenge"
     if ! stop_nginx_checked; then
-        echo -e "${RED}✘ Failed to stop Nginx!${NC}"
+        ui_error "Failed to stop nginx"
         pause; return
     fi
 
-    # Certificate for Admin Domain (reuses a valid existing cert — MRM-045)
-    echo -e "${BLUE}Certificate for Admin Domain: $ADMIN_DOM${NC}"
+    ui_step 2 4 "Certificates"
+    # Certificate for the dashboard domain (reuses a valid existing cert — MRM-045)
+    ui_note "Dashboard domain: $ADMIN_DOM"
     ensure_le_cert "$ADMIN_DOM" "$CB_EMAIL"
     ADMIN_CERT_OK=$?
 
-    # Certificate for Sub Domain (Separate)
-    echo -e "${BLUE}Certificate for Sub Domain: $SUB_DOM${NC}"
+    # Certificate for the subscription domain
+    ui_note "Subscription domain: $SUB_DOM"
     ensure_le_cert "$SUB_DOM" "$CB_EMAIL"
     SUB_CERT_OK=$?
 
-    # Check Admin cert (required)
+    # Check dashboard cert (required)
     if [ $ADMIN_CERT_OK -ne 0 ] || [ ! -d "/etc/letsencrypt/live/$ADMIN_DOM" ]; then
-        echo -e "${RED}✘ Failed to get SSL for Admin Domain!${NC}"
+        ui_error "Could not obtain a certificate for $ADMIN_DOM"
         start_nginx_checked >/dev/null 2>&1 || systemctl start nginx >/dev/null 2>&1 || true
         pause; return
     fi
 
-    # Check Sub cert
+    # Check subscription cert
     SUB_CERT_PATH="/etc/letsencrypt/live/$SUB_DOM"
     if [ $SUB_CERT_OK -ne 0 ] || [ ! -d "$SUB_CERT_PATH" ]; then
-        echo -e "${RED}✘ Sub Domain SSL failed. Cannot proceed safely.${NC}"
+        ui_error "Could not obtain a certificate for $SUB_DOM — aborting"
         start_nginx_checked >/dev/null 2>&1 || systemctl start nginx >/dev/null 2>&1 || true
         pause; return
     fi
 
-    echo -e "${GREEN}✔ SSL Certificates ready.${NC}"
+    ui_success "Certificates ready"
 
+    ui_step 3 4 "Writing nginx configuration"
     if declare -f mrm_create_restore_point >/dev/null 2>&1; then
         local RESTORE_POINT_ID
         RESTORE_POINT_ID="$(mrm_create_restore_point "domain-separation" "nginx" "$NGINX_CONF" "$PANEL_CONFLICT_CONF")"
-        [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point created: $RESTORE_POINT_ID${NC}"
+        [ -n "$RESTORE_POINT_ID" ] && ui_note "Restore point: $RESTORE_POINT_ID"
     fi
 
     if [ -f "$NGINX_CONF" ]; then
         NGINX_BACKUP=$(mktemp /tmp/mrm-domain-separator.XXXXXX 2>/dev/null)
         if [ -z "$NGINX_BACKUP" ] || ! cp "$NGINX_CONF" "$NGINX_BACKUP" 2>/dev/null; then
-            echo -e "${RED}✘ Failed to backup existing Nginx config!${NC}"
+            ui_error "Failed to back up the existing nginx config"
             start_nginx_checked >/dev/null 2>&1 || systemctl start nginx >/dev/null 2>&1 || true
             pause; return
         fi
@@ -250,19 +258,16 @@ setup_domain_separation() {
 
     # Cleanup old conflicts (safe backup)
     if [ -f "$PANEL_CONFLICT_CONF" ]; then
-        echo -e "${YELLOW}Found conflicting config: panel.conf. Disabling it...${NC}"
+        ui_warning "Conflicting config panel.conf found — disabling it"
         CONFLICT_BACKUP="${PANEL_CONFLICT_CONF}.bak"
         [ -e "$CONFLICT_BACKUP" ] && CONFLICT_BACKUP="${PANEL_CONFLICT_CONF}.bak.$(date +%s)"
         if ! mv "$PANEL_CONFLICT_CONF" "$CONFLICT_BACKUP"; then
-            echo -e "${RED}✘ Failed to disable conflicting panel.conf!${NC}"
+            ui_error "Failed to disable panel.conf"
             start_nginx_checked >/dev/null 2>&1 || systemctl start nginx >/dev/null 2>&1 || true
             [ -n "$NGINX_BACKUP" ] && rm -f "$NGINX_BACKUP"
             pause; return
         fi
     fi
-
-    # Configure Nginx
-    echo -e "${BLUE}Writing Nginx configuration...${NC}"
 
     # FIX (MRM-092): the proxy scheme must follow the panel's real .env — SSL
     # is OFF by default in the official panel (UVICORN_SSL_CERTFILE is commented
@@ -325,9 +330,9 @@ $PROXY_SSL_LINE
 EOF
 
     # Test and apply
-    echo -e "${BLUE}Testing Nginx configuration...${NC}"
+    ui_step 4 4 "Testing and reloading nginx"
     if ! nginx -t >/dev/null 2>&1; then
-        echo -e "${RED}✘ Nginx Config Error! Reverting...${NC}"
+        ui_error "nginx configuration test failed — reverting"
         restore_domain_separator_state "$NGINX_BACKUP" "$CONFLICT_BACKUP"
         start_nginx_checked >/dev/null 2>&1 || systemctl start nginx >/dev/null 2>&1 || true
         rm -f "$NGINX_BACKUP" 2>/dev/null
@@ -337,7 +342,7 @@ EOF
     if command -v ufw &> /dev/null; then ufw allow "$PORT"/tcp > /dev/null 2>&1; fi
 
     if ! restart_nginx_checked; then
-        echo -e "${RED}✘ Failed to restart Nginx! Reverting...${NC}"
+        ui_error "nginx restart failed — reverting"
         restore_domain_separator_state "$NGINX_BACKUP" "$CONFLICT_BACKUP"
         start_nginx_checked >/dev/null 2>&1 || systemctl start nginx >/dev/null 2>&1 || true
         rm -f "$NGINX_BACKUP" 2>/dev/null
@@ -347,13 +352,12 @@ EOF
     rm -f "$NGINX_BACKUP" 2>/dev/null
 
     echo ""
-    echo -e "${GREEN}======================================${NC}"
-    echo -e "${GREEN}      SETUP COMPLETED SUCCESSFULLY    ${NC}"
-    echo -e "${GREEN}======================================${NC}"
-    echo ""
-    echo -e "1. Login Panel: ${CYAN}https://$ADMIN_DOM:$PORT${NC}"
-    echo -e "2. Set Subscription URL to: ${CYAN}https://$SUB_DOM:$PORT${NC}"
-    echo ""
+    ui_box_start ok "Domain separation active"
+    ui_box_line "Dashboard" "https://$ADMIN_DOM:$PORT"
+    ui_box_line "Subscription" "https://$SUB_DOM:$PORT"
+    ui_box_line "nginx config" "$NGINX_CONF"
+    ui_box_end
+    ui_note "Set the subscription URL prefix in the panel to https://$SUB_DOM:$PORT (Settings › Subscription)."
     pause
 }
 
@@ -363,7 +367,7 @@ edit_nginx_config_manually() {
     if declare -f mrm_create_restore_point >/dev/null 2>&1; then
         local RESTORE_POINT_ID
         RESTORE_POINT_ID="$(mrm_create_restore_point "domain-manual-edit" "nginx" "$NGINX_CONF" "$PANEL_CONFLICT_CONF")"
-        [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point created: $RESTORE_POINT_ID${NC}"
+        [ -n "$RESTORE_POINT_ID" ] && ui_note "Restore point: $RESTORE_POINT_ID"
     fi
 
     EDIT_BACKUP=$(mktemp /tmp/mrm-domain-edit.XXXXXX 2>/dev/null)
@@ -374,9 +378,10 @@ edit_nginx_config_manually() {
     nano "$NGINX_CONF"
 
     if restart_nginx_checked; then
-        echo -e "${GREEN}Done.${NC}"
+        ui_success "nginx reloaded with the edited configuration"
+        sleep 1
     else
-        echo -e "${RED}Nginx config is invalid or restart failed. Reverting...${NC}"
+        ui_error "nginx configuration is invalid or the restart failed — reverting"
         # FIX (MRM-095): use -s (non-empty) — mktemp always creates the file,
         # so -f was always true and an EMPTY backup was copied instead of the
         # clean removal path when the config was newly created and invalid
@@ -393,34 +398,43 @@ edit_nginx_config_manually() {
 }
 
 domain_menu() {
+    local OPT
     while true; do
-        clear
-        echo -e "${BLUE}===========================================${NC}"
-        echo -e "${YELLOW}      DOMAIN MANAGER                       ${NC}"
-        echo -e "${BLUE}===========================================${NC}"
-        echo "1) Separate Admin & Sub Domains (Wizard)"
-        echo "2) Restart Nginx"
-        echo "3) Check Nginx Status"
-        echo "4) Edit Nginx Config Manually"
-        echo "5) Back"
-        read -r -p "Select: " OPT
+        ui_header "Domain Separator"
+        if [ -f "$NGINX_CONF" ]; then
+            local ADMIN_NOW SUB_NOW
+            ADMIN_NOW="$(grep -m1 -oP 'server_name\s+\K[^;]+' "$NGINX_CONF" 2>/dev/null)"
+            SUB_NOW="$(grep -oP 'server_name\s+\K[^;]+' "$NGINX_CONF" 2>/dev/null | sed -n 2p)"
+            ui_kv_state "Status" ok "Configured" "${ADMIN_NOW:-?} · ${SUB_NOW:-?}"
+        else
+            ui_kv_state "Status" off "Not configured"
+        fi
+        if systemctl is-active --quiet nginx 2>/dev/null; then ui_kv_state "Nginx" ok "Running"; else ui_kv_state "Nginx" off "Not running"; fi
+        echo ""
+        ui_menu_item 1 "Separate dashboard and subscription domains" "wizard"
+        ui_menu_item 2 "Restart nginx"
+        ui_menu_item 3 "Nginx status"
+        ui_menu_item 4 "Edit nginx config" "$NGINX_CONF"
+        ui_menu_back
+        ui_select OPT
         case $OPT in
             1) setup_domain_separation ;;
             2)
                 if restart_nginx_checked; then
-                    echo "Done."
+                    ui_success "nginx restarted"
                 else
-                    echo -e "${RED}Failed to restart Nginx. Check configuration with: nginx -t${NC}"
+                    ui_error "nginx restart failed — check the configuration with: nginx -t"
                 fi
                 sleep 1
                 ;;
-            3) systemctl status nginx --no-pager; pause ;;
+            3) echo ""; systemctl status nginx --no-pager; ui_pause ;;
             4) edit_nginx_config_manually ;;
-            5) return ;;
-            *) echo -e "${RED}Invalid option.${NC}"; sleep 1 ;;
+            0) return ;;
+            *) ui_invalid ;;
         esac
     done
 }
+
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     domain_menu

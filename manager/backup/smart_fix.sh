@@ -46,12 +46,11 @@ fix_docker_compose() {
 # ==========================================
 apply_smart_fix() {
     local FIREWALL_OK=false ENV_FILES_FOUND=false ENV_FIX_OK=true COMPOSE_FIX_OK=false
-    clear
-    echo -e "${CYAN}Applying Intelligent System Repairs...${NC}"
+    ui_section "Smart fix"
     log_backup "INFO" "Starting smart fix"
     local SERVER_IP=$(get_server_ip)
-    echo -e "${BLUE}Detected Server IP: ${CYAN}$SERVER_IP${NC}"
-    ui_spinner_start "Configuring Firewall..."
+    ui_kv "Server IP" "$SERVER_IP"
+    ui_spinner_start "Configuring firewall"
     local SSH_PORT=$(ss -tlnp 2>/dev/null | grep sshd | grep -Po '(?<=:)\d+' | head -1)
     # FIX: never assume 22 when sshd is not visible (socket activation,
     # dropbear, custom names) — assuming 22 + `ufw --force enable` can LOCK
@@ -60,24 +59,24 @@ apply_smart_fix() {
         if ufw allow "$SSH_PORT"/tcp >/dev/null 2>&1 && ufw allow 80,443,2096,7431,6432,8443,2083,2097,8080/tcp >/dev/null 2>&1 && ufw --force enable >/dev/null 2>&1; then FIREWALL_OK=true; fi
     fi
     ui_spinner_stop
-    if [ "$FIREWALL_OK" = true ]; then ui_success "Firewall configured (SSH: $SSH_PORT)"; elif [ -z "$SSH_PORT" ]; then ui_warning "SSH port undetected - firewall NOT touched (avoid lockout)"; elif ! command -v ufw >/dev/null 2>&1; then ui_warning "ufw not installed, skipped."; else ui_error "Firewall configuration failed"; fi
-    ui_spinner_start "Fixing .env files..."
+    if [ "$FIREWALL_OK" = true ]; then ui_success "Firewall configured (SSH: $SSH_PORT)"; elif [ -z "$SSH_PORT" ]; then ui_warning "SSH port not detected — firewall left untouched to avoid a lockout"; elif ! command -v ufw >/dev/null 2>&1; then ui_warning "ufw is not installed — firewall step skipped"; else ui_error "Firewall configuration failed"; fi
+    ui_spinner_start "Normalizing .env files"
     for ENV_FILE in "$PANEL_ENV" "$NODE_ENV"; do if [ -f "$ENV_FILE" ]; then ENV_FILES_FOUND=true; fix_env_file "$ENV_FILE" || ENV_FIX_OK=false; fi; done
     ui_spinner_stop
     if [ "$ENV_FILES_FOUND" = true ] && [ "$ENV_FIX_OK" = true ]; then ui_success ".env files repaired"; elif [ "$ENV_FILES_FOUND" = true ]; then ui_error "One or more .env files could not be repaired"; else ui_warning "No .env files found"; fi
-    ui_spinner_start "Updating docker-compose IPs..."
+    ui_spinner_start "Updating docker-compose IPs"
     if fix_docker_compose; then COMPOSE_FIX_OK=true; fi
     ui_spinner_stop
     if [ "$COMPOSE_FIX_OK" = true ]; then ui_success "Docker compose updated with IP: $SERVER_IP"; else ui_warning "Compose file not found or IP update failed"; fi
     if [ -f "$NODE_ENV" ]; then
-        ui_spinner_start "Fixing Node configuration..."
+        ui_spinner_start "Normalizing node .env"
         if sed -i 's/=[[:space:]]*/=/g' "$NODE_ENV" && sed -i 's/[[:space:]]*=/=/g' "$NODE_ENV"; then ui_spinner_stop; ui_success "Node .env fixed"; else ui_spinner_stop; ui_error "Failed to normalize Node .env"; fi
     fi
     if [ -d "$NODE_DIR" ]; then
         mkdir -p "$NODE_DEF_CERTS"
         # Generate BOTH key AND self-signed cert (node needs both for SSL)
         if [ ! -f "$NODE_DEF_CERTS/ssl_key.pem" ] || [ ! -f "$NODE_DEF_CERTS/ssl_cert.pem" ]; then
-            ui_spinner_start "Generating Node SSL certificate..."
+            ui_spinner_start "Generating node certificate"
             # FIX: verify the files exist before reporting success — if openssl
             # is missing or fails, the old code still said "generated" (MRM-077)
             if command -v openssl >/dev/null 2>&1 && \
@@ -88,18 +87,18 @@ apply_smart_fix() {
                 -subj "/CN=PasarGuard-Node" 2>/dev/null && \
                [ -f "$NODE_DEF_CERTS/ssl_key.pem" ] && [ -f "$NODE_DEF_CERTS/ssl_cert.pem" ]; then
                 ui_spinner_stop
-                ui_success "Node SSL key + cert generated (self-signed, 10yr)"
+                ui_success "Node certificate generated (self-signed, 10 years)"
                 log_backup "INFO" "Generated self-signed SSL for node: $NODE_DEF_CERTS"
             else
                 ui_spinner_stop
-                ui_warning "Node SSL cert generation FAILED - check openssl"
+                ui_warning "Node certificate generation failed — check openssl"
                 log_backup "ERROR" "Node SSL cert generation failed for $NODE_DEF_CERTS"
             fi
         fi
     fi
     local NG_CONF="/etc/nginx/conf.d/panel_separate.conf"
     if [ -f "$NG_CONF" ]; then
-        ui_spinner_start "Fixing Nginx config..."
+        ui_spinner_start "Checking nginx proxy configuration"
         # FIX (MRM-105): convert the legacy http proxy to https ONLY when the
         # panel actually has SSL configured — the old sed forced
         # https + proxy_ssl_verify off even on HTTP-only panels, breaking the
@@ -121,7 +120,7 @@ apply_smart_fix() {
         elif [ -n "$PANEL_SSL_DETECT" ]; then
             ui_warning "Nginx config left unchanged (expected proxy_pass to 127.0.0.1:7431 not found)"
         else
-            ui_success "Panel SSL is disabled (HTTP) — Nginx proxy left as http (no https conversion needed)"
+            ui_success "Panel runs over HTTP — nginx proxy left as http"
         fi
     fi
     log_backup "SUCCESS" "Smart fix completed"

@@ -3,7 +3,7 @@
 # Main backup logic: export DB, backup files, create archive, send to Telegram
 
 # ==========================================
-# Backup v1.4.27
+# Backup v1.5.0
 # ==========================================
 do_backup() {
     local MODE="${1:-manual}"
@@ -11,7 +11,7 @@ do_backup() {
     init_backup_logging
 
     # ui_header clears only on a real TTY — no extra clear here (MRM-054)
-    [ "$MODE" != "auto" ] && ui_header "BACKUP v${BACKUP_VERSION}"
+    [ "$MODE" != "auto" ] && ui_header "Create Backup" "Panel: ${PANEL_DIR} · Data: ${DATA_DIR}"
 
     log_backup "INFO" "========== Starting backup $MRM_BACKUP_VERSION mode: $MODE =========="
     log_backup "INFO" "PANEL_DIR: $PANEL_DIR DATA_DIR: $DATA_DIR"
@@ -40,7 +40,7 @@ do_backup() {
     done
 
     # 1. Export Database - Core of backup
-    [ "$MODE" != "auto" ] && ui_spinner_start "Exporting database..."
+    [ "$MODE" != "auto" ] && ui_spinner_start "Exporting database"
     local DB_SUCCESS=false
     local DB_SIZE="0"
     local DB_RAW_PATH=""
@@ -59,9 +59,9 @@ do_backup() {
                 log_backup "INFO" "DB compressed -> $(du -h "$DB_BACKUP_FILE" | cut -f1)"
             fi
         fi
-        [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "Database exported ($DB_SIZE) [$DB_BACKUP_DESC]"
+        [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "Database exported ($DB_SIZE · $DB_BACKUP_DESC)"
     else
-        [ "$MODE" != "auto" ] && ui_spinner_stop && ui_error "Database export FAILED!"
+        [ "$MODE" != "auto" ] && ui_spinner_stop && ui_error "Database export failed"
         log_backup "ERROR" "Database export failed - backup will NOT contain the DB"
     fi
 
@@ -75,18 +75,19 @@ do_backup() {
 
     if [ "$DB_SUCCESS" = false ] && [ "$MODE" != "auto" ]; then
         echo ""
-        echo -e "${RED}⚠️  WARNING: Database export failed!${NC}"
-        echo -e "${YELLOW}Backup will be created WITHOUT database.${NC}"
-        echo -e "${YELLOW}You can still restore panel files but users will be lost.${NC}\n"
-        read -p "Continue anyway? (y/N): " CONT
-        if [[ ! "$CONT" =~ ^[Yy]$ ]]; then
+        ui_warning "The database could not be exported."
+        ui_text "The archive would contain panel files only — users and settings would be lost on restore."
+        echo ""
+        if ! ui_confirm "Continue without the database?"; then
             [[ -n "$TEMP_BASE" ]] && rm -rf "$TEMP_BASE" 2>/dev/null
+            ui_cancelled
+            ui_pause
             return
         fi
     fi
 
     # 2. Panel Essentials - ONLY what's needed
-    [ "$MODE" != "auto" ] && ui_spinner_start "Backing up panel essentials..."
+    [ "$MODE" != "auto" ] && ui_spinner_start "Collecting panel files"
     
     # .env - most important
     if [ -f "$PANEL_ENV" ]; then
@@ -121,7 +122,7 @@ do_backup() {
         cp "$DATA_DIR/xray_config.json" "$B_PATH/data/" 2>/dev/null
     fi
 
-    [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "Panel essentials backed up"
+    [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "Panel files collected"
 
     # 3. Node Essentials - certs, .env, compose (+ xray-core & geo assets OPTIONAL).
     #    Default (MRM_BACKUP_XRAY unset/0): EXCLUDE xray binary & geo files so the
@@ -132,7 +133,7 @@ do_backup() {
     NODE_DATA_DIR="$(dirname "$NODE_DEF_CERTS" 2>/dev/null)"
     [ -z "$NODE_DATA_DIR" ] && NODE_DATA_DIR="/var/lib/pg-node"
     if [ -d "$NODE_DIR" ] || [ -d "$NODE_DATA_DIR" ]; then
-        [ "$MODE" != "auto" ] && ui_spinner_start "Backing up node essentials..."
+        [ "$MODE" != "auto" ] && ui_spinner_start "Collecting node files"
         mkdir -p "$B_PATH/node"
 
         # .env
@@ -170,7 +171,7 @@ do_backup() {
             log_backup "INFO" "xray-core/geo excluded (MRM_BACKUP_XRAY=0) - restore will auto-download"
         fi
 
-        [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "Node essentials backed up"
+        [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "Node files collected"
     fi
 
     # 4. Nginx - ONLY panel_separate.conf, NOT full /etc/nginx
@@ -200,7 +201,7 @@ do_backup() {
 
     # 5. CLEANUP - Remove any heavy files that accidentally slipped in
     # This is the FIX for the 31MB issue you reported
-    [ "$MODE" != "auto" ] && ui_spinner_start "Cleaning unnecessary heavy files..."
+    [ "$MODE" != "auto" ] && ui_spinner_start "Removing heavy files from the archive set"
 
     # Remove backup loops
     rm -rf "$B_PATH/panel/backup" 2>/dev/null
@@ -236,7 +237,7 @@ do_backup() {
     find "$B_PATH" -type f -name "*.sqlite-shm" -delete 2>/dev/null
     find "$B_PATH" -type f -name "*.sock" -delete 2>/dev/null
 
-    [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "Heavy files cleaned (fixed 31MB issue)"
+    [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "Heavy files excluded (geo data, binaries, nested backups)"
 
     # 6. Metadata
     local SERVER_IP=$(get_server_ip)
@@ -326,7 +327,7 @@ be ~40-50MB and may exceed the 50MB Telegram upload limit.)
 EOF
 
     # 7. Create archive with maximum compression + excludes (double safety)
-    [ "$MODE" != "auto" ] && ui_spinner_start "Creating v${BACKUP_VERSION} archive (high compression)..."
+    [ "$MODE" != "auto" ] && ui_spinner_start "Compressing archive"
 
     local SIZE_BEFORE=$(du -sb "$B_PATH" | cut -f1)
 
@@ -368,9 +369,9 @@ EOF
         if [ "$SIZE_BEFORE" -gt 0 ]; then
             SAVED_PERCENT=$((100 - BACKUP_SIZE_BYTES * 100 / SIZE_BEFORE))
         fi
-        [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "v${BACKUP_VERSION} archive created ($BACKUP_SIZE, saved ${SAVED_PERCENT}% raw)"
+        [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "Archive created ($BACKUP_SIZE · ${SAVED_PERCENT}% smaller than raw)"
     else
-        [ "$MODE" != "auto" ] && ui_spinner_stop && ui_error "Failed to create archive!"
+        [ "$MODE" != "auto" ] && ui_spinner_stop && ui_error "Failed to create the archive"
         log_backup "ERROR" "Failed to create tar.gz"
         [[ -n "$TEMP_BASE" ]] && rm -rf "$TEMP_BASE" 2>/dev/null
         return 1
@@ -381,13 +382,16 @@ EOF
 
     # 9. Send to Telegram - Now small and fast
     local FINAL_SIZE=$(du -h "$ARCHIVE_PATH" | cut -f1)
+    local TG_SENT="skipped"
     if [ -f "$TG_CONFIG" ]; then
-        [ "$MODE" != "auto" ] && ui_spinner_start "Sending v${BACKUP_VERSION} backup to Telegram ($FINAL_SIZE)..."
+        [ "$MODE" != "auto" ] && ui_spinner_start "Sending to Telegram ($FINAL_SIZE)"
         if send_to_telegram "$ARCHIVE_PATH"; then
-            [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "v${BACKUP_VERSION} backup sent to Telegram! ($FINAL_SIZE)"
+            TG_SENT="ok"
+            [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "Sent to Telegram ($FINAL_SIZE)"
         else
+            TG_SENT="failed"
             log_backup "WARNING" "Telegram send failed (mode=$MODE) for $(basename "$ARCHIVE_PATH")"
-            [ "$MODE" != "auto" ] && ui_spinner_stop && ui_warning "Telegram send failed - check log. Size: $FINAL_SIZE"
+            [ "$MODE" != "auto" ] && ui_spinner_stop && ui_warning "Telegram delivery failed — see $BACKUP_LOG"
         fi
         # Loud warning when the DB is missing (how the 39KB backups happened)
         if [ "$DB_SUCCESS" = false ]; then
@@ -407,25 +411,30 @@ Check: SQLite lives inside the panel container in PasarGuard v5." >/dev/null 2>&
 
     if [ "$MODE" != "auto" ]; then
         echo ""
-        echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${GREEN}║          ✔ BACKUP v${BACKUP_VERSION} COMPLETED!                ║${NC}"
-        echo -e "${GREEN}╠══════════════════════════════════════════════════════════╣${NC}"
-        echo -e "${GREEN}║${NC} File: ${CYAN}$(basename "$ARCHIVE_PATH")${NC}"
-        echo -e "${GREEN}║${NC} Size: ${CYAN}$FINAL_SIZE${NC}"
-        echo -e "${GREEN}║${NC} Raw Size: $TOTAL_RAW_SIZE -> Compressed: $FINAL_SIZE"
         if [ "$DB_SUCCESS" = false ]; then
-            echo -e "${GREEN}║${NC} Database: ${RED}NOT EXPORTED${NC}"
+            ui_box_start warn "Backup completed without database"
         else
-            echo -e "${GREEN}║${NC} Database: ${GREEN}Exported${NC} ($DB_SIZE) [${DB_BACKUP_DESC}]"
+            ui_box_start ok "Backup completed"
+        fi
+        ui_box_line "File" "$(basename "$ARCHIVE_PATH")"
+        ui_box_line "Size" "$FINAL_SIZE  (raw $TOTAL_RAW_SIZE)"
+        ui_box_line "Location" "$BACKUP_DIR"
+        if [ "$DB_SUCCESS" = false ]; then
+            ui_box_line "Database" "$(ui_state bad "Not exported")"
+        else
+            ui_box_line "Database" "$(ui_state ok "Exported") ${DB_SIZE} · ${DB_BACKUP_DESC}"
         fi
         if [ "${MRM_BACKUP_XRAY:-0}" = "1" ]; then
-            echo -e "${GREEN}║${NC} xray/geo: ${GREEN}included (offline restore)${NC}"
+            ui_box_line "xray / geo" "$(ui_state ok "Included") offline restore"
         else
-            echo -e "${GREEN}║${NC} xray/geo: ${YELLOW}excluded - auto-download on restore${NC}"
+            ui_box_line "xray / geo" "$(ui_state off "Excluded") downloaded on restore"
         fi
-        echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
-                echo ""
-        pause
+        case "$TG_SENT" in
+            ok)     ui_box_line "Telegram" "$(ui_state ok "Sent")" ;;
+            failed) ui_box_line "Telegram" "$(ui_state bad "Delivery failed") see $BACKUP_LOG" ;;
+        esac
+        ui_box_end
+        ui_pause
     fi
 }
 

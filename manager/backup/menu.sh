@@ -1,31 +1,25 @@
 #!/bin/bash
-# MRM Backup - Menu & Entry Point Module
-# Backup menu, cron scheduler, list/delete backups, debug
+# MRM Backup — menu module (schedule, list/delete, logs, size analyzer)
 
-# ==========================================
-# OTHER UTILITIES
-# ==========================================
+# ─── Utilities ───────────────────────────────────────────────────────────────
 setup_cron() {
-    clear
-    ui_header "BACKUP SCHEDULER - v${BACKUP_VERSION}"
-    echo "Current cron status:"
+    ui_header "Backup Schedule"
     if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH"; then
         local CURRENT
-        CURRENT="$(crontab -l 2>/dev/null | grep "$SCRIPT_PATH")"
-        echo -e "${GREEN}Active:${NC} $CURRENT"
+        CURRENT="$(crontab -l 2>/dev/null | grep "$SCRIPT_PATH" | awk '{print $1" "$2" "$3" "$4" "$5}')"
+        ui_kv_state "Schedule" ok "Active" "$CURRENT"
     else
-        echo -e "${YELLOW}No scheduled backup${NC}"
+        ui_kv_state "Schedule" off "No scheduled backup"
     fi
     echo ""
-    echo "Select backup interval (v${BACKUP_VERSION}):"
-    echo "1) Every 6 hours"
-    echo "2) Every 12 hours"
-    echo "3) Every 24 hours (Daily) [Recommended]"
-    echo "4) Every week (Sunday)"
-    echo "5) Disable scheduled backup"
-    echo "0) Cancel"
-    echo ""
-    read -p "Select: " c
+    ui_menu_item 1 "Every 6 hours"
+    ui_menu_item 2 "Every 12 hours"
+    ui_menu_item 3 "Every 24 hours" "daily · recommended"
+    ui_menu_item 4 "Every week" "Sunday 00:00"
+    ui_menu_item 5 "Disable scheduled backup"
+    ui_menu_back "Cancel"
+    local c
+    ui_select c
     local CRON_TIME=""
     case $c in
         1) CRON_TIME="0 */6 * * *" ;;
@@ -34,7 +28,7 @@ setup_cron() {
         4) CRON_TIME="0 0 * * 0" ;;
         5) CRON_TIME="" ;;
         0) return ;;
-        *) ui_error "Invalid selection"; pause; return ;;
+        *) ui_invalid; return ;;
     esac
     # Build the new crontab in a temp file. The old pipe-based version broke
     # on servers with no existing crontab: `crontab -l` fails there, and under
@@ -48,8 +42,9 @@ setup_cron() {
     fi
     if crontab "$TMP_CRON"; then
         rm -f "$TMP_CRON"
+        echo ""
         if [ -n "$CRON_TIME" ]; then
-            ui_success "Scheduled v${BACKUP_VERSION} backup enabled: $CRON_TIME"
+            ui_success "Scheduled backup enabled: $CRON_TIME"
             log_backup "INFO" "Cron scheduled: $CRON_TIME"
         else
             ui_success "Scheduled backup disabled"
@@ -59,183 +54,179 @@ setup_cron() {
         rm -f "$TMP_CRON"
         ui_error "Failed to install crontab"
         log_backup "ERROR" "Failed to install crontab"
-        pause
+        ui_pause
         return 1
     fi
-    pause
+    ui_pause
 }
 
 view_backup_logs() {
-    clear
-    ui_header "BACKUP LOGS - v${BACKUP_VERSION}"
-    if [ -f "$BACKUP_LOG" ]; then echo -e "${YELLOW}Last 50 entries:${NC}\n"; tail -n 50 "$BACKUP_LOG"; else ui_warning "No logs found"; fi
-    pause
+    ui_header "Backup Logs" "$BACKUP_LOG · last 50 entries"
+    if [ -s "$BACKUP_LOG" ]; then
+        tail -n 50 "$BACKUP_LOG"
+    else
+        ui_warning "No log entries yet"
+    fi
+    ui_pause
 }
 
 list_backups() {
-    clear
-    ui_header "AVAILABLE BACKUPS - v${BACKUP_VERSION}"
-    local FILES=($(ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null))
-    if [ ${#FILES[@]} -eq 0 ]; then ui_warning "No backups found"; pause; return; fi
-    echo -e "${GREEN}ID │ Type       │ Filename                              │ Size   │ Date${NC}"
-    echo "───┼────────────┼─────────────────────────────────────────┼────────┼───────────"
+    ui_header "Available Backups" "$BACKUP_DIR"
+    local FILES=()
+    while IFS= read -r F; do [ -n "$F" ] && FILES+=("$F"); done < <(ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null)
+    if [ ${#FILES[@]} -eq 0 ]; then ui_warning "No backups found"; ui_pause; return; fi
+    ui_table_header "%-3s  %-8s  %-38s  %-7s  %s" "ID" "Type" "Filename" "Size" "Date"
     for i in "${!FILES[@]}"; do
-        local NAME=$(basename "${FILES[$i]}")
-        local SIZE=$(du -h "${FILES[$i]}" | cut -f1)
-        local DATE=$(stat -c %y "${FILES[$i]}" | cut -d' ' -f1)
-        local TYPE="v${BACKUP_VERSION}"
+        local NAME SIZE DATE TYPE
+        NAME=$(basename "${FILES[$i]}")
+        SIZE=$(du -h "${FILES[$i]}" | cut -f1)
+        DATE=$(stat -c %y "${FILES[$i]}" | cut -d' ' -f1)
+        TYPE="BACKUP"
         [[ "$NAME" == *"Full"* ]] && TYPE="FULL-OLD"
         [[ "$NAME" == *"Lite"* ]] && TYPE="LITE-OLD"
-        [[ "$NAME" == *"V1"* ]] && TYPE="v${BACKUP_VERSION}"
-        # FIX: pre_restore_* safety backups are not restorable (MRM-062);
+        [[ "$NAME" == *"V1"* ]] && TYPE="BACKUP"
+        # pre_restore_* safety backups are not restorable (MRM-062);
         # label them as SAFETY so they are not mistaken for regular backups (MRM-070)
         [[ "$NAME" == pre_restore_* ]] && TYPE="SAFETY"
-        printf "%-2s │ %-10s │ %-39s │ %-6s │ %s\n" "$((i+1))" "$TYPE" "$NAME" "$SIZE" "$DATE"
+        ui_table_row "$((i+1))" "$TYPE" "$(ui_truncate "$NAME" 38)" "$SIZE" "$DATE"
     done
     echo ""
-    echo -e "Total: ${CYAN}${#FILES[@]}${NC} backups"
-    echo -e "Location: ${CYAN}$BACKUP_DIR${NC}"
-    echo -e "Version: ${CYAN}$MRM_BACKUP_VERSION${NC}"
-    echo ""
-    echo -e "${YELLOW}Tip: v${BACKUP_VERSION} backups are ready for Telegram${NC}"
-    pause
+    ui_kv "Total" "${#FILES[@]} backup(s)"
+    ui_kv "Location" "$BACKUP_DIR"
+    ui_note "Regular backups are ready to send to Telegram; SAFETY copies are restore checkpoints."
+    ui_pause
 }
 
 delete_backup() {
-    clear
-    ui_header "DELETE BACKUP"
-    local FILES=($(ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null))
-    if [ ${#FILES[@]} -eq 0 ]; then ui_warning "No backups found"; pause; return; fi
-    echo -e "${YELLOW}Select backup to delete:${NC}\n"
+    ui_header "Delete Backup" "$BACKUP_DIR"
+    local FILES=()
+    while IFS= read -r F; do [ -n "$F" ] && FILES+=("$F"); done < <(ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null)
+    if [ ${#FILES[@]} -eq 0 ]; then ui_warning "No backups found"; ui_pause; return; fi
     for i in "${!FILES[@]}"; do
-        local SIZE=$(du -h "${FILES[$i]}" | cut -f1)
-        echo "$((i+1))) $(basename "${FILES[$i]}") [$SIZE]"
+        ui_menu_item "$((i+1))" "$(basename "${FILES[$i]}")" "$(du -h "${FILES[$i]}" | cut -f1)"
     done
-    echo ""
-    read -p "Select (0 to cancel): " SEL
+    ui_menu_back "Cancel"
+    local SEL
+    ui_select SEL
     [ "$SEL" == "0" ] && return
-    # FIX: validate numeric input — otherwise $((SEL-1)) treats non-numeric
+    # validate numeric input — otherwise $((SEL-1)) treats non-numeric
     # input as empty var -> -1 -> FILES[-1] wraps to the LAST backup (MRM-069)
-    if ! [[ "$SEL" =~ ^[0-9]+$ ]]; then ui_error "Invalid selection"; pause; return; fi
+    if ! [[ "$SEL" =~ ^[0-9]+$ ]]; then ui_error "Invalid selection"; ui_pause; return; fi
     local SELECTED="${FILES[$((SEL-1))]}"
-    if [ -z "$SELECTED" ]; then ui_error "Invalid selection"; pause; return; fi
+    if [ -z "$SELECTED" ]; then ui_error "Invalid selection"; ui_pause; return; fi
     echo ""
-    read -p "Delete $(basename "$SELECTED")? (y/N): " CONFIRM
-    if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then rm -f "$SELECTED"; ui_success "Backup deleted"; log_backup "INFO" "Deleted backup: $(basename "$SELECTED")"; else echo "Cancelled"; fi
-    pause
+    if ui_confirm "Delete $(basename "$SELECTED")?"; then
+        rm -f "$SELECTED"
+        ui_success "Backup deleted"
+        log_backup "INFO" "Deleted backup: $(basename "$SELECTED")"
+    else
+        ui_cancelled
+    fi
+    ui_pause
 }
 
 debug_backup_size() {
-    clear
-    ui_header "BACKUP SIZE ANALYZER - v${BACKUP_VERSION}"
+    ui_header "Backup Size Analyzer" "what makes the archive large"
     setup_env
-    echo -e "${CYAN}Analyzing current data sizes (find 31MB cause):${NC}\n"
-    echo -e "${YELLOW}=== PANEL_DIR ($PANEL_DIR) ===${NC}"
+    ui_section "Panel directory · $PANEL_DIR"
     if [ -d "$PANEL_DIR" ]; then
-        echo "Total: $(du -sh "$PANEL_DIR" 2>/dev/null | cut -f1)"
-        du -sh "$PANEL_DIR"/* 2>/dev/null | sort -rh | head -n 20
-        echo ""
+        ui_kv "Total" "$(du -sh "$PANEL_DIR" 2>/dev/null | cut -f1)"
+        du -sh "$PANEL_DIR"/* 2>/dev/null | sort -rh | head -n 20 | sed "s/^/${UI_PAD}/"
         if [ -d "$PANEL_DIR/backup" ]; then
-            echo -e "${RED}FOUND backup folder (LOOP CAUSE):${NC}"
-            du -sh "$PANEL_DIR/backup"/* 2>/dev/null | head -n 20
-            ls -lh "$PANEL_DIR/backup/" 2>/dev/null | head -n 20
             echo ""
+            ui_warning "A backup folder lives inside the panel directory (backup-inside-backup loop):"
+            du -sh "$PANEL_DIR/backup"/* 2>/dev/null | head -n 20 | sed "s/^/${UI_PAD}/"
         fi
     else
-        echo "Not found"
+        ui_note "Not found"
     fi
-    echo -e "${YELLOW}=== DATA_DIR ($DATA_DIR) ===${NC}"
+    echo ""
+    ui_section "Data directory · $DATA_DIR"
     if [ -d "$DATA_DIR" ]; then
-        echo "Total: $(du -sh "$DATA_DIR" 2>/dev/null | cut -f1)"
-        du -sh "$DATA_DIR"/* 2>/dev/null | sort -rh | head -n 20
+        ui_kv "Total" "$(du -sh "$DATA_DIR" 2>/dev/null | cut -f1)"
+        du -sh "$DATA_DIR"/* 2>/dev/null | sort -rh | head -n 20 | sed "s/^/${UI_PAD}/"
     else
-        echo "Not found"
+        ui_note "Not found"
     fi
     echo ""
-    echo -e "${YELLOW}=== NODE_DIR ($NODE_DIR) & NODE_DATA ===${NC}"
+    ui_section "Node directories"
     if [ -d "$NODE_DIR" ]; then
-        echo "NODE_DIR Total: $(du -sh "$NODE_DIR" 2>/dev/null | cut -f1)"
-        du -sh "$NODE_DIR"/* 2>/dev/null | sort -rh | head -n 20
-        echo ""
+        ui_kv "$NODE_DIR" "$(du -sh "$NODE_DIR" 2>/dev/null | cut -f1)"
+        du -sh "$NODE_DIR"/* 2>/dev/null | sort -rh | head -n 20 | sed "s/^/${UI_PAD}/"
     fi
-    local NODE_DATA_DIR="$(dirname "$NODE_DEF_CERTS")"
+    local NODE_DATA_DIR
+    NODE_DATA_DIR="$(dirname "$NODE_DEF_CERTS")"
     if [ -d "$NODE_DATA_DIR" ]; then
-        echo "NODE_DATA_DIR ($NODE_DATA_DIR) Total: $(du -sh "$NODE_DATA_DIR" 2>/dev/null | cut -f1)"
-        du -sh "$NODE_DATA_DIR"/* 2>/dev/null | sort -rh | head -n 30
-        echo ""
-        if [ -d "$NODE_DATA_DIR/assets" ]; then
-            echo -e "${RED}FOUND assets (HEAVY - geoip.dat):${NC}"
-            ls -lh "$NODE_DATA_DIR/assets/" 2>/dev/null
-            echo ""
-        fi
-        if [ -d "$NODE_DATA_DIR/xray-core" ]; then
-            echo -e "${RED}FOUND xray-core (HEAVY - xray binary):${NC}"
-            ls -lh "$NODE_DATA_DIR/xray-core/" 2>/dev/null
-            echo ""
-        fi
+        ui_kv "$NODE_DATA_DIR" "$(du -sh "$NODE_DATA_DIR" 2>/dev/null | cut -f1)"
+        du -sh "$NODE_DATA_DIR"/* 2>/dev/null | sort -rh | head -n 30 | sed "s/^/${UI_PAD}/"
+        [ -d "$NODE_DATA_DIR/assets" ] && ui_warning "assets/ is heavy (geoip.dat / geosite.dat) — excluded from backups"
+        [ -d "$NODE_DATA_DIR/xray-core" ] && ui_warning "xray-core/ is heavy (xray binary) — excluded from backups"
     fi
-    echo -e "${YELLOW}=== /etc/letsencrypt ===${NC} $(du -sh /etc/letsencrypt 2>/dev/null | cut -f1 || echo "Not found")"
-    echo -e "${YELLOW}=== /etc/nginx ===${NC} $(du -sh /etc/nginx 2>/dev/null | cut -f1 || echo "Not found")"
+    [ ! -d "$NODE_DIR" ] && [ ! -d "$NODE_DATA_DIR" ] && ui_note "No node on this server"
     echo ""
-    echo -e "${GREEN}=== v${BACKUP_VERSION} ===${NC}"
-    echo -e "Exclude: assets/*, xray-core/*, backup/*, geoip.dat, geosite.dat, xray binary"
-    echo -e "Result: 31MB -> 2-5MB"
+    ui_section "Other"
+    ui_kv "/etc/letsencrypt" "$(du -sh /etc/letsencrypt 2>/dev/null | cut -f1 || echo "not found")"
+    ui_kv "/etc/nginx" "$(du -sh /etc/nginx 2>/dev/null | cut -f1 || echo "not found")"
     echo ""
-    pause
+    ui_note "Excluded from archives: assets/*, xray-core/*, backup/*, geoip.dat, geosite.dat, xray binary."
+    ui_pause
 }
 
-# ==========================================
-# Main menu
-# ==========================================
+# ─── Main menu ───────────────────────────────────────────────────────────────
 backup_menu() {
     init_backup_logging
+    local opt
     while true; do
-        clear
-        ui_header "BACKUP & RESTORE"
         setup_env
-        local BACKUP_COUNT=$(ls "$BACKUP_DIR"/*.tar.gz 2>/dev/null | wc -l)
-        local TG_STATUS="${RED}Not Configured${NC}"
-        [ -f "$TG_CONFIG" ] && TG_STATUS="${GREEN}Configured${NC}"
-        local CRON_STATUS="${RED}Disabled${NC}"
-        crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH" && CRON_STATUS="${GREEN}Active${NC}"
-        local SERVER_IP=$(get_server_ip)
-        local LAST_SIZE="None"
-        local LAST_FILE=$(ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null | head -1)
-        [ -n "$LAST_FILE" ] && LAST_SIZE=$(du -h "$LAST_FILE" | cut -f1)
-
-        echo -e "Panel: ${CYAN}$(basename "$PANEL_DIR")${NC} | IP: ${CYAN}$SERVER_IP${NC} | Version: ${CYAN}$MRM_BACKUP_VERSION${NC}"
-        echo -e "Backups: ${CYAN}$BACKUP_COUNT${NC} | Last: ${CYAN}$LAST_SIZE${NC} | Telegram: $TG_STATUS | Cron: $CRON_STATUS"
+        ui_header "Backup & Restore" "$BACKUP_DIR"
+        local BACKUP_COUNT LAST_FILE
+        BACKUP_COUNT=$(ls "$BACKUP_DIR"/*.tar.gz 2>/dev/null | wc -l)
+        LAST_FILE=$(ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null | grep -v '/pre_restore_' | head -1)
+        if [ -n "$LAST_FILE" ]; then
+            ui_kv_state "Last backup" ok "$(date -r "$LAST_FILE" '+%Y-%m-%d %H:%M' 2>/dev/null)" "$(basename "$LAST_FILE") · $(du -h "$LAST_FILE" | cut -f1)"
+        else
+            ui_kv_state "Last backup" bad "None yet"
+        fi
+        ui_kv "Archives" "$BACKUP_COUNT"
+        if [ -f "$TG_CONFIG" ]; then ui_kv_state "Telegram" ok "Configured"; else ui_kv_state "Telegram" off "Not configured"; fi
+        if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH"; then
+            ui_kv_state "Schedule" ok "Active" "$(crontab -l 2>/dev/null | grep "$SCRIPT_PATH" | awk '{print $1" "$2" "$3" "$4" "$5}' | head -1)"
+        else
+            ui_kv_state "Schedule" off "Not scheduled"
+        fi
         echo ""
-        echo "1)  📦 Create Backup"
-        echo "2)  📥 Restore from Backup"
-        echo "3)  📋 List All Backups"
-        echo "4)  🗑️  Delete Backup"
-        echo "5)  🧑‍💻 Setup Telegram Bot"
-        echo "6)  🧪 Test Telegram"
-        echo "7)  ❌ Remove Telegram Settings"
-        echo "8)  ⏰ Setup Cron Scheduler"
-        echo "9)  🔧 Run Smart Fix Only"
-        echo "10) 📋 View Logs"
-        echo "11) 🔍 Analyze Size"
+        ui_menu_title "Backups"
+        ui_menu_item 1 "Create backup now"
+        ui_menu_item 2 "Restore from backup"
+        ui_menu_item 3 "List backups"
+        ui_menu_item 4 "Delete a backup"
+        ui_menu_item 5 "Backup schedule" "cron"
         echo ""
-        echo "0)  ↩️  Back to Main"
+        ui_menu_title "Telegram"
+        ui_menu_item 6 "Set up Telegram bot"
+        ui_menu_item 7 "Send test message"
+        ui_menu_item 8 "Remove Telegram settings"
         echo ""
-        read -p "Select: " opt
+        ui_menu_title "Maintenance"
+        ui_menu_item 9 "Run smart fix" "permissions, paths, xray-core"
+        ui_menu_item 10 "View logs"
+        ui_menu_item 11 "Analyze backup size"
+        ui_menu_back
+        ui_select opt
         case $opt in
             1) do_backup "manual" ;;
             2) do_restore ;;
             3) list_backups ;;
             4) delete_backup ;;
-            5) setup_telegram ;;
-            6) test_telegram; pause ;;
-            7) remove_telegram_settings ;;
-            8) setup_cron ;;
-            9) apply_smart_fix; pause ;;
+            5) setup_cron ;;
+            6) setup_telegram ;;
+            7) test_telegram; ui_pause ;;
+            8) remove_telegram_settings ;;
+            9) ui_header "Smart Fix" "firewall · .env · compose IPs · node certificate · nginx"; apply_smart_fix; ui_pause ;;
             10) view_backup_logs ;;
             11) debug_backup_size ;;
             0) return ;;
-            *) ui_error "Invalid option"; sleep 1 ;;
+            *) ui_invalid ;;
         esac
     done
 }
-

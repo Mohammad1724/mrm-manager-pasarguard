@@ -1,252 +1,258 @@
 #!/bin/bash
-# MRM Manager - Main Entry Point
-# Version loaded from single source: versions.conf
+# MRM Manager — main entry point (CLI shortcuts + interactive menus)
+# Version is loaded from a single source: versions.conf
 
 set -o pipefail
 
-# CLI shortcuts
-if [[ "$1" == "--version" || "$1" == "-v" ]]; then
-    source /opt/mrm-manager/versions.conf 2>/dev/null || true
-    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo 1.4.27)}"
-    exit 0
-fi
-[[ "$1" == "doctor" ]] && exec bash /opt/mrm-manager/diagnostics.sh doctor "${@:2}"
-[[ "$1" == "monitor" ]] && exec bash /opt/mrm-manager/monitor.sh
-[[ "$1" == "fix-node" ]] && exec bash /opt/mrm-manager/backup.sh fix-node "${@:2}"
-[[ "$1" == "health" ]] && exec bash /opt/mrm-manager/pg_health.sh
-[[ "$1" == "temp-key" ]] && exec bash /opt/mrm-manager/pg_health.sh temp-key
-[[ "$1" == "special" ]] && exec bash /opt/mrm-manager/special.sh "${@:2}"
-[[ "$1" == "update" ]] && {
-    # SECURITY: pinned-release update (MRM-001/MRM-012). Resolve the release
-    # ref from versions.conf on main (parsed, never sourced), then download
-    # install.sh from that exact ref — never from a mutable branch.
-    _MRM_UPDATE_TMP=$(mktemp /tmp/mrm-update.XXXXXX.sh)
-    _MRM_VERSION_FILE=$(mktemp /tmp/mrm-version.XXXXXX)
-    if curl -fsSL --connect-timeout 10 --max-time 60 \
-        "https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main/versions.conf" \
-        -o "$_MRM_VERSION_FILE" 2>/dev/null; then
-        _MRM_TARGET_REF="v$(grep -E '^MRM_VERSION=' "$_MRM_VERSION_FILE" 2>/dev/null | head -1 | cut -d'"' -f2)"
-    fi
-    rm -f "$_MRM_VERSION_FILE"
-    if [ -z "${_MRM_TARGET_REF:-}" ]; then
-        echo -e "\033[0;31m[ERROR] Could not resolve release version for update\033[0m" >&2
-        rm -f "$_MRM_UPDATE_TMP"
-        exit 1
-    fi
-    if curl -fsSL --connect-timeout 30 --max-time 120 \
-        "https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/${_MRM_TARGET_REF}/install.sh" \
-        -o "$_MRM_UPDATE_TMP" 2>/dev/null; then
-        # Verify it's a valid bash script
-        if head -1 "$_MRM_UPDATE_TMP" | grep -q '^#!/bin/bash' && \
-           bash -n "$_MRM_UPDATE_TMP" 2>/dev/null; then
-            exec bash "$_MRM_UPDATE_TMP"
-        else
-            echo -e "\033[0;31m[ERROR] Downloaded script failed syntax verification\033[0m" >&2
-            rm -f "$_MRM_UPDATE_TMP"
-            exit 1
-        fi
-    else
-        echo -e "\033[0;31m[ERROR] Failed to download update (ref ${_MRM_TARGET_REF})\033[0m" >&2
-        rm -f "$_MRM_UPDATE_TMP"
-        exit 1
-    fi
-}
+MRM_DIR="${MRM_DIR:-/opt/mrm-manager}"
+MRM_REPO_RAW="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard"
 
-# ─── Module Loader ───────────────────────────────────────────────────────────
-bootstrap_error() { echo -e "\033[0;31m[MRM Error]\033[0m $1" >&2; }
+# ─── Shared libraries ────────────────────────────────────────────────────────
+bootstrap_error() { echo -e "\033[0;31m  ✘ MRM Manager:\033[0m $1" >&2; }
 
 load_required_module() {
-    [ -r "$1" ] || { bootstrap_error "Missing: $1"; return 1; }
+    [ -r "$1" ] || { bootstrap_error "Missing module: $1"; return 1; }
+    # shellcheck source=/dev/null
     source "$1" || return 1
 }
 
-# Core modules (order matters: utils first, then ui, then features)
 # utils/ui are mandatory — without them the whole app is broken (MRM-018)
-load_required_module "/opt/mrm-manager/utils.sh" || {
-    bootstrap_error "utils.sh missing — reinstall with: mrm update"
-    exit 1
-}
-load_required_module "/opt/mrm-manager/ui.sh" || {
+load_required_module "$MRM_DIR/ui.sh" || {
     bootstrap_error "ui.sh missing — reinstall with: mrm update"
     exit 1
 }
-load_required_module "/opt/mrm-manager/ssl.sh"
-load_required_module "/opt/mrm-manager/backup.sh"
-load_required_module "/opt/mrm-manager/domain_separator.sh"
-load_required_module "/opt/mrm-manager/theme.sh"
-load_required_module "/opt/mrm-manager/diagnostics.sh"
-load_required_module "/opt/mrm-manager/offline.sh"
-load_required_module "/opt/mrm-manager/monitor.sh" || true
+load_required_module "$MRM_DIR/utils.sh" || {
+    bootstrap_error "utils.sh missing — reinstall with: mrm update"
+    exit 1
+}
+[ -r "$MRM_DIR/versions.conf" ] && source "$MRM_DIR/versions.conf"
+export MRM_VERSION="${MRM_VERSION:-$(get_mrm_version)}"
 
-[ -r "/opt/mrm-manager/versions.conf" ] && source /opt/mrm-manager/versions.conf
+# ─── CLI shortcuts ───────────────────────────────────────────────────────────
+mrm_usage() {
+    echo ""
+    echo -e "  ${BOLD}MRM Manager${NC} v${MRM_VERSION} — PasarGuard server toolkit"
+    echo ""
+    echo -e "  ${DIM}Usage:${NC} mrm [command]"
+    echo ""
+    printf '  %b%-12s%b %s\n' "$CYAN" "(none)"    "$NC" "Interactive menu"
+    printf '  %b%-12s%b %s\n' "$CYAN" "health"    "$NC" "PasarGuard health report (nodes / TLS / jobs)"
+    printf '  %b%-12s%b %s\n' "$CYAN" "doctor"    "$NC" "Full system diagnostics (plain output)"
+    printf '  %b%-12s%b %s\n' "$CYAN" "monitor"   "$NC" "Telegram alerts (menu)"
+    printf '  %b%-12s%b %s\n' "$CYAN" "special"   "$NC" "MRM Special — in-panel settings tab + subscription page"
+    printf '  %b%-12s%b %s\n' "$CYAN" "temp-key"  "$NC" "Generate a one-time Owner setup key"
+    printf '  %b%-12s%b %s\n' "$CYAN" "fix-node"  "$NC" "Repair the node xray-core binary"
+    printf '  %b%-12s%b %s\n' "$CYAN" "update"    "$NC" "Update MRM Manager to the latest release"
+    printf '  %b%-12s%b %s\n' "$CYAN" "--version" "$NC" "Print the installed version"
+    echo ""
+}
+
+mrm_self_update() {
+    # SECURITY: pinned-release update (MRM-001/MRM-012). Resolve the release
+    # ref from versions.conf on main (parsed, never sourced), then download
+    # install.sh from that exact ref — never from a mutable branch.
+    local TMP_SCRIPT TMP_VERSION TARGET_REF=""
+    TMP_SCRIPT=$(mktemp /tmp/mrm-update.XXXXXX.sh)
+    TMP_VERSION=$(mktemp /tmp/mrm-version.XXXXXX)
+
+    echo ""
+    ui_step 1 2 "Resolving latest release"
+    if curl -fsSL --connect-timeout 10 --max-time 60 \
+        "$MRM_REPO_RAW/main/versions.conf" -o "$TMP_VERSION" 2>/dev/null; then
+        TARGET_REF="v$(grep -E '^MRM_VERSION=' "$TMP_VERSION" 2>/dev/null | head -1 | cut -d'"' -f2)"
+    fi
+    rm -f "$TMP_VERSION"
+    if [ -z "$TARGET_REF" ] || [ "$TARGET_REF" = "v" ]; then
+        ui_error "Could not resolve the latest release version"
+        rm -f "$TMP_SCRIPT"
+        return 1
+    fi
+    ui_success "Latest release: ${TARGET_REF}  (installed: v${MRM_VERSION})"
+
+    ui_step 2 2 "Downloading installer for ${TARGET_REF}"
+    if ! curl -fsSL --connect-timeout 30 --max-time 120 \
+        "$MRM_REPO_RAW/${TARGET_REF}/install.sh" -o "$TMP_SCRIPT" 2>/dev/null; then
+        ui_error "Failed to download install.sh (ref ${TARGET_REF})"
+        rm -f "$TMP_SCRIPT"
+        return 1
+    fi
+    if ! head -1 "$TMP_SCRIPT" | grep -q '^#!/bin/bash' || ! bash -n "$TMP_SCRIPT" 2>/dev/null; then
+        ui_error "Downloaded installer failed syntax verification"
+        rm -f "$TMP_SCRIPT"
+        return 1
+    fi
+    ui_success "Installer verified — starting update"
+    echo ""
+    exec bash "$TMP_SCRIPT"
+}
+
+case "${1:-}" in
+    --version|-v) echo "MRM Manager ${MRM_VERSION}"; exit 0 ;;
+    help|--help|-h) mrm_usage; exit 0 ;;
+    doctor)   exec bash "$MRM_DIR/diagnostics.sh" doctor "${@:2}" ;;
+    monitor)  exec bash "$MRM_DIR/monitor.sh" ;;
+    fix-node) exec bash "$MRM_DIR/backup.sh" fix-node "${@:2}" ;;
+    health)   exec bash "$MRM_DIR/pg_health.sh" ;;
+    temp-key) exec bash "$MRM_DIR/pg_health.sh" temp-key ;;
+    special)  exec bash "$MRM_DIR/special.sh" "${@:2}" ;;
+    update)   mrm_self_update; exit $? ;;
+    "") ;;
+    *) ui_error "Unknown command: $1"; mrm_usage; exit 1 ;;
+esac
+
+# ─── Feature modules (interactive mode only) ─────────────────────────────────
+load_required_module "$MRM_DIR/ssl.sh"
+load_required_module "$MRM_DIR/backup.sh"
+load_required_module "$MRM_DIR/domain_separator.sh"
+load_required_module "$MRM_DIR/theme.sh"
+load_required_module "$MRM_DIR/diagnostics.sh"
+load_required_module "$MRM_DIR/offline.sh"
+load_required_module "$MRM_DIR/monitor.sh" || true
 
 detect_active_panel > /dev/null 2>&1 || true
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
-invalid_menu_option() { echo -e "\033[0;31mInvalid option\033[0m"; sleep 1; }
+mrm_home_subtitle() {
+    local PANEL HOST
+    PANEL="$(cat "$CONFIG_FILE" 2>/dev/null || echo "pasarguard")"
+    HOST="$(hostname 2>/dev/null || echo "server")"
+    printf 'Host: %s · Panel: %s · Data: %s' "$HOST" "$PANEL" "${DATA_DIR:-/var/lib/pasarguard}"
+}
 
 uninstall_mrm_manager() {
-    echo "Uninstall? Type UNINSTALL"
-    read -p ": " c
-    [[ "$c" != "UNINSTALL" ]] && return
-    # Remove MRM cron jobs (backup schedule + monitor) BEFORE removing files,
-    # otherwise they keep logging "No such file" forever (MRM-014).
-    crontab -l 2>/dev/null | grep -v -E "mrm-manager|/usr/local/bin/mrm" | crontab - 2>/dev/null || true
-    rm -rf /opt/mrm-manager /usr/local/bin/mrm /tmp/mrm* 2>/dev/null
-    echo "Uninstalled"
-    exit 0
-}
-
-# ─── Dashboard Status Components ─────────────────────────────────────────────
-
-mrm_main_status() {
-    local ok_text="$1"
-    local bad_text="$2"
-    local is_ok="$3"
-    if [ "$is_ok" = "true" ]; then
-        printf '%b' "${GREEN}● ${ok_text}${NC}"
-    else
-        printf '%b' "${RED}● ${bad_text}${NC}"
-    fi
-}
-
-mrm_main_dashboard() {
-    local panel_name panel_status node_status nginx_status
-    local panel_version node_version backup_status telegram_status ssl_status
-
-    detect_active_panel >/dev/null 2>&1 || true
-    panel_name="$(cat "$CONFIG_FILE" 2>/dev/null || echo "Unknown")"
-
-    if [ -d "${PANEL_DIR:-}" ]; then
-        if declare -f mrm_panel_running >/dev/null 2>&1 && mrm_panel_running; then
-            panel_status="$(mrm_main_status "Running" "Stopped" true)"
-        else
-            panel_status="$(mrm_main_status "Running" "Stopped" false)"
-        fi
-    else
-        panel_status="$(mrm_main_status "Installed" "Not installed" false)"
-    fi
-
-    if [ -d "${NODE_DIR:-}" ]; then
-        if declare -f mrm_node_running >/dev/null 2>&1 && mrm_node_running; then
-            node_status="$(mrm_main_status "Running" "Stopped" true)"
-        else
-            node_status="$(mrm_main_status "Running" "Stopped" false)"
-        fi
-    else
-        node_status="$(mrm_main_status "Installed" "Not installed" false)"
-    fi
-
-    if declare -f mrm_nginx_running >/dev/null 2>&1 && mrm_nginx_running; then
-        nginx_status="$(mrm_main_status "Running" "Stopped" true)"
-    else
-        nginx_status="$(mrm_main_status "Running" "Stopped" false)"
-    fi
-
-    ssl_status="$(declare -f mrm_ssl_status_text >/dev/null 2>&1 && mrm_ssl_status_text || echo "Not checked")"
-
-    if [ -f "${TG_CONFIG:-/root/.mrm_telegram}" ]; then
-        telegram_status="${GREEN}● Configured${NC}"
-    else
-        telegram_status="${YELLOW}● Not configured${NC}"
-    fi
-
-    echo -e "${CYAN}────────────────── System Status ──────────────────${NC}"
-    echo -e "${BLUE}Panel:${NC} ${CYAN}${panel_name}${NC} ${panel_status}"
-    echo -e "${BLUE}Node:${NC} ${node_status}"
-    echo -e "${BLUE}Nginx:${NC} ${nginx_status}"
-    echo -e "${BLUE}SSL:${NC} ${ssl_status}"
-    echo -e "${BLUE}Telegram:${NC} ${telegram_status}"
-    echo -e "${CYAN}───────────────────────────────────────────────────${NC}"
+    ui_header "Uninstall MRM Manager"
+    ui_text "This removes MRM Manager itself:"
+    ui_bullet "$MRM_DIR and the ${BOLD}mrm${NC} command"
+    ui_bullet "MRM cron jobs (backup schedule, monitor)"
     echo ""
+    ui_note "PasarGuard, your backups, certificates and templates are NOT touched."
+    echo ""
+    if ! ui_confirm_word "UNINSTALL" "Remove MRM Manager?"; then
+        ui_cancelled
+        sleep 1
+        return
+    fi
+    # Remove MRM cron jobs BEFORE removing files, otherwise they keep logging
+    # "No such file" forever (MRM-014).
+    crontab -l 2>/dev/null | grep -v -E "mrm-manager|/usr/local/bin/mrm" | crontab - 2>/dev/null || true
+    rm -rf "$MRM_DIR" /usr/local/bin/mrm /tmp/mrm* 2>/dev/null
+    echo ""
+    ui_success "MRM Manager has been removed."
+    echo ""
+    exit 0
 }
 
 # ─── Menus ───────────────────────────────────────────────────────────────────
 
 panel_menu() {
+    local OPT
     while true; do
-        clear
-        echo "=== 🎛️ PANEL CONTROL v${MRM_VERSION:-1.4.27} ==="
+        ui_header "Panel Control" "Compose: ${PANEL_DIR:-unknown}"
+        if declare -f mrm_panel_running >/dev/null 2>&1 && mrm_panel_running; then
+            ui_kv_state "Panel" ok "Running"
+        else
+            ui_kv_state "Panel" bad "Stopped"
+        fi
         echo ""
-        echo "1) 🔄 Restart Panel"
-        echo "2) ⏹️ Stop Panel"
-        echo "3) ▶️ Start Panel"
-        echo "4) 📜 View Logs"
-        echo ""
-        echo "0) ↩️ Back"
-        read -p "Select: " OPT
-        case $OPT in
-            1) (cd "$PANEL_DIR" 2>/dev/null && docker compose down && docker compose up -d) || echo -e "\033[0;31mFailed to restart panel (check: $PANEL_DIR exists, docker-compose.yml present)\033[0m"; read -p "Press Enter..." ;;
-            2) (cd "$PANEL_DIR" 2>/dev/null && docker compose down) || echo -e "\033[0;31mFailed to stop panel (check: $PANEL_DIR exists)\033[0m"; read -p "Press Enter..." ;;
-            3) (cd "$PANEL_DIR" 2>/dev/null && docker compose up -d) || echo -e "\033[0;31mFailed to start panel (check: $PANEL_DIR exists)\033[0m"; read -p "Press Enter..." ;;
-            4) (cd "$PANEL_DIR" 2>/dev/null || exit 1) && docker compose logs -f || echo -e "\033[0;31mPanel dir not found: $PANEL_DIR\033[0m" ;;
+        ui_menu_item 1 "Restart panel"
+        ui_menu_item 2 "Stop panel"
+        ui_menu_item 3 "Start panel"
+        ui_menu_item 4 "Follow logs" "Ctrl+C to return"
+        ui_menu_back
+        ui_select OPT
+        case "$OPT" in
+            1)
+                if (cd "$PANEL_DIR" 2>/dev/null && docker compose down && docker compose up -d); then
+                    ui_success "Panel restarted"
+                else
+                    ui_error "Restart failed — check that $PANEL_DIR contains a docker-compose.yml"
+                fi
+                ui_pause ;;
+            2)
+                if (cd "$PANEL_DIR" 2>/dev/null && docker compose down); then
+                    ui_success "Panel stopped"
+                else
+                    ui_error "Stop failed — check that $PANEL_DIR exists"
+                fi
+                ui_pause ;;
+            3)
+                if (cd "$PANEL_DIR" 2>/dev/null && docker compose up -d); then
+                    ui_success "Panel started"
+                else
+                    ui_error "Start failed — check that $PANEL_DIR exists"
+                fi
+                ui_pause ;;
+            4)
+                if [ -d "$PANEL_DIR" ]; then
+                    (cd "$PANEL_DIR" && docker compose logs -f)
+                else
+                    ui_error "Panel directory not found: $PANEL_DIR"
+                    ui_pause
+                fi ;;
             0) return ;;
+            *) ui_invalid ;;
         esac
     done
 }
 
 tools_menu() {
+    local OPT
     while true; do
-        clear
-        echo "=== 🛠️ TOOLS v${MRM_VERSION:-1.4.27} ==="
-        echo ""
-        echo "1) 🌐 Domain Separator"
-        echo "2) 🎨 Theme Manager"
-        echo "3) 🩺 System Diagnostics"
-        echo "4) 🇮🇷 Iran Mode"
-        echo "5) 📊 Monitor"
-        echo "6) ❤️  PasarGuard Health (nodes / TLS / jobs)"
-        echo ""
-        echo "0) ↩️ Back"
-        read -p "Select: " OPT
-        case $OPT in
-            1) bash /opt/mrm-manager/domain_separator.sh || echo "Domain Separator could not be started" ;;
-            2) bash /opt/mrm-manager/theme.sh || echo "Theme Manager could not be started" ;;
-            3) bash /opt/mrm-manager/diagnostics.sh ;;
-            4) bash /opt/mrm-manager/offline.sh ;;
-            5) bash /opt/mrm-manager/monitor.sh menu ;;
-            6) bash /opt/mrm-manager/pg_health.sh ;;
+        ui_header "Tools"
+        ui_menu_item 1 "Domain Separator" "separate panel and subscription domains"
+        ui_menu_item 2 "Theme Manager" "subscription page templates"
+        ui_menu_item 3 "Diagnostics & Doctor"
+        ui_menu_item 4 "Iran / Offline Mode" "mirrors and local installs"
+        ui_menu_item 5 "Monitor & Alerts" "Telegram"
+        ui_menu_item 6 "PasarGuard Health" "nodes, TLS, job intervals"
+        ui_menu_back
+        ui_select OPT
+        case "$OPT" in
+            1) bash "$MRM_DIR/domain_separator.sh" || { ui_error "Domain Separator could not be started"; sleep 1; } ;;
+            2) bash "$MRM_DIR/theme.sh" || { ui_error "Theme Manager could not be started"; sleep 1; } ;;
+            3) bash "$MRM_DIR/diagnostics.sh" ;;
+            4) bash "$MRM_DIR/offline.sh" ;;
+            5) bash "$MRM_DIR/monitor.sh" menu ;;
+            6) bash "$MRM_DIR/pg_health.sh" ;;
             0) return ;;
+            *) ui_invalid ;;
         esac
     done
 }
 
 main_menu() {
-    # Quick check for deps on first run
-    if [ -z "$MRM_FIRST_RUN" ]; then
-        for cmd in docker curl; do command -v $cmd >/dev/null 2>&1 || echo "Missing $cmd"; done
+    local OPT MISSING=""
+    # Quick dependency check on first run
+    if [ -z "${MRM_FIRST_RUN:-}" ]; then
+        for cmd in docker curl; do command -v "$cmd" >/dev/null 2>&1 || MISSING+=" $cmd"; done
     fi
 
     while true; do
-        clear
-        local VER="${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.27")}"
-        echo "╔══════════════════════════════════════════════╗"
-        echo "║ MRM Manager v$VER                            ║"
-        echo "╚══════════════════════════════════════════════╝"
-        echo ""
-        mrm_main_dashboard
-        echo "1) 🔐 SSL Certificates"
-        echo "2) 💾 Backup & Restore"
-        echo "3) 🎛️ Panel Control"
-        echo "4) 🛠️ Tools"
-        echo "5) 🔄 Update Script"
-        echo "6) 🗑️ Uninstall"
-        echo ""
-        echo "0) 🚪 Exit"
-        echo ""
-        read -p "Select: " OPT
-        case $OPT in
-            1) bash /opt/mrm-manager/ssl.sh || { echo "SSL Manager could not be started"; sleep 1; } ;;
-            2) bash /opt/mrm-manager/backup.sh || { echo "Backup Manager could not be started"; sleep 1; } ;;
+        ui_header "Main Menu" "$(mrm_home_subtitle)"
+        if declare -f mrm_status_panel >/dev/null 2>&1; then
+            mrm_status_panel
+        fi
+        [ -n "$MISSING" ] && { ui_warning "Missing tools:${MISSING}"; echo ""; }
+        ui_menu_item 1 "SSL Certificates"
+        ui_menu_item 2 "Backup & Restore"
+        ui_menu_item 3 "Panel Control"
+        ui_menu_item 4 "Tools"
+        ui_menu_item 5 "Update MRM Manager"
+        ui_menu_item 6 "Uninstall MRM Manager"
+        ui_menu_back "Exit"
+        ui_select OPT
+        case "$OPT" in
+            1) bash "$MRM_DIR/ssl.sh" || { ui_error "SSL Manager could not be started"; sleep 1; } ;;
+            2) bash "$MRM_DIR/backup.sh" || { ui_error "Backup Manager could not be started"; sleep 1; } ;;
             3) panel_menu ;;
             4) tools_menu ;;
             5) # single update path — fixes apply in one place (MRM-015)
-                bash /opt/mrm-manager/main.sh update
-                ;;
+                bash "$MRM_DIR/main.sh" update
+                ui_pause ;;
             6) uninstall_mrm_manager ;;
-            0) clear; echo "Goodbye!"; exit 0 ;;
-            *) echo "Invalid option"; sleep 1 ;;
+            0) ui_clear; echo ""; ui_note "Goodbye."; echo ""; exit 0 ;;
+            *) ui_invalid ;;
         esac
     done
 }

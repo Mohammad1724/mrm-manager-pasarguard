@@ -1,8 +1,15 @@
 #!/bin/bash
-# MRM Manager v1.4.27
+# MRM Manager v1.5.0
+# safe_ops.sh — restore points for risky operations
+# (theme install/activate, domain split, …): snapshot → change → roll back.
 
-if [ -z "$PANEL_DIR" ]; then source /opt/mrm-manager/utils.sh; fi
-if ! declare -f ui_header >/dev/null 2>&1 && [ -r /opt/mrm-manager/ui.sh ]; then source /opt/mrm-manager/ui.sh; fi
+# ─── Shared libraries ────────────────────────────────────────────────────────
+MRM_DIR="${MRM_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)}"
+[ -r "$MRM_DIR/utils.sh" ] || MRM_DIR="/opt/mrm-manager"
+# shellcheck source=/dev/null
+if [ -z "$PANEL_DIR" ]; then source "$MRM_DIR/utils.sh"; fi
+# shellcheck source=/dev/null
+if ! declare -f ui_header >/dev/null 2>&1 && [ -r "$MRM_DIR/ui.sh" ]; then source "$MRM_DIR/ui.sh"; fi
 
 SAFE_OPS_ROOT="/opt/mrm-manager/restore-points"
 
@@ -145,7 +152,7 @@ mrm_restore_point_by_dir() {
         esac
         [ "$TARGET" != "/" ] || continue
         if [ ! -e "$RP_DIR/files$TARGET" ] 2>/dev/null; then
-            echo "ERROR: restore point incomplete - backup missing: $TARGET. Aborting without changes." >&2
+            ui_error "Aborting without changes: restore point incomplete — backup missing: $TARGET"
             return 1
         fi
     done < "$MANIFEST"

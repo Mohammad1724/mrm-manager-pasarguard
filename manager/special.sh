@@ -24,9 +24,14 @@
 SPECIAL_VERSION="1.2.3"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MRM_DIR="${MRM_DIR:-$SCRIPT_DIR}"
+[ -r "$MRM_DIR/utils.sh" ] || MRM_DIR="/opt/mrm-manager"
 # shellcheck disable=SC1091
-source "$SCRIPT_DIR/utils.sh"
-source "$SCRIPT_DIR/domain_separator.sh"
+source "$MRM_DIR/utils.sh"
+# shellcheck disable=SC1091
+declare -f ui_header >/dev/null 2>&1 || source "$MRM_DIR/ui.sh"
+# shellcheck disable=SC1091
+source "$MRM_DIR/domain_separator.sh"
 
 # --- Patched PasarGuard source tree (via detect_active_panel) ---------------
 # Panel Docker integration (optional — used only if the PasarGuard panel runs
@@ -65,7 +70,7 @@ SUB_TEMPLATE="$DATA_DIR/templates/subscription/index.html"
 UNITS=(mrm-integrator.service mrm-integrator.path mrm-integrator.timer mrm-panel-update.service mrm-panel-update.path mrm-template-switch.service mrm-template-switch.path)
 UNIT_SRC="$SPECIAL_DIR/plugin"
 
-special_pause() { read -r -p "Press Enter to continue..." _; }
+special_pause() { ui_pause; }
 
 special_find_dashboard_build() {
     # Host dashboard build (the integrator injects the tab here). Falls back to
@@ -210,7 +215,7 @@ special_install_units() {
     systemctl enable --now mrm-integrator.timer mrm-integrator.path \
         mrm-panel-update.path mrm-template-switch.path >/dev/null 2>&1
     systemctl start mrm-integrator.service >/dev/null 2>&1 || true
-    echo "systemd watchers installed (self-healing + update/template bridges)"
+    ui_success "systemd watchers installed (self-healing, update and template bridges)"
 }
 
 special_remove_units() {
@@ -223,24 +228,24 @@ special_remove_units() {
 }
 
 special_check_requirements() {
-    echo "--- Checking Requirements ---"
+    ui_section "Requirements"
     if ! command -v python3 >/dev/null 2>&1; then
-        echo "python3 not found — aborting"; exit 1
+        ui_error "python3 not found"; special_pause; exit 1
     fi
     [ -s "$SUB_TEMPLATE" ] || {
-        echo "Template not found at $SUB_TEMPLATE"
-        echo "Install the theme first:  Manager Menu → Theme Manager → 1"
-        exit 1
+        ui_error "Template not found: $SUB_TEMPLATE"
+        ui_note "Install it first: Theme Manager › Install / Update MRM Special"
+        special_pause; exit 1
     }
     detect_active_panel || true
     [ -n "$PANEL_DIR" ] && [ -d "$PANEL_DIR" ] || {
-        echo "PasarGuard source directory not found (PANEL_DIR='$PANEL_DIR') — aborting"; exit 1
+        ui_error "PasarGuard source directory not found (PANEL_DIR='$PANEL_DIR')"; special_pause; exit 1
     }
     if [ ! -f "$INTEGRATE" ]; then
-        echo "integrate-dashboard.sh not found at $INTEGRATE — aborting"; exit 1
+        ui_error "integrate-dashboard.sh not found: $INTEGRATE"; special_pause; exit 1
     fi
     mkdir -p "$DATA_NS" "$PROFILES_DIR" "$LOG_DIR"
-    echo "OK: python3, template, source tree, data dirs"
+    ui_success "python3, template, source tree and data directories are ready"
     echo ""
 }
 
@@ -338,14 +343,12 @@ special_competing_present() {
 
 # ----------------------------------------------------------------------------
 special_install() {
-    clear
-    echo -e "${CYAN}=== Install MRM Special (in-panel settings) ===${NC}"
-    echo ""
+    ui_header "Install / Update MRM Special" "In-panel settings tab and subscription runtime"
     detect_active_panel >/dev/null 2>&1
     special_check_requirements
 
     # 1) data namespace + default profiles map
-    echo "[1/5] data namespace…"
+    ui_step 1 4 "Data namespace"
     mkdir -p "$PROFILES_DIR"
     if [ ! -s "$PROFILES_DIR/profiles.json" ]; then
         cat > "$PROFILES_DIR/profiles.json" <<'EOF'
@@ -357,47 +360,44 @@ EOF
     fi
     chmod 644 "$PROFILES_DIR/profiles.json"
     chown -R nobody:nogroup "$DATA_NS" 2>/dev/null
-    echo "  $PROFILES_DIR/profiles.json ready"
+    ui_success "$PROFILES_DIR/profiles.json ready"
 
     # 2) backend bridge (python dir — downloaded as PLUGIN module)
-    echo "[2/5] backend bridge…"
+    ui_step 2 4 "Backend bridge"
     mkdir -p "$BACKEND_PY"
     if [ ! -f "$BACKEND_PY/sitecustomize.py" ] || [ ! -f "$BACKEND_PY/mrm_admin_subscriptions.py" ]; then
-        echo "  ERR: plugin sources missing under $BACKEND_PY"; exit 1
+        ui_error "Plugin sources missing under $BACKEND_PY"; special_pause; exit 1
     fi
     chmod 644 "$BACKEND_PY"/*.py
-    echo "  bridge ready at $API_ROUTE"
+    ui_success "Bridge ready at $API_ROUTE"
 
     # 3) inject (idempotent) — self-contained, no python bootstrap needed
-    echo "[3/5] template + dashboard integration…"
+    ui_step 3 4 "Template and dashboard integration"
     if [ ! -f "$INTEGRATE" ]; then
-        echo "  ERR: integrate-dashboard.sh missing — cannot continue"; exit 1
+        ui_error "integrate-dashboard.sh missing — cannot continue"; special_pause; exit 1
     fi
     MRM_ROOT="$SPECIAL_DIR" bash "$INTEGRATE"
 
     # 4) systemd self-healing watchers
-    echo "[4/5] watchers…"
+    ui_step 4 4 "Watchers"
     special_install_units
 
     # 5) summary
     echo ""
-    echo -e "${CYAN}=== Install Complete ===${NC}"
-    echo "MRM Special (v$SPECIAL_VERSION) is active."
-    echo "Open panel → Settings → MRM tab  (on/off switch lives there)"
-    echo "Storage:   $PROFILES_DIR  (profile data — survives updates)"
-    echo "Logs:      $LOG_DIR"
-    echo ""
+    ui_box_start ok "MRM Special v$SPECIAL_VERSION is active"
+    ui_box_line "Panel" "Settings › MRM tab (on/off switch lives there)"
+    ui_box_line "Storage" "$PROFILES_DIR (survives updates)"
+    ui_box_line "Logs" "$LOG_DIR"
+    ui_box_end
     special_pause
 }
 
 special_uninstall() {
-    clear
-    echo -e "${CYAN}=== Uninstall MRM Special ===${NC}"
-    echo "Removes: hooks (template+dashboard), backend bridge, watchers."
-    echo "Keeps:   $DATA_NS/profiles (your saved settings) until you say otherwise."
+    ui_header "Uninstall MRM Special"
+    ui_text "Removes the template and dashboard hooks, the backend bridge and the systemd watchers."
+    ui_text "Saved profiles in $DATA_NS/profiles are kept unless you choose to delete them."
     echo ""
-    read -r -p "Type REMOVE to confirm: " C
-    [ "$C" != "REMOVE" ] && { echo "Cancelled."; special_pause; return; }
+    ui_confirm_word "REMOVE" "This removes MRM Special from the panel." || { ui_cancelled; special_pause; return; }
     detect_active_panel >/dev/null 2>&1
     special_remove_units
     # strip our markers from template
@@ -431,118 +431,116 @@ special_uninstall() {
     done
     # remove backend bridge
     rm -f "$BACKEND_PY/sitecustomize.py" "$BACKEND_PY/mrm_admin_subscriptions.py"
-    read -r -p "Also delete saved profiles in $DATA_NS ? (y/n): " P
-    [[ "$P" =~ ^[Yy]$ ]] && rm -rf "$DATA_NS"
-    echo -e "${GREEN}✔ MRM Special removed.${NC}"
-    echo ""
+    if ui_confirm "Also delete the saved profiles in $DATA_NS?"; then
+        rm -rf "$DATA_NS"
+    fi
+    ui_success "MRM Special removed"
     special_pause
 }
 
 special_status() {
-    clear
-    echo -e "${CYAN}=== MRM Special Status (v$SPECIAL_VERSION) ===${NC}"
-    echo ""
+    ui_header "MRM Special Status" "integration v$SPECIAL_VERSION"
     # template
     if grep -q "$MARKER_RUNTIME" "$SUB_TEMPLATE" 2>/dev/null; then
-        echo -e "Template runtime:   ${GREEN}● Installed${NC}"
+        ui_kv_state "Template runtime" ok "Installed"
     else
-        echo -e "Template runtime:   ${RED}○ Missing${NC}"
+        ui_kv_state "Template runtime" bad "Missing"
     fi
     # dashboard (host build first, then the panel container build)
     local bd cid
     bd="$(special_find_dashboard_build || true)"
     if [ -n "$bd" ] && grep -q "$MARKER_ADMIN" "$bd/index.html" 2>/dev/null; then
-        echo -e "Dashboard tab:      ${GREEN}● Installed${NC}"
+        ui_kv_state "Dashboard tab" ok "Installed"
     else
         cid="$(special_container_id || true)"
         if [ -n "$cid" ] && docker exec "$cid" sh -c "grep -qs \"${MARKER_ADMIN}\" /code/dashboard/build/index.html /app/dashboard/build/index.html /opt/pasarguard/dashboard/build/index.html" 2>/dev/null; then
-            echo -e "Dashboard tab:      ${GREEN}● Installed${NC}  (container)"
+            ui_kv_state "Dashboard tab" ok "Installed" "container"
         else
-            echo -e "Dashboard tab:      ${RED}○ Missing${NC}"
+            ui_kv_state "Dashboard tab" bad "Missing"
         fi
     fi
     # backend
     if [ -f "$BACKEND_PY/sitecustomize.py" ] && [ -f "$BACKEND_PY/mrm_admin_subscriptions.py" ]; then
-        echo -e "Backend bridge:     ${GREEN}● Installed${NC}  ($API_ROUTE)"
+        ui_kv_state "Backend bridge" ok "Installed" "$API_ROUTE"
     else
-        echo -e "Backend bridge:     ${RED}○ Missing${NC}"
+        ui_kv_state "Backend bridge" bad "Missing"
     fi
     # units
     if systemctl is-active --quiet mrm-panel-update.path 2>/dev/null; then
-        echo -e "Watchers:           ${GREEN}● Running${NC}"
+        ui_kv_state "Watchers" ok "Running"
     else
-        echo -e "Watchers:           ${RED}○ Stopped${NC}"
+        ui_kv_state "Watchers" bad "Stopped"
     fi
     # data
     if [ -s "$PROFILES_DIR/profiles.json" ]; then
         local n
         n=$(python3 -c "import json;print(len(json.load(open('$PROFILES_DIR/profiles.json')).get('admins',{})))" 2>/dev/null || echo 0)
-        echo -e "Profiles stored:    ${GREEN}$n admin(s)${NC}  ($DATA_NS)"
+        ui_kv_state "Profiles stored" ok "$n admin(s)" "$DATA_NS"
     else
-        echo -e "Profiles stored:    ${RED}none${NC}"
+        ui_kv_state "Profiles stored" off "none"
     fi
-    echo ""
     # active template (both can be installed; one is live)
     local _cur _lbl
-    _cur="$(bash /opt/mrm-manager/theme.sh --current-template 2>/dev/null || echo none)"
+    _cur="$(bash "$MRM_DIR/theme.sh" --current-template 2>/dev/null || echo none)"
     case "$_cur" in
-        classic) _lbl="نسخه قدیمی تم" ;;
+        classic) _lbl="MRM Classic" ;;
         special) _lbl="MRM Special" ;;
-        *) _lbl="—" ;;
+        *) _lbl="none" ;;
     esac
-    echo -e "Active template:    ${CYAN}${_lbl}${NC}  (select in panel → Settings → MRM)"
+    ui_kv "Active template" "$_lbl" "select in the panel: Settings › MRM"
     # other products — informational only (never removed)
     if special_competing_present; then
-        echo -e "Other products:     ${YELLOW}ℹ zomorod also present${NC} (we never remove other products)"
+        ui_kv_state "Other products" warn "Another integration present" "left untouched"
     else
-        echo -e "Other products:     ${GREEN}✓ none detected${NC}"
+        ui_kv_state "Other products" ok "None detected"
     fi
     echo ""
-    echo "Paths:"
-    echo "  Template: $SUB_TEMPLATE"
-    echo "  Data:     $DATA_NS"
-    echo "  Logs:     $LOG_DIR  (integrate.log, panel-update.log)"
+    ui_section "Paths"
+    ui_kv "Template" "$SUB_TEMPLATE"
+    ui_kv "Data" "$DATA_NS"
+    ui_kv "Logs" "$LOG_DIR" "integrate.log, panel-update.log"
     echo ""
     special_pause
 }
 
 special_reintegrate() {
-    clear
-    echo "Re-running integration (idempotent)…"
+    ui_header "Repair Integration" "re-runs the idempotent integrator"
     if [ ! -f "$INTEGRATE" ]; then
-        echo "  ERR: integrate-dashboard.sh missing at $INTEGRATE"; special_pause; return 1
+        ui_error "integrate-dashboard.sh missing: $INTEGRATE"; special_pause; return 1
     fi
     MRM_ROOT="$SPECIAL_DIR" bash "$INTEGRATE"
+    echo ""
     special_pause
 }
 
 special_backup() {
-    clear
-    echo "Backing up MRM Special data…"
+    ui_header "Backup MRM Special Data"
     local out="/root/mrm-special-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
-    tar -czf "$out" -C /var/lib pasarguard/mrm 2>/dev/null
-    echo "Backup written to $out"
+    ui_task "Archiving $DATA_NS"
+    if tar -czf "$out" -C /var/lib pasarguard/mrm 2>/dev/null; then
+        ui_task_done ok
+        ui_kv "Archive" "$out"
+    else
+        ui_task_done bad
+        rm -f "$out"
+    fi
     special_pause
 }
 
 special_menu() {
+    local S_OPT
     while true; do
-        clear
-        echo -e "${CYAN}===========================================${NC}"
-        echo -e "${CYAN}  MRM SPECIAL — In-Panel Settings (v$SPECIAL_VERSION)${NC}"
-        echo -e "${CYAN}===========================================${NC}"
-        echo "  Subscription page features + Settings→MRM tab"
-        echo "  (store branding, support chip, theme, announcements,"
-        echo "   fa/en/ru/zh, hide-telegram, on/off switch)"
+        ui_header "MRM Special" "In-panel settings tab · integration v$SPECIAL_VERSION"
+        ui_text "Branding, support chip, theme colors, announcements, languages and the on/off switch —"
+        ui_text "all managed from the panel: Settings › MRM."
         echo ""
-        echo "1) Install / Update"
-        echo "2) Status"
-        echo "3) Re-run integration (repair hooks)"
-        echo "4) Backup settings data"
-        echo "5) Uninstall"
-        echo "0) Back"
-        echo -e "${CYAN}===========================================${NC}"
-        read -r -p "Select: " S_OPT
+        ui_menu_item 1 "Install / Update"
+        ui_menu_item 2 "Status"
+        ui_menu_item 3 "Repair integration" "re-run hooks"
+        ui_menu_item 4 "Backup settings data"
+        ui_menu_item 5 "Uninstall"
+        ui_menu_back
+        ui_select S_OPT
         case $S_OPT in
             1) special_install ;;
             2) special_status ;;
@@ -550,7 +548,7 @@ special_menu() {
             4) special_backup ;;
             5) special_uninstall ;;
             0) return ;;
-            *) echo -e "${RED}Invalid option${NC}"; sleep 1 ;;
+            *) ui_invalid ;;
         esac
     done
 }

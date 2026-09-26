@@ -1,21 +1,28 @@
 #!/bin/bash
-# MRM Manager Theme
+# MRM Manager theme.sh — subscription page templates (MRM Classic / MRM Special)
 
+# ─── Shared libraries ────────────────────────────────────────────────────────
 # utils.sh must load whenever its functions are missing — a parent process may
 # export PANEL_DIR while bash functions do not cross the process boundary
 # (standalone runs from install/update used to hit "command not found").
+MRM_DIR="${MRM_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)}"
+[ -r "$MRM_DIR/utils.sh" ] || MRM_DIR="/opt/mrm-manager"
 if ! declare -f detect_active_panel >/dev/null 2>&1; then
-    for _mrm_utils in /opt/mrm-manager/utils.sh "$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/utils.sh"; do
+    for _mrm_utils in "$MRM_DIR/utils.sh" /opt/mrm-manager/utils.sh; do
+        # shellcheck source=/dev/null
         [ -r "${_mrm_utils}" ] && { source "${_mrm_utils}"; break; }
     done
     unset _mrm_utils
 fi
-if ! declare -f ui_header >/dev/null 2>&1 && [ -r /opt/mrm-manager/ui.sh ]; then source /opt/mrm-manager/ui.sh; fi
-if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r /opt/mrm-manager/safe_ops.sh ]; then source /opt/mrm-manager/safe_ops.sh; fi
-[ -r "/opt/mrm-manager/versions.conf" ] && source /opt/mrm-manager/versions.conf
+# shellcheck source=/dev/null
+if ! declare -f ui_header >/dev/null 2>&1 && [ -r "$MRM_DIR/ui.sh" ]; then source "$MRM_DIR/ui.sh"; fi
+# shellcheck source=/dev/null
+if ! declare -f mrm_create_restore_point >/dev/null 2>&1 && [ -r "$MRM_DIR/safe_ops.sh" ]; then source "$MRM_DIR/safe_ops.sh"; fi
+# shellcheck source=/dev/null
+[ -r "$MRM_DIR/versions.conf" ] && source "$MRM_DIR/versions.conf"
 THEME_VERSION="${THEME_VERSION:-2.2.1}"
 
-# ✅ اطمینان از تشخیص پنل و تنظیم DATA_DIR
+# Make sure the panel is detected and DATA_DIR is set
 detect_active_panel > /dev/null
 
 theme_get_special_source() {
@@ -42,7 +49,7 @@ theme_get_special_source() {
     local dl_dst="$DATA_DIR/templates/.special.pristine.html"
     mkdir -p "$(dirname "$dl_dst")" 2>/dev/null || true
     local ver
-    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.27")"
+    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.5.0")"
     local dl_url="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v${ver}/templates/subscription/index.html"
     if curl -sL -f -o "$dl_dst" "$dl_url" 2>/dev/null && [ -s "$dl_dst" ] && ! grep -q "guideBanner" "$dl_dst" 2>/dev/null; then
         printf '%s\n' "$dl_dst"
@@ -73,7 +80,7 @@ theme_get_classic_source() {
     local dl_dst="$DATA_DIR/templates/.classic.pristine.html"
     mkdir -p "$(dirname "$dl_dst")" 2>/dev/null || true
     local ver
-    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.27")"
+    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.5.0")"
     local dl_url="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v${ver}/templates/subscription-classic/index.html"
     if curl -sL -f -o "$dl_dst" "$dl_url" 2>/dev/null && [ -s "$dl_dst" ] && grep -q "guideBanner" "$dl_dst" 2>/dev/null; then
         printf '%s\n' "$dl_dst"
@@ -128,9 +135,9 @@ PY
 
 theme_template_display_name() {
     case "$1" in
-        classic) echo "MRM Classic (قالب کلاسیک)" ;;
-        special) echo "MRM Special (قالب ویژه)" ;;
-        *) echo "—" ;;
+        classic) echo "MRM Classic" ;;
+        special) echo "MRM Special" ;;
+        *) echo "none" ;;
     esac
 }
 
@@ -173,13 +180,13 @@ theme_set_template() {
             target_src="$(theme_get_special_source 2>/dev/null || true)"
             ;;
         *)
-            echo "unknown template '$key' (use: classic | special)"; return 1 ;;
+            ui_error "Unknown template '$key' (use: classic | special)"; return 1 ;;
     esac
     detect_active_panel > /dev/null
 
     if [ -z "$target_src" ] || [ ! -s "$target_src" ]; then
         theme_write_template_status failed "$key" "Template source file missing for $key"
-        echo "Template source file missing for $key"
+        ui_error "Template source file missing for $key"
         return 1
     fi
 
@@ -250,7 +257,7 @@ PY
 
     theme_restart_panel || true
     theme_write_template_status success "$key" "Template switched to $key"
-    echo "✔ Active template: $(theme_template_display_name "$key") ($rel)"
+    ui_success "Active template: $(theme_template_display_name "$key") ($rel)"
     return 0
 }
 
@@ -267,7 +274,7 @@ theme_redeploy() {
     DEP_SP="$D/templates/subscription-special/index.html"
     DEP_C="$D/templates/subscription-classic/index.html"
     # Nothing deployed yet (wizard never ran) — nothing to refresh.
-    [ -s "$DEP_S" ] || [ -s "$DEP_SP" ] || [ -s "$DEP_C" ] || { echo "• No deployed template yet — run 'mrm' → 1 to install it"; return 0; }
+    [ -s "$DEP_S" ] || [ -s "$DEP_SP" ] || [ -s "$DEP_C" ] || { ui_note "No deployed template yet — install it from: mrm › Theme Manager"; return 0; }
     SRC_S="${MRM_SPECIAL_SRC:-}"
     [ -n "$SRC_S" ] || SRC_S="$(theme_get_special_source 2>/dev/null || true)"
     [ -n "$SRC_S" ] || SRC_S="/opt/mrm-manager/index.html"
@@ -424,10 +431,10 @@ PY
         fi
 
         # Note: Do not restart panel on update; hot-injection above already updated running files without downtime.
-        echo "✔ Deployed templates refreshed (brand/news kept, selection kept)"
+        ui_success "Deployed templates refreshed (brand, news and selection kept)"
         return 0
     fi
-    echo "⚠ Template refresh failed"
+    ui_warning "Template refresh failed"
     return 1
 }
 
@@ -471,12 +478,7 @@ theme_restart_panel() {
 }
 
 theme_invalid_option() {
-    if declare -f ui_error >/dev/null 2>&1; then
-        ui_error "Invalid option"
-    else
-        echo -e "${RED}Invalid option${NC}"
-    fi
-    sleep 1
+    if declare -f ui_invalid >/dev/null 2>&1; then ui_invalid; else echo "Invalid option"; sleep 1; fi
 }
 
 # ==========================================
@@ -497,19 +499,14 @@ install_theme_wizard() {
     local CLASSIC_DL
     local CLASSIC_LOCAL
 
-    clear
-    echo -e "${CYAN}=============================================${NC}"
-    if [ "$TARGET" = "classic" ]; then
-        echo -e "${YELLOW}   INSTALL / UPDATE MRM CLASSIC (قالب کلاسیک)   ${NC}"
-    elif [ "$TARGET" = "special" ]; then
-        echo -e "${YELLOW}   INSTALL / UPDATE MRM SPECIAL (قالب ویژه)     ${NC}"
-    else
-        echo -e "${YELLOW}      THEME INSTALLATION WIZARD              ${NC}"
-    fi
-    echo -e "${CYAN}=============================================${NC}"
-
-    # ✅ تشخیص مجدد پنل برای اطمینان
     detect_active_panel > /dev/null
+    if [ "$TARGET" = "classic" ]; then
+        ui_header "Install / Update MRM Classic" "Data: ${DATA_DIR:-unknown}"
+    elif [ "$TARGET" = "special" ]; then
+        ui_header "Install / Update MRM Special" "Data: ${DATA_DIR:-unknown}"
+    else
+        ui_header "Template Installation" "Data: ${DATA_DIR:-unknown}"
+    fi
 
     # Re-resolve download URLs at use time — the exported vars freeze the version
     # seen when utils.sh was sourced (the updater sources utils.sh before
@@ -519,19 +516,18 @@ install_theme_wizard() {
     THEME_CLASSIC_HTML_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v$(get_mrm_version)/templates/subscription-classic/index.html"
 
     if ! command -v python3 &> /dev/null; then
-        echo -e "${RED}Python3 is required but not installed.${NC}"
+        ui_error "python3 is required but not installed"
         pause; return
     fi
 
-    # ✅ بررسی DATA_DIR
     if [ -z "$DATA_DIR" ]; then
-        echo -e "${RED}ERROR: DATA_DIR is not set!${NC}"
+        ui_error "DATA_DIR is not set — panel detection failed"
         pause; return
     fi
 
     TMP_DIR=$(mktemp -d /tmp/mrm-theme.XXXXXX 2>/dev/null)
     if [ -z "$TMP_DIR" ] || [ ! -d "$TMP_DIR" ]; then
-        echo -e "${RED}Failed to create temporary workspace.${NC}"
+        ui_error "Failed to create a temporary workspace"
         pause; return
     fi
 
@@ -546,18 +542,20 @@ install_theme_wizard() {
     if declare -f mrm_create_restore_point >/dev/null 2>&1; then
         local RESTORE_POINT_ID
         RESTORE_POINT_ID="$(mrm_create_restore_point "theme-update" "panel" "$PANEL_ENV" "$DATA_DIR/templates/subscription")"
-        [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point created: $RESTORE_POINT_ID${NC}"
+        [ -n "$RESTORE_POINT_ID" ] && ui_note "Restore point: $RESTORE_POINT_ID"
     fi
 
     mkdir -p "$TEMPLATE_DIR" "$(dirname "$CLASSIC_FILE")"
 
-    echo -e "${BLUE}Template Path: $TEMPLATE_FILE${NC}"
-    echo -e "${BLUE}MRM Classic:    $CLASSIC_FILE${NC}"
+    ui_kv "MRM Special" "$TEMPLATE_FILE"
+    ui_kv "MRM Classic" "$CLASSIC_FILE"
+    echo ""
 
     # 1. Backup old file
+    ui_step 1 3 "Preparing sources"
     if [ -s "$TEMPLATE_FILE" ]; then
         cp "$TEMPLATE_FILE" "$OLD_FILE"
-        echo -e "${GREEN}✔ Backup created.${NC}"
+        ui_success "Current template backed up (brand and settings are kept)"
     else
         : > "$OLD_FILE"
     fi
@@ -567,56 +565,51 @@ install_theme_wizard() {
     LOCAL_TEMPLATE="$(theme_get_local_template 2>/dev/null || true)"
 
     if [ -n "$LOCAL_TEMPLATE" ]; then
-        echo -e "${GREEN}✔ Found local theme source. Using it.${NC}"
+        ui_success "MRM Special source: local copy"
         cp "$LOCAL_TEMPLATE" "$TEMP_DL"
     else
-        echo -e "${BLUE}Downloading from GitHub...${NC}"
-        echo -e "${BLUE}URL: $THEME_HTML_URL${NC}"
-        
+        ui_task "Downloading MRM Special from GitHub"
         if curl -sL -f -o "$TEMP_DL" "$THEME_HTML_URL" 2>/dev/null; then
             if grep -q "404: Not Found" "$TEMP_DL" 2>/dev/null; then
-                echo -e "${RED}✘ Download failed: 404 Not Found${NC}"
-                echo -e "${YELLOW}Please check THEME_HTML_URL in utils.sh${NC}"
+                ui_task_done bad "404"
+                ui_note "URL: $THEME_HTML_URL"
                 rm -rf "$TMP_DIR"
                 pause; return
             fi
-            echo -e "${GREEN}✔ Downloaded successfully.${NC}"
+            ui_task_done ok
         else
-            echo -e "${RED}✘ Download failed!${NC}"
+            ui_task_done bad
+            ui_note "URL: $THEME_HTML_URL"
             rm -rf "$TMP_DIR"
             pause; return
         fi
     fi
 
-    # ✅ بررسی سایز فایل
     FILE_SIZE=$(stat -c%s "$TEMP_DL" 2>/dev/null || echo "0")
     if [ "$FILE_SIZE" -lt 1000 ]; then
-        echo -e "${RED}✘ Downloaded file is too small ($FILE_SIZE bytes). Something went wrong.${NC}"
-        cat "$TEMP_DL"
+        ui_error "Template file is too small ($FILE_SIZE bytes) — download is broken"
         rm -rf "$TMP_DIR"
         pause; return
     fi
-    echo -e "${GREEN}✔ File size OK: $FILE_SIZE bytes${NC}"
 
     # 2b. Classic template (both templates always install together)
     rm -f "$CLASSIC_DL"
     CLASSIC_LOCAL="$(theme_get_local_classic_template 2>/dev/null || true)"
     if [ -n "$CLASSIC_LOCAL" ]; then
         cp "$CLASSIC_LOCAL" "$CLASSIC_DL"
-        echo -e "${GREEN}✔ Found local MRM Classic source. Using it.${NC}"
+        ui_success "MRM Classic source: local copy"
     else
-        echo -e "${BLUE}Downloading MRM Classic template...${NC}"
-        echo -e "${BLUE}URL: $THEME_CLASSIC_HTML_URL${NC}"
+        ui_task "Downloading MRM Classic from GitHub"
         if curl -sL -f -o "$CLASSIC_DL" "$THEME_CLASSIC_HTML_URL" 2>/dev/null && ! grep -q "404: Not Found" "$CLASSIC_DL" 2>/dev/null; then
-            echo -e "${GREEN}✔ MRM Classic template downloaded.${NC}"
+            ui_task_done ok
         else
-            echo -e "${YELLOW}⚠ MRM Classic download failed — continuing with MRM Special only.${NC}"
+            ui_task_done warn "skipped — continuing with MRM Special only"
             rm -f "$CLASSIC_DL"
         fi
     fi
 
     # 3. Processing
-    echo -e "${BLUE}Processing configuration...${NC}"
+    ui_step 2 3 "Applying brand settings and deploying"
 
     export OLD_FILE
     export NEW_FILE="$TEMP_DL"
@@ -802,20 +795,17 @@ PYEOF
 
     if [ $PY_EXIT_CODE -eq 0 ]; then
         if [ "$TARGET" = "classic" ] && [ ! -s "$CLASSIC_FILE" ]; then
-            echo -e "${RED}✘ MRM Classic file is empty!${NC}"
+            ui_error "MRM Classic file is empty after processing"
             rm -rf "$TMP_DIR"
             pause; return
         elif [ "$TARGET" != "classic" ] && [ ! -s "$TEMPLATE_FILE" ]; then
-            echo -e "${RED}✘ Template file is empty!${NC}"
+            ui_error "Template file is empty after processing"
             rm -rf "$TMP_DIR"
             pause; return
         fi
 
         echo ""
-        echo -e "${CYAN}=== Final Configuration ===${NC}"
-        echo -e "MRM Special  : $TEMPLATE_FILE ($(stat -c%s "$TEMPLATE_FILE" 2>/dev/null) bytes)"
-        echo -e "MRM Classic  : $CLASSIC_FILE ($(stat -c%s "$CLASSIC_FILE" 2>/dev/null || echo 0) bytes)"
-        echo ""
+        ui_step 3 3 "Activating"
 
         local active_choice="special"
         if [ "$TARGET" = "classic" ]; then
@@ -827,104 +817,113 @@ PYEOF
             [ "$active_choice" = "none" ] && active_choice="special"
         fi
 
-        echo -e "${BLUE}Activating $(theme_template_display_name "$active_choice") + restarting panel...${NC}"
-        if theme_set_template "$active_choice"; then
-            echo -e "${GREEN}✔ Template installed & panel restarted.${NC}"
-            echo -e "${GREEN}  (Switch anytime in panel → Settings → MRM)${NC}"
+        ui_note "Activating $(theme_template_display_name "$active_choice") and restarting the panel…"
+        if theme_set_template "$active_choice" >/dev/null; then
+            echo ""
+            ui_box_start ok "Template installed"
+            ui_box_line "Active" "$(theme_template_display_name "$active_choice")"
+            ui_box_line "MRM Special" "$TEMPLATE_FILE ($(stat -c%s "$TEMPLATE_FILE" 2>/dev/null) bytes)"
+            ui_box_line "MRM Classic" "$CLASSIC_FILE ($(stat -c%s "$CLASSIC_FILE" 2>/dev/null || echo 0) bytes)"
+            ui_box_end
+            ui_note "Switch templates any time in the panel: Settings › MRM."
         else
-            echo -e "${YELLOW}⚠ Template installed, but activation failed.${NC}"
+            ui_warning "Template installed, but activation failed — use 'Template on / off' from the menu"
         fi
         rm -rf "$TMP_DIR"
     else
-        echo -e "${RED}✘ Python Script Failed.${NC}"
+        ui_error "Template processing failed (python step)"
         rm -rf "$TMP_DIR"
     fi
     pause
 }
 
 activate_theme() {
-    clear
     detect_active_panel > /dev/null
-    
+    ui_header "Activate Template"
+
     local T_FILE="$DATA_DIR/templates/subscription/index.html"
-    if [ ! -s "$T_FILE" ]; then 
-        echo -e "${RED}Theme file missing or empty. Install first.${NC}"
-        echo -e "${YELLOW}Expected path: $T_FILE${NC}"
+    if [ ! -s "$T_FILE" ]; then
+        ui_error "Template file missing or empty — install it first"
+        ui_note "Expected: $T_FILE"
         pause; return
     fi
 
     if declare -f mrm_create_restore_point >/dev/null 2>&1; then
         local RESTORE_POINT_ID
         RESTORE_POINT_ID="$(mrm_create_restore_point "theme-activate" "panel" "$PANEL_ENV" "$DATA_DIR/templates/subscription")"
-        [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point created: $RESTORE_POINT_ID${NC}"
+        [ -n "$RESTORE_POINT_ID" ] && ui_note "Restore point: $RESTORE_POINT_ID"
     fi
-    
+
     if ! theme_apply_env; then
-        echo -e "${RED}Failed to update panel environment.${NC}"
+        ui_error "Failed to update the panel .env"
         pause; return
     fi
 
     if theme_restart_panel; then
-        echo -e "${GREEN}✔ Theme Activated.${NC}"
+        ui_success "Template activated"
     else
-        echo -e "${YELLOW}⚠ Theme activated, but panel restart failed. Please restart manually.${NC}"
+        ui_warning "Template activated, but the panel restart failed — restart it manually"
     fi
     pause
 }
 
 deactivate_theme() {
-    clear
     detect_active_panel > /dev/null
-    
+    ui_header "Deactivate Template"
+
     if [ -f "$PANEL_ENV" ]; then
         if declare -f mrm_create_restore_point >/dev/null 2>&1; then
             local RESTORE_POINT_ID
             RESTORE_POINT_ID="$(mrm_create_restore_point "theme-deactivate" "panel" "$PANEL_ENV" "$DATA_DIR/templates/subscription")"
-            [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point created: $RESTORE_POINT_ID${NC}"
+            [ -n "$RESTORE_POINT_ID" ] && ui_note "Restore point: $RESTORE_POINT_ID"
         fi
 
         if ! theme_clear_env; then
-            echo -e "${RED}Failed to clean theme settings from panel environment.${NC}"
+            ui_error "Failed to remove the template settings from the panel .env"
             pause; return
         fi
         if theme_restart_panel; then
-            echo -e "${GREEN}✔ Theme Deactivated.${NC}"
+            ui_success "Template deactivated — the PasarGuard default page is back"
         else
-            echo -e "${YELLOW}⚠ Theme deactivated, but panel restart failed. Please restart manually.${NC}"
+            ui_warning "Template deactivated, but the panel restart failed — restart it manually"
         fi
     else
-        echo -e "${YELLOW}Panel environment file not found.${NC}"
+        ui_warning "Panel .env not found"
     fi
     pause
 }
 
 uninstall_theme() {
-    clear
     detect_active_panel > /dev/null
-    
-    read -p "Delete theme files? (y/n): " CONFIRM
-    if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+    ui_header "Uninstall Template"
+    ui_text "Removes the deployed template files and switches the panel back to its default page."
+    ui_bullet "$DATA_DIR/templates/subscription"
+    ui_bullet "$DATA_DIR/templates/subscription-classic"
+    echo ""
+    if ui_confirm "Delete the template files?"; then
         if declare -f mrm_create_restore_point >/dev/null 2>&1; then
             local RESTORE_POINT_ID
             RESTORE_POINT_ID="$(mrm_create_restore_point "theme-uninstall" "panel" "$PANEL_ENV" "$DATA_DIR/templates/subscription")"
-            [ -n "$RESTORE_POINT_ID" ] && echo -e "${BLUE}Restore point created: $RESTORE_POINT_ID${NC}"
+            [ -n "$RESTORE_POINT_ID" ] && ui_note "Restore point: $RESTORE_POINT_ID"
         fi
 
         rm -rf "$DATA_DIR/templates/subscription" "$DATA_DIR/templates/subscription-classic"
         rm -f "$(theme_mrm_data_dir)/template-status.json"
         if [ -f "$PANEL_ENV" ]; then
             if ! theme_clear_env; then
-                echo -e "${RED}Failed to clean theme settings from panel environment.${NC}"
+                ui_error "Failed to remove the template settings from the panel .env"
                 pause; return
             fi
             if theme_restart_panel; then
-                echo -e "${GREEN}✔ Theme removed & deactivated.${NC}"
+                ui_success "Template removed and deactivated"
             else
-                echo -e "${YELLOW}⚠ Theme removed, but panel restart failed. Please restart manually.${NC}"
+                ui_warning "Template removed, but the panel restart failed — restart it manually"
             fi
         else
-            echo -e "${GREEN}✔ Theme files removed.${NC}"
+            ui_success "Template files removed"
         fi
+    else
+        ui_cancelled
     fi
     pause
 }
@@ -943,85 +942,88 @@ is_theme_active() {
 }
 
 theme_templates_status() {
-    local cur sp cl active_name
+    local cur sp cl
     cur="$(theme_current_template)"
-    active_name="$(theme_template_display_name "$cur")"
     sp="$DATA_DIR/templates/subscription/index.html"
     cl="$DATA_DIR/templates/subscription-classic/index.html"
-    echo -e "Active template : ${CYAN}${active_name}${NC}"
-    if [ -s "$DATA_DIR/templates/subscription-special/index.html" ] || { [ -s "$sp" ] && ! grep -q "guideBanner" "$sp" 2>/dev/null; }; then
-        echo -e "MRM Special     : ${GREEN}●${NC} Installed"
+    if is_theme_active; then
+        ui_kv_state "Template" ok "On" "active: $(theme_template_display_name "$cur")"
     else
-        echo -e "MRM Special     : ${RED}○${NC} Not installed"
+        ui_kv_state "Template" off "Off" "PasarGuard default page"
+    fi
+    if [ -s "$DATA_DIR/templates/subscription-special/index.html" ] || { [ -s "$sp" ] && ! grep -q "guideBanner" "$sp" 2>/dev/null; }; then
+        ui_kv_state "MRM Special" ok "Installed"
+    else
+        ui_kv_state "MRM Special" off "Not installed"
     fi
     if [ -s "$cl" ]; then
-        echo -e "MRM Classic     : ${GREEN}●${NC} Installed"
+        ui_kv_state "MRM Classic" ok "Installed"
     else
-        echo -e "MRM Classic     : ${RED}○${NC} Not installed"
+        ui_kv_state "MRM Classic" off "Not installed"
     fi
 }
 
 theme_conflicts_label() {
     # Informational only — MRM never removes other products.
-    if bash /opt/mrm-manager/special.sh --detect-quiet 2>/dev/null; then
-        echo -e "Other           : ${YELLOW}ℹ${NC} zomorod integration also present (we never remove other products)"
+    if bash "$MRM_DIR/special.sh" --detect-quiet 2>/dev/null; then
+        ui_kv_state "Other" warn "Another integration present" "left untouched"
     fi
 }
 
 theme_toggle() {
-    clear
     detect_active_panel > /dev/null
+    ui_header "Template On / Off"
     if is_theme_active; then
-        echo -e "Template is currently: ${GREEN}ON${NC} (active: $(theme_template_display_name "$(theme_current_template)"))"
-        read -p "Turn it OFF (vanilla PasarGuard page)? (y/n): " C
-        [[ "$C" =~ ^[Yy]$ ]] || return
-        theme_clear_env && theme_restart_panel && echo -e "${GREEN}✔ Template is now OFF${NC}"
+        ui_kv_state "Template" ok "On" "active: $(theme_template_display_name "$(theme_current_template)")"
+        echo ""
+        ui_confirm "Turn it off (show the PasarGuard default page)?" || return
+        if theme_clear_env && theme_restart_panel; then
+            ui_success "Template is now off"
+        else
+            ui_error "Could not turn the template off"
+        fi
     else
         if [ ! -s "$DATA_DIR/templates/subscription/index.html" ] && [ ! -s "$DATA_DIR/templates/subscription-classic/index.html" ]; then
-            echo "Template is not installed yet — use option 1 first."
-            read -n 1 -s -r -p "Press any key..."; echo; return
+            ui_warning "No template installed yet — install MRM Classic or MRM Special first."
+            pause; return
         fi
-        echo -e "Template is currently: ${RED}OFF${NC}"
-        read -p "Turn it ON? (y/n): " C
-        [[ "$C" =~ ^[Yy]$ ]] || return
+        ui_kv_state "Template" off "Off"
+        echo ""
+        ui_confirm "Turn it on?" y || return
         local cur
         cur="$(theme_current_template)"
         [ "$cur" = "none" ] && cur="special"
-        theme_set_template "$cur" && echo -e "${GREEN}✔ Template is now ON (active: $(theme_template_display_name "$cur"))${NC}"
+        if theme_set_template "$cur" >/dev/null; then
+            ui_success "Template is now on (active: $(theme_template_display_name "$cur"))"
+        else
+            ui_error "Could not activate the template"
+        fi
     fi
-    read -n 1 -s -r -p "Press any key..."; echo
+    pause
 }
 
 theme_menu() {
+    local T_OPT
     while true; do
-        clear
         detect_active_panel > /dev/null
-
-        echo -e "${BLUE}===========================================${NC}"
-        echo -e "${YELLOW}      THEME MANAGER v${THEME_VERSION}               ${NC}"
-        echo -e "${BLUE}===========================================${NC}"
-        echo -e "Panel: ${CYAN}$PANEL_DIR${NC}"
-        echo -e "Data:  ${CYAN}$DATA_DIR${NC}"
-        echo ""
-        echo -e "${YELLOW}ℹ Both templates stay installed — one is shown at a time.${NC}"
-        echo -e "${YELLOW}  Choose the active one (and ON/OFF) in panel → Settings → MRM.${NC}"
-        echo ""
+        ui_header "Theme Manager" "Panel: ${PANEL_DIR:-unknown} · Data: ${DATA_DIR:-unknown}"
         theme_templates_status
         theme_conflicts_label
         echo ""
-        echo "1) 📦 Install / Update MRM Classic (قالب کلاسیک)"
-        echo "2) ✨ Install / Update MRM Special (قالب ویژه)"
-        echo "3) 🔛 Template: ON / OFF"
-        echo "4) ◆ MRM Special manager"
-        echo "5) 🗑️ Uninstall Template"
-        echo "0) Back"
-        echo -e "${BLUE}===========================================${NC}"
-        read -p "Select: " T_OPT
+        ui_note "Both templates stay installed; one is shown at a time. Switch in the panel: Settings › MRM."
+        echo ""
+        ui_menu_item 1 "Install / Update MRM Classic"
+        ui_menu_item 2 "Install / Update MRM Special"
+        ui_menu_item 3 "Template on / off"
+        ui_menu_item 4 "MRM Special manager" "settings tab, backend bridge"
+        ui_menu_item 5 "Uninstall template"
+        ui_menu_back
+        ui_select T_OPT
         case $T_OPT in
             1) install_theme_wizard "classic" ;;
             2) install_theme_wizard "special" ;;
             3) theme_toggle ;;
-            4) bash /opt/mrm-manager/special.sh || echo "MRM Special could not be started" ;;
+            4) bash "$MRM_DIR/special.sh" || { ui_error "MRM Special could not be started"; sleep 1; } ;;
             5) uninstall_theme ;;
             0) return ;;
             *) theme_invalid_option ;;
