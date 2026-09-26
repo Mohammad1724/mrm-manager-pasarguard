@@ -1,8 +1,8 @@
 #!/bin/bash
-# MRM Manager ssl.sh v1.4.22
+# MRM Manager ssl.sh v1.4.23
 
 # ═══════════════════════════════════════════════════════════════════════════
-# SSL MANAGEMENT MODULE v1.4.22
+# SSL MANAGEMENT MODULE v1.4.23
 # ═══════════════════════════════════════════════════════════════════════════
 # Author: MRM Manager Team
 # License: GPL-3.0
@@ -49,7 +49,7 @@ readonly SSL_BACKUP_DIR="${SSL_BACKUP_DIR:-/opt/mrm-manager/ssl-backups}"
 readonly CONFIG_DIR="${CONFIG_DIR:-/opt/mrm-manager}"
 
 [ -r "$CONFIG_DIR/versions.conf" ] && source "$CONFIG_DIR/versions.conf"
-SSL_VERSION="${SSL_VERSION:-1.0.6}"
+SSL_VERSION="${SSL_VERSION:-1.0.7}"
 
 # Thresholds
 readonly EXPIRY_WARNING_DAYS=14
@@ -1289,6 +1289,21 @@ _stale_live_cleanup() {
     return 0
 }
 
+# MRM-043: a renewal profile is "broken" when the file exists but holds no
+# file references (cert/fullchain/privkey/chain/csr =). certbot leaves such
+# a skeleton behind when an issuance is aborted after account setup (e.g.
+# 'live directory exists') — 'certbot renew' then fails with a parse error
+# and can never succeed on that profile.
+_renewal_profile_broken() {
+    local domain="$1"
+    local conf="/etc/letsencrypt/renewal/${domain}.conf"
+    [[ -f "$conf" ]] || return 1
+    if grep -qE '^[[:space:]]*(cert|fullchain|privkey|chain|csr)[[:space:]]*=' "$conf" 2>/dev/null; then
+        return 1    # file references present — healthy profile
+    fi
+    return 0        # broken skeleton
+}
+
 _renew_le_certificates() {
     local -a domains=("$@")
 
@@ -1318,7 +1333,7 @@ _renew_le_certificates() {
     fi
 
     # MRM-041: missing renewal profile pre-check — say it before we stop services
-    local -a missing_profile=() san_covered_by=()
+    local -a missing_profile=() broken_profile=() san_covered_by=()
     local alt_name
     for domain in "${domains[@]}"; do
         if [[ ! -f "/etc/letsencrypt/renewal/${domain}.conf" ]]; then
@@ -1327,12 +1342,16 @@ _renew_le_certificates() {
             else
                 missing_profile+=("$domain — no renewal profile, a NEW certificate will be requested")
             fi
+        elif _renewal_profile_broken "$domain"; then
+            broken_profile+=("$domain — renewal profile is BROKEN, it will be backed up and a NEW certificate will be requested")
+        elif alt_name=$(_find_renewal_name_for_domain "$domain") && [[ -n "$alt_name" && "$alt_name" != "$domain" ]]; then
+            san_covered_by+=("$domain — covered by cert '$alt_name', that one gets renewed")
         fi
     done
-    if [[ ${#missing_profile[@]} -gt 0 || ${#san_covered_by[@]} -gt 0 ]]; then
+    if [[ ${#missing_profile[@]} -gt 0 || ${#broken_profile[@]} -gt 0 || ${#san_covered_by[@]} -gt 0 ]]; then
         echo -e "${YELLOW}⚠ Renewal profile check:${NC}"
         local note
-        for note in "${missing_profile[@]}" "${san_covered_by[@]}"; do
+        for note in "${missing_profile[@]}" "${broken_profile[@]}" "${san_covered_by[@]}"; do
             echo -e "  ${YELLOW}• $note${NC}"
         done
         echo ""
@@ -1352,6 +1371,7 @@ _renew_le_certificates() {
     local renewed=0 failed=0 reissued=0 rc=0
     local tmp_out auth renew_name san_covered
     local reissue_email=""
+    local recovery=0 bconf bbackup
     tmp_out=$(mktemp /tmp/ssl-manager-cb.XXXXXX)
 
     for domain in "${domains[@]}"; do
@@ -1376,7 +1396,28 @@ _renew_le_certificates() {
         # certbot cannot renew what it never recorded — recover:
         #  a) domain is a SAN on another cert → renew that cert
         #  b) no profile anywhere            → reissue a fresh certificate
-        if [[ $rc -ne 0 ]] && grep -qE 'No certificate found with name|No certs were found' "$tmp_out"; then
+        # MRM-041/043: cert files exist but certbot cannot renew this name.
+        # Two shapes of that:
+        #   a) 'No certificate found with name' — no profile at all
+        #   b) parse failure on a BROKEN profile skeleton (left behind by an
+        #      aborted issuance, e.g. 'live directory exists') — back it up
+        #      and drop it, then treat the name as profile-less.
+        recovery=0
+        if [[ $rc -ne 0 ]]; then
+            if grep -qE 'No certificate found with name|No certs were found' "$tmp_out"; then
+                recovery=1
+            elif grep -qiE 'is broken|parse failure|parsefail|missing a required file reference' "$tmp_out" \
+                 && _renewal_profile_broken "$domain"; then
+                bconf="/etc/letsencrypt/renewal/${domain}.conf"
+                bbackup="$SSL_BACKUP_DIR/broken-conf-$domain-$(date +%Y%m%d-%H%M%S)"
+                mkdir -p "$bbackup" 2>/dev/null && cp -a "$bconf" "$bbackup/" 2>/dev/null
+                rm -f "$bconf" 2>/dev/null
+                log_info "Broken renewal profile for $domain backed up to $bbackup"
+                echo -e "    ${YELLOW}↳ broken renewal profile backed up: $bbackup${NC}"
+                recovery=1
+            fi
+        fi
+        if [[ $recovery -eq 1 ]]; then
             alt_name=$(_find_renewal_name_for_domain "$domain")
             if [[ -n "$alt_name" ]]; then
                 echo -e "${YELLOW}↳ covered by cert '$alt_name' — renewing it...${NC}"
