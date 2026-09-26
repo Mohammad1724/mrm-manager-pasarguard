@@ -423,7 +423,7 @@ PY
             done
         fi
 
-        theme_restart_panel || true
+        # Note: Do not restart panel on update; hot-injection above already updated running files without downtime.
         echo "✔ Deployed templates refreshed (brand/news kept, selection kept)"
         return 0
     fi
