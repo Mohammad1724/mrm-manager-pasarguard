@@ -139,6 +139,23 @@ function App() {
     return formatRelativeExpiry(effectiveData.expire, t);
   }, [effectiveData, t]);
 
+  const remainingPercentage = !effectiveData?.data_limit
+    ? 100
+    : Math.max(0, Math.min(100, 100 - usagePercentage));
+
+  /* Smart renew alert: < 5 days left OR < 20% traffic remaining */
+  const daysRemaining = useMemo(() => {
+    if (!effectiveData?.expire || effectiveData.expire === '0') return null;
+    const ms = new Date(effectiveData.expire).getTime() - Date.now();
+    return Number.isNaN(ms) ? null : Math.ceil(ms / 86400000);
+  }, [effectiveData?.expire]);
+
+  const isRenewUrgent = useMemo(() => {
+    const lowTime = daysRemaining !== null && daysRemaining < 5;
+    const lowTraffic = remainingPercentage < 20;
+    return lowTime || lowTraffic;
+  }, [daysRemaining, remainingPercentage]);
+
   const statusConfig = {
     active: { color: 'text-[var(--success)]', dot: 'bg-[var(--success)]', tone: 'status-success' },
     disabled: { color: 'text-muted-foreground', dot: 'bg-muted-foreground', tone: 'status-neutral' },
@@ -196,22 +213,7 @@ function App() {
   const hasLinks = Boolean(configData?.links?.length);
   const hasChart = !chartError;
   const chartUsage = getChartUsageData(chartData?.stats);
-  const remainingPercentage = !effectiveData.data_limit
-    ? 100
-    : Math.max(0, Math.min(100, 100 - usagePercentage));
 
-  /* Smart renew alert: < 5 days left OR < 20% traffic remaining */
-  const daysRemaining = useMemo(() => {
-    if (!effectiveData?.expire || effectiveData.expire === '0') return null;
-    const ms = new Date(effectiveData.expire).getTime() - Date.now();
-    return Number.isNaN(ms) ? null : Math.ceil(ms / 86400000);
-  }, [effectiveData]);
-
-  const isRenewUrgent = useMemo(() => {
-    const lowTime = daysRemaining !== null && daysRemaining < 5;
-    const lowTraffic = remainingPercentage < 20;
-    return lowTime || lowTraffic;
-  }, [daysRemaining, remainingPercentage]);
   const isTrafficEmpty = Boolean(effectiveData.data_limit) && remainingPercentage <= 0;
   const liquidHue = Math.round(remainingPercentage * 1.35);
   const liquidStyle = {

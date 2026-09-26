@@ -1,8 +1,8 @@
 #!/bin/bash
-# MRM Manager ssl.sh v1.4.26
+# MRM Manager ssl.sh v1.4.27
 
 # ═══════════════════════════════════════════════════════════════════════════
-# SSL MANAGEMENT MODULE v1.4.26
+# SSL MANAGEMENT MODULE v1.4.27
 # ═══════════════════════════════════════════════════════════════════════════
 # Author: MRM Manager Team
 # License: GPL-3.0
