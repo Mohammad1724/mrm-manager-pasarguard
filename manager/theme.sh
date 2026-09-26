@@ -144,11 +144,26 @@ theme_set_template() {
             cp -f "$DATA_DIR/templates/subscription/index.html" "$DATA_DIR/templates/subscription-special/index.html" 2>/dev/null || true
         fi
         cp -f "$target_src" "$DATA_DIR/templates/subscription/index.html" 2>/dev/null || true
-        # Cleanly strip any injected runtime script from classic
-        python3 -c "import re, pathlib; p = pathlib.Path('$DATA_DIR/templates/subscription/index.html'); txt = p.read_text(encoding='utf-8', errors='ignore'); txt = re.sub(r'\s*<script id=\"mrm-runtime-inline\">.*?</script>\s*', '', txt, flags=re.S); p.write_text(txt, encoding='utf-8')" 2>/dev/null || true
     elif [ "$key" = "special" ]; then
         cp -f "$target_src" "$DATA_DIR/templates/subscription-special/index.html" 2>/dev/null || true
         cp -f "$target_src" "$DATA_DIR/templates/subscription/index.html" 2>/dev/null || true
+    fi
+
+    # Inject runtime into served template so panel customizations (store name, colors, support, announcements) apply dynamically
+    local r_js="/opt/mrm-manager/plugin/mrm-runtime.js"
+    [ -f "$r_js" ] || r_js="$DATA_DIR/plugin/mrm-runtime.js"
+    if [ -f "$r_js" ] && [ -f "$DATA_DIR/templates/subscription/index.html" ]; then
+        python3 - "$DATA_DIR/templates/subscription/index.html" "$r_js" "mrm-runtime-inline" <<'PY' 2>/dev/null || true
+from pathlib import Path
+import re, sys
+template_path=Path(sys.argv[1]); runtime_path=Path(sys.argv[2]); marker=sys.argv[3]
+if template_path.exists() and runtime_path.exists():
+    original=template_path.read_text(encoding="utf-8"); runtime=runtime_path.read_text(encoding="utf-8")
+    pattern=re.compile(rf'\s*<script id="{re.escape(marker)}">.*?</script>\s*',re.S)
+    html=pattern.sub('',original); block=f'\n<script id="{marker}">\n{runtime}\n</script>\n'
+    html=html.replace('</body>',block+'</body>',1) if '</body>' in html else html+block
+    if html!=original: template_path.write_text(html,encoding="utf-8")
+PY
     fi
 
     if ! theme_apply_env "$rel"; then

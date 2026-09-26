@@ -1,10 +1,11 @@
 (() => {
   'use strict';
 
-  // Guard: mrm-runtime is exclusively for the modern MRM Special template.
-  // The classic template is completely self-contained with its own neumorphic styling.
-  // Overriding :root on classic breaks button borders, cards, and accent colors.
-  if (document.getElementById('guideBanner') || (!document.querySelector('.treasury-shell') && !document.querySelector('#root') && !document.querySelector('#app'))) {
+  // Detect active template: MRM Classic or MRM Special
+  const isClassic = Boolean(document.getElementById('guideBanner') || document.querySelector('.status-main'));
+  const isSpecial = Boolean(document.querySelector('.treasury-shell') || document.querySelector('#root') || document.querySelector('#app'));
+
+  if (!isClassic && !isSpecial) {
     return;
   }
 
@@ -320,7 +321,7 @@
     return {
       enabled: bool(header(headers, 'enabled'), DEFAULTS.enabled),
       storeName: decodeUtf8Base64(header(headers, 'store-name-b64').trim()) || header(headers, 'store-name').trim() || DEFAULTS.storeName,
-      supportId: encodedSupport || supportLabelFromUrl(headers['support-url']) || DEFAULTS.supportId,
+      supportId: encodedSupport || header(headers, 'support-id').trim() || supportLabelFromUrl(headers['support-url']) || DEFAULTS.supportId,
       showConfigs: bool(header(headers, 'show-configs'), DEFAULTS.showConfigs),
       showWireGuard: bool(header(headers, 'show-wireguard'), DEFAULTS.showWireGuard),
       showPing: bool(header(headers, 'show-ping'), DEFAULTS.showPing),
@@ -488,6 +489,7 @@
     document.querySelectorAll('.mrm-special-announcement').forEach((node) => node.classList.remove('mrm-special-announcement'));
     document.getElementById(SUPPORT_ID)?.remove();
     document.getElementById(THEME_STYLE_ID)?.remove();
+    document.getElementById('mrm-classic-theme-style')?.remove();
     document.documentElement.removeAttribute('data-mrm');
   };
 
@@ -496,13 +498,122 @@
     domObserver.observe(document.documentElement, { subtree: true, childList: true });
   };
 
+  // ─── CLASSIC TEMPLATE HANDLERS (MRM Classic) ──────────────────────────
+  const applyClassicTheme = (config) => {
+    const primary = normalizeHex(config?.themePrimary, DEFAULTS.themePrimary);
+    const secondary = normalizeHex(config?.themeSecondary, DEFAULTS.themeSecondary);
+    const primaryChanged = primary !== THEME_DEFAULTS.primary;
+    const secondaryChanged = secondary !== THEME_DEFAULTS.secondary;
+    const styleId = 'mrm-classic-theme-style';
+    let style = document.getElementById(styleId);
+
+    if (!primaryChanged && !secondaryChanged) {
+      style?.remove();
+      return;
+    }
+
+    if (!style) {
+      style = document.createElement('style');
+      style.id = styleId;
+      document.head.appendChild(style);
+    }
+
+    const primarySoft = rgbaHex(primary, 0.12);
+    const primaryGlow = rgbaHex(primary, 0.28);
+    const secondaryDark = mixHex(secondary, '#000000', 0.2);
+    const secondaryGlow = rgbaHex(secondary, 0.3);
+    const borderAccent = rgbaHex(primary, 0.28);
+
+    const darkPrimary = mixHex(primary, '#FFFFFF', 0.2);
+    const darkPrimarySoft = rgbaHex(darkPrimary, 0.14);
+    const darkPrimaryGlow = rgbaHex(darkPrimary, 0.25);
+    const darkSecondary = mixHex(secondary, '#FFFFFF', 0.15);
+    const darkSecondaryDark = secondary;
+    const darkSecondaryGlow = rgbaHex(darkSecondary, 0.28);
+    const darkBorderAccent = rgbaHex(darkPrimary, 0.28);
+
+    style.textContent = `
+      :root {
+        --accent: ${primary}!important;
+        --accent-soft: ${primarySoft}!important;
+        --accent-glow: ${primaryGlow}!important;
+        --border-accent: ${borderAccent}!important;
+        --teal: ${secondary}!important;
+        --teal-dark: ${secondaryDark}!important;
+        --teal-glow: ${secondaryGlow}!important;
+      }
+      .dark {
+        --accent: ${darkPrimary}!important;
+        --accent-soft: ${darkPrimarySoft}!important;
+        --accent-glow: ${darkPrimaryGlow}!important;
+        --border-accent: ${darkBorderAccent}!important;
+        --teal: ${darkSecondary}!important;
+        --teal-dark: ${darkSecondaryDark}!important;
+        --teal-glow: ${darkSecondaryGlow}!important;
+      }
+    `;
+  };
+
+  const updateClassicBrand = (name) => {
+    if (!name || name === '__BRAND__') return;
+    document.querySelectorAll('.brand').forEach((el) => {
+      if (el.textContent !== name) el.textContent = name;
+    });
+    if (document.title !== name) document.title = name;
+  };
+
+  const applyClassicSupport = (supportId) => {
+    const href = supportHref(supportId);
+    if (!href) return;
+    document.querySelectorAll('.support-btn').forEach((btn) => {
+      if (btn instanceof HTMLAnchorElement && btn.href !== href) {
+        btn.href = href;
+      }
+    });
+    const renewBtn = document.getElementById('renewBtn');
+    if (renewBtn instanceof HTMLAnchorElement && renewBtn.href !== href) {
+      renewBtn.href = href;
+    }
+  };
+
+  const applyClassicConnections = (config) => {
+    const configsBtn = document.querySelector('button[onclick*="showConfigs"]');
+    setDisplay(configsBtn, config.showConfigs);
+  };
+
+  const applyClassicApps = (visible) => {
+    const dlGrid = document.querySelector('.dl-grid');
+    const separator = document.querySelector('.separator');
+    setDisplay(dlGrid, visible);
+    setDisplay(separator, visible);
+  };
+
+  const applyClassicAnnouncement = (config) => {
+    const annBox = document.getElementById('announcement');
+    const annTextEl = document.getElementById('announceText');
+    const text = nativeAnnouncement() || (annTextEl ? annTextEl.textContent : '');
+    const hasText = Boolean(text && text !== '__NEWS__' && text.trim().length > 0);
+    const isWindow = announcementIsInWindow(config);
+    const visible = config.showAnnouncement && hasText && isWindow;
+
+    if (annBox instanceof HTMLElement) {
+      if (visible) {
+        if (nativeAnnouncement() && annTextEl && annTextEl.textContent !== nativeAnnouncement()) {
+          annTextEl.textContent = nativeAnnouncement();
+        }
+        annBox.classList.add('show');
+        setDisplay(annBox, true);
+      } else {
+        annBox.classList.remove('show');
+        setDisplay(annBox, false);
+      }
+    }
+  };
+
   const apply = () => {
     applyQueued = false;
     if (!state.loaded) return;
 
-    // Avoid observing DOM mutations produced by MRM itself. Without this,
-    // our own updates can enqueue another animation-frame pass and cause a
-    // self-sustaining render loop on dynamic subscription pages.
     domObserver?.disconnect();
     try {
       const config = state.config;
@@ -510,13 +621,23 @@
         restoreOriginalUi();
         return;
       }
-      applyTheme(config);
-      updateBrand(config.storeName);
-      applySupport(config.supportId);
-      applyConnections(config);
-      applyPing(config.showPing);
-      applyApps(config.showApps);
-      applyAnnouncement(config);
+      if (isSpecial) {
+        applyTheme(config);
+        updateBrand(config.storeName);
+        applySupport(config.supportId);
+        applyConnections(config);
+        applyPing(config.showPing);
+        applyApps(config.showApps);
+        applyAnnouncement(config);
+      }
+      if (isClassic) {
+        applyClassicTheme(config);
+        updateClassicBrand(config.storeName);
+        applyClassicSupport(config.supportId);
+        applyClassicConnections(config);
+        applyClassicApps(config.showApps);
+        applyClassicAnnouncement(config);
+      }
 
       if (document.documentElement.getAttribute('data-mrm') !== 'active') {
         document.documentElement.setAttribute('data-mrm', 'active');

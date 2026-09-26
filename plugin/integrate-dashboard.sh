@@ -197,20 +197,6 @@ PY
 
 inject_subscription_runtime() {
   [[ -f "${SUB_TEMPLATE}" ]] || { warn "subscription template not found: ${SUB_TEMPLATE}"; return 1; }
-  # If the active template is the classic template, do NOT inject mrm-runtime.js!
-  # If a previous run injected it, strip it out cleanly so classic stays pristine.
-  if grep -q "guideBanner" "${SUB_TEMPLATE}" 2>/dev/null; then
-    python3 - "${SUB_TEMPLATE}" "${MARKER_RUNTIME}" <<'PY'
-from pathlib import Path
-import re, sys
-template_path=Path(sys.argv[1]); marker=sys.argv[2]
-original=template_path.read_text(encoding="utf-8")
-pattern=re.compile(rf'\s*<script id="{re.escape(marker)}">.*?</script>\s*',re.S)
-html=pattern.sub('',original)
-if html!=original: template_path.write_text(html,encoding="utf-8")
-PY
-    return 0
-  fi
   [[ -s "${RUNTIME_JS}" ]] || { warn "runtime JS not found: ${RUNTIME_JS}"; return 1; }
   python3 - "${SUB_TEMPLATE}" "${RUNTIME_JS}" "${MARKER_RUNTIME}" <<'PY'
 from pathlib import Path
