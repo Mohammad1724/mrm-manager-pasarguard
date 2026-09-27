@@ -7,7 +7,7 @@ INSTALL_DIR="/opt/mrm-manager"
 # verified against checksums.txt (integrity). install.sh itself is bootstrapped
 # via the README curl command and therefore cannot self-verify.
 REPO_BASE_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard"
-REPO_REF="v1.5.0"
+REPO_REF="v1.5.1"
 MANAGER_REPO_URL="$REPO_BASE_URL/$REPO_REF"
 VERSION_REGISTRY_URL="$MANAGER_REPO_URL/versions.conf"
 CHECKSUMS_URL="$MANAGER_REPO_URL/checksums.txt"
@@ -18,6 +18,8 @@ CURL_BASE=(curl -fsSL --connect-timeout 10 --max-time 60 --proto '=https' --tlsv
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[0;33m'; CYAN=$'\033[0;36m'
     BOLD=$'\033[1m'; DIM=$'\033[2m'; NC=$'\033[0m'
+    # Same rule as ui.sh: a fixed grey on 256-colour terminals (DIM is ignored by some clients)
+    [ "$(tput colors 2>/dev/null || echo 8)" -ge 256 ] 2>/dev/null && DIM=$'\033[38;5;245m'
 else
     RED=""; GREEN=""; YELLOW=""; CYAN=""; BOLD=""; DIM=""; NC=""
 fi
@@ -57,7 +59,7 @@ rm -f "$VERSION_REGISTRY_FILE"
 
 # Fallback only if registry fetch failed
 if [ -z "$MRM_VERSION" ]; then
-    MRM_VERSION="1.5.0"
+    MRM_VERSION="1.5.1"
 fi
 
 ui_header "MRM Manager Installer  v${MRM_VERSION}"
@@ -255,7 +257,7 @@ cat > /usr/local/bin/mrm << 'EOF'
 #!/bin/bash
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then
     [ -r /opt/mrm-manager/versions.conf ] && source /opt/mrm-manager/versions.conf
-    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.5.0")}"
+    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.5.1")}"
     exit 0
 fi
 exec bash /opt/mrm-manager/main.sh "$@"

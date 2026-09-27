@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager offline.sh — OFFLINE / IRAN MODE v1.5.0
+# MRM Manager offline.sh — OFFLINE / IRAN MODE v1.5.1
 # Iran-friendly APT/Docker mirrors and local (tarball) PasarGuard installs.
 # Safe handling of sources.list.d: third-party repos are always preserved.
 

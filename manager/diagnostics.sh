@@ -48,6 +48,32 @@ mrm_domain_split_enabled() {
     [ -f "/etc/nginx/conf.d/panel_separate.conf" ]
 }
 
+# "Installed" means a real panel checkout — a bare /opt/pasarguard directory
+# (left behind by an old install, or created by MRM on a node-only server)
+# must not be reported as a stopped panel.
+mrm_panel_installed() {
+    [ -d "${PANEL_DIR:-}" ] || return 1
+    [ -f "${PANEL_ENV:-$PANEL_DIR/.env}" ] && return 0
+    get_panel_compose_file >/dev/null 2>&1
+}
+
+mrm_node_installed() {
+    [ -n "${NODE_DIR:-}" ] && [ -d "$NODE_DIR" ] || return 1
+    [ -f "${NODE_ENV:-$NODE_DIR/.env}" ] && return 0
+    get_node_compose_file >/dev/null 2>&1
+}
+
+# 20260916_123942_telegram-settings-remove → "2026-09-16 12:39 — telegram-settings-remove"
+mrm_format_restore_point() {
+    local ID="$1"
+    if [[ "$ID" =~ ^([0-9]{4})([0-9]{2})([0-9]{2})_([0-9]{2})([0-9]{2})[0-9]{2}_(.+)$ ]]; then
+        printf '%s-%s-%s %s:%s — %s' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" \
+            "${BASH_REMATCH[4]}" "${BASH_REMATCH[5]}" "${BASH_REMATCH[6]}"
+    else
+        printf '%s' "$ID"
+    fi
+}
+
 mrm_telegram_enabled() {
     [ -n "${TG_CONFIG:-}" ] && [ -f "$TG_CONFIG" ]
 }
@@ -166,15 +192,21 @@ mrm_status_panel() {
     detect_active_panel > /dev/null 2>&1 || true
     PANEL_NAME="$(cat "$CONFIG_FILE" 2>/dev/null || echo pasarguard)"
 
+    local PANEL_HERE=0 NODE_HERE=0
+    mrm_panel_installed && PANEL_HERE=1
+    mrm_node_installed && NODE_HERE=1
+
     # Panel
-    if [ -d "${PANEL_DIR:-}" ]; then
+    if [ "$PANEL_HERE" -eq 1 ]; then
         if mrm_panel_running; then ui_kv_state "Panel" ok "Running" "$PANEL_NAME · $PANEL_DIR"
         else ui_kv_state "Panel" bad "Stopped" "$PANEL_NAME · $PANEL_DIR"; fi
+    elif [ "$NODE_HERE" -eq 1 ]; then
+        ui_kv_state "Panel" off "Not on this server" "node-only server"
     else
         ui_kv_state "Panel" off "Not installed" "${PANEL_DIR:-}"
     fi
     # Node (optional, usually on its own server)
-    if [ -n "${NODE_DIR:-}" ] && [ -d "$NODE_DIR" ]; then
+    if [ "$NODE_HERE" -eq 1 ]; then
         if mrm_node_running; then ui_kv_state "Node" ok "Running" "$NODE_DIR"
         else ui_kv_state "Node" warn "Stopped" "$NODE_DIR"; fi
     else
@@ -190,16 +222,21 @@ mrm_status_panel() {
     if [ -n "$BK" ] && [ -f "$BK" ]; then
         ui_kv_state "Backup" ok "$(date -r "$BK" '+%Y-%m-%d %H:%M' 2>/dev/null)" "$(basename "$BK") · $(du -h "$BK" | cut -f1)"
     else
-        ui_kv_state "Backup" bad "No backup yet"
+        ui_kv_state "Backup" warn "No backup yet"
     fi
     # Telegram
     if [ -f "${TG_CONFIG:-/root/.mrm_telegram}" ]; then ui_kv_state "Telegram" ok "Configured"; else ui_kv_state "Telegram" off "Not configured"; fi
-    # Template / domain split
-    if mrm_theme_enabled; then THEME_TXT="Custom template active"; ui_kv_state "Template" ok "$THEME_TXT"; else ui_kv_state "Template" off "PasarGuard default"; fi
-    if mrm_domain_split_enabled; then ui_kv_state "Domains" ok "Panel / sub separated"; fi
+    # Template / domain split — panel features, only meaningful where the panel lives
+    if [ "$PANEL_HERE" -eq 1 ]; then
+        if mrm_theme_enabled; then THEME_TXT="Custom template active"; ui_kv_state "Template" ok "$THEME_TXT"; else ui_kv_state "Template" off "PasarGuard default"; fi
+    fi
+    if mrm_domain_split_enabled; then
+        if mrm_nginx_running; then ui_kv_state "Domains" ok "Panel / sub separated"
+        else ui_kv_state "Domains" warn "Separation configured" "nginx is not running"; fi
+    fi
     if declare -f mrm_latest_restore_point_text >/dev/null 2>&1; then
         local RP; RP="$(mrm_latest_restore_point_text 2>/dev/null)"
-        [ -n "$RP" ] && [ "$RP" != "None" ] && ui_kv "Restore point" "$RP"
+        [ -n "$RP" ] && [ "$RP" != "None" ] && ui_kv "Restore point" "$(mrm_format_restore_point "$RP")"
     fi
     # System
     DISK_INFO="$(mrm_check_disk)"; RAM_INFO="$(mrm_check_ram)"; CPU_INFO="$(mrm_check_cpu)"
@@ -268,14 +305,21 @@ run_full_diagnostics() {
     echo ""
 
     ui_section "Service Health"
-    if mrm_panel_running; then diag_report_line ok "Panel containers are running"; else diag_report_line error "Panel containers are STOPPED - Panel DOWN!"; fi
-    if [ -d "$NODE_DIR" ]; then
-        if mrm_node_running; then diag_report_line ok "Node containers are running"; else diag_report_line warn "Node containers stopped"; fi
+    if mrm_panel_installed; then
+        if mrm_panel_running; then diag_report_line ok "Panel containers are running"; else diag_report_line error "Panel containers are STOPPED - Panel DOWN!"; fi
+    elif mrm_node_installed; then
+        diag_report_line info "Panel is not on this server (node-only server)"
+    else
+        diag_report_line warn "Panel is not installed on this server"
+    fi
+    if mrm_node_installed; then
+        if mrm_node_running; then diag_report_line ok "Node containers are running"
+        elif mrm_panel_installed; then diag_report_line warn "Node containers stopped"
+        else diag_report_line error "Node containers are STOPPED - Node DOWN!"; fi
     fi
     if mrm_nginx_running; then diag_report_line ok "Nginx is running"; else diag_report_line warn "Nginx is not running"; fi
-    if command -v docker >/dev/null 2>&1; then diag_report_line ok "Docker is installed"; else diag_report_line error "Docker is not installed"; fi
     case "$DOCKER_INFO" in
-        not_installed) diag_report_line error "Docker not installed" ;;
+        not_installed) diag_report_line error "Docker is not installed" ;;
         stopped) diag_report_line error "Docker daemon is stopped" ;;
         ok*)
             local CONTAINERS=$(echo "$DOCKER_INFO" | awk '{print $2}')
@@ -383,13 +427,25 @@ run_doctor_cli() {
 
     printf '%-8s %s\n' "Disk"   "${DISK_USAGE}% used, ${DISK_FREE} free$( [ "$DISK_USAGE" -gt 90 ] 2>/dev/null && echo '  <- CRITICAL')"
     printf '%-8s %s\n' "RAM"    "${RAM_USED}MB/${RAM_TOTAL}MB (${RAM_PERCENT}%)"
-    printf '%-8s %s\n' "Panel"  "$(mrm_panel_running && echo Running || echo STOPPED)"
-    printf '%-8s %s\n' "Node"   "$( [ -d "$NODE_DIR" ] && (mrm_node_running && echo Running || echo Stopped) || echo 'Not on this server')"
+    local PANEL_HERE=0 NODE_HERE=0 PANEL_TXT NODE_TXT
+    mrm_panel_installed && PANEL_HERE=1
+    mrm_node_installed && NODE_HERE=1
+    if [ "$PANEL_HERE" -eq 1 ]; then PANEL_TXT=$(mrm_panel_running && echo Running || echo STOPPED)
+    elif [ "$NODE_HERE" -eq 1 ]; then PANEL_TXT="Not on this server (node-only)"
+    else PANEL_TXT="Not installed"; fi
+    if [ "$NODE_HERE" -eq 1 ]; then NODE_TXT=$(mrm_node_running && echo Running || echo STOPPED)
+    else NODE_TXT="Not on this server"; fi
+    printf '%-8s %s\n' "Panel"  "$PANEL_TXT"
+    printf '%-8s %s\n' "Node"   "$NODE_TXT"
     printf '%-8s %s\n' "Nginx"  "$(mrm_nginx_running && echo Running || echo Stopped)"
     printf '%-8s %s\n' "Docker" "$(command -v docker >/dev/null 2>&1 && echo OK || echo 'NOT INSTALLED')"
     printf '%-8s %s\n' "Logs"   "$ERRORS errors in the last 100 lines"
     echo ""
-    if [ "$DISK_USAGE" -gt 90 ] 2>/dev/null || ! mrm_panel_running; then
+    # The primary service is the panel where it is installed, otherwise the node.
+    local SERVICE_DOWN=0
+    if [ "$PANEL_HERE" -eq 1 ]; then mrm_panel_running || SERVICE_DOWN=1
+    elif [ "$NODE_HERE" -eq 1 ]; then mrm_node_running || SERVICE_DOWN=1; fi
+    if [ "$DISK_USAGE" -gt 90 ] 2>/dev/null || [ "$SERVICE_DOWN" -eq 1 ]; then
         echo "STATUS: CRITICAL - action required"
         return 1
     elif [ "$DISK_USAGE" -gt 80 ] 2>/dev/null || [ "${RAM_PERCENT%.*}" -gt 90 ] 2>/dev/null; then

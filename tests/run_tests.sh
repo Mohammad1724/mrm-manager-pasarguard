@@ -1360,6 +1360,29 @@ else
     fail "ui.sh plain rendering unexpected: $(printf '%s' "$UI_OUT" | head -2 | tr '\n' ' ')"
 fi
 
+# 12.10: a bare /opt/pasarguard directory must not be reported as a stopped panel (node-only servers)
+if grep -q '^mrm_panel_installed()' "$PROJECT_DIR/manager/diagnostics.sh" && \
+   grep -q 'mrm_panel_installed && PANEL_HERE=1' "$PROJECT_DIR/manager/diagnostics.sh" && \
+   grep -q '"Panel" off "Not on this server"' "$PROJECT_DIR/manager/diagnostics.sh"; then
+    pass "status panel distinguishes installed / node-only / not installed (no false 'Stopped')"
+else
+    fail "status panel still treats a bare panel directory as an installed (stopped) panel"
+fi
+
+# 12.11: domain split status is nginx-aware (separated + nginx down = warning, not green)
+if grep -q '"Domains" warn "Separation configured" "nginx is not running"' "$PROJECT_DIR/manager/diagnostics.sh"; then
+    pass "domain separation status reflects nginx state"
+else
+    fail "domain separation shows green while nginx is down"
+fi
+
+# 12.12: muted colour does not rely on DIM alone (Termius & co. ignore it)
+if grep -q "38;5;245m" "$PROJECT_DIR/manager/ui.sh" && grep -q "38;5;245m" "$PROJECT_DIR/install.sh"; then
+    pass "muted text uses a 256-colour grey where available (DIM-only rendering fixed)"
+else
+    fail "muted text still relies on the DIM attribute only"
+fi
+
 # 12.9: install.sh mini palette is self-contained (defines YELLOW etc. before use)
 if grep -q 'YELLOW=' "$PROJECT_DIR/install.sh" && ! grep -q 'BLUE' "$PROJECT_DIR/install.sh"; then
     pass "install.sh palette is self-contained (YELLOW defined, no undefined BLUE)"

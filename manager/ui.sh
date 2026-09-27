@@ -4,7 +4,7 @@
 # Every menu, prompt, message, table and report in MRM Manager is rendered
 # through the helpers in this file, so the whole tool has ONE visual language:
 #
-#   ┌─ MRM Manager ─────────────────────────────────────────── v1.5.0 ─┐
+#   ┌─ MRM Manager ─────────────────────────────────────────── v1.5.1 ─┐
 #   │ SSL Certificates                                                 │
 #   │ Panel: pasarguard · Certs: /var/lib/pasarguard/certs             │
 #   └──────────────────────────────────────────────────────────────────┘
@@ -42,6 +42,13 @@ else
     RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'
     CYAN='\033[0;36m'; PURPLE='\033[0;35m'; ORANGE='\033[0;33m'; WHITE='\033[1;37m'
     BOLD='\033[1m'; DIM='\033[2m'; NC='\033[0m'
+    # Several clients (Termius, older Windows terminals) ignore the DIM
+    # attribute, which made hints/labels indistinguishable from values. On
+    # 256-colour terminals use a fixed mid-grey instead — readable on dark and
+    # light backgrounds and independent of the user's 16-colour theme.
+    if [ "$(tput colors 2>/dev/null || echo 8)" -ge 256 ] 2>/dev/null; then
+        DIM='\033[38;5;245m'
+    fi
 fi
 export RED GREEN YELLOW BLUE CYAN PURPLE ORANGE WHITE BOLD DIM NC
 
@@ -169,7 +176,7 @@ ui_version() {
     if [ -z "$V" ] && [ -s /opt/mrm-manager/VERSION ]; then
         V="$(head -1 /opt/mrm-manager/VERSION 2>/dev/null)"
     fi
-    echo "${V:-1.5.0}"
+    echo "${V:-1.5.1}"
 }
 
 # ─── Screen & header ────────────────────────────────────────────────────────

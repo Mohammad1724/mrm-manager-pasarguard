@@ -117,6 +117,14 @@ mrm_home_subtitle() {
     local PANEL HOST
     PANEL="$(cat "$CONFIG_FILE" 2>/dev/null || echo "pasarguard")"
     HOST="$(hostname 2>/dev/null || echo "server")"
+    if declare -f mrm_panel_installed >/dev/null 2>&1 && ! mrm_panel_installed; then
+        if declare -f mrm_node_installed >/dev/null 2>&1 && mrm_node_installed; then
+            printf 'Host: %s · Node server · %s' "$HOST" "${NODE_DIR:-/opt/pg-node}"
+        else
+            printf 'Host: %s · Panel: not installed' "$HOST"
+        fi
+        return 0
+    fi
     printf 'Host: %s · Panel: %s · Data: %s' "$HOST" "$PANEL" "${DATA_DIR:-/var/lib/pasarguard}"
 }
 
