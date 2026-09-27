@@ -36,6 +36,18 @@ mrm special  # تب «MRM · Special» در تنظیمات پنل + صفحه‌�
 
 از منوی اصلی گزینه‌ی **Update MRM Manager** (یا دستور `mrm update`)، یا اجرای دوباره‌ی دستور نصب (نسخه‌ی قبلی خودکار پشتیبان می‌شود).
 
+## 🎨 ظاهر و رنگ‌ها
+
+رابط خط فرمان از یک پالت ثابت ۲۵۶-رنگی استفاده می‌کند تا در همه‌ی کلاینت‌ها (Termius، Windows Terminal، iTerm و …) یکسان دیده شود. در صورت نیاز با متغیر محیطی قابل تغییر است:
+
+| متغیر | مقدارها | توضیح |
+|---|---|---|
+| `MRM_PALETTE` | `amber` (پیش‌فرض) · `slate` · `teal` · `classic` | پالت رنگی؛ `classic` = رنگ‌های ۱۶-تایی تم خود ترمینال |
+| `MRM_THEME` | `dark` (پیش‌فرض) · `light` | در تم روشن، رنگ پیش‌فرض متن ترمینال حفظ می‌شود |
+| `NO_COLOR` / `MRM_COLOR=never` | — | بدون رنگ |
+
+مثال: `MRM_PALETTE=slate mrm` — برای دائمی‌کردن، خط `export MRM_PALETTE=slate` را به `~/.bashrc` اضافه کنید.
+
 ## 🐞 گزارش مشکل
 
 باگ یا پیشنهاد → [Issues](https://github.com/Mohammad1724/mrm-manager-pasarguard/issues)

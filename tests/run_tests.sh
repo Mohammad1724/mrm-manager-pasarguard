@@ -1377,10 +1377,30 @@ else
 fi
 
 # 12.12: muted colour does not rely on DIM alone (Termius & co. ignore it)
-if grep -q "38;5;245m" "$PROJECT_DIR/manager/ui.sh" && grep -q "38;5;245m" "$PROJECT_DIR/install.sh"; then
+if grep -qE "38;5;24[45]m" "$PROJECT_DIR/manager/ui.sh" && grep -qE "38;5;24[45]m" "$PROJECT_DIR/install.sh"; then
     pass "muted text uses a 256-colour grey where available (DIM-only rendering fixed)"
 else
     fail "muted text still relies on the DIM attribute only"
+fi
+
+# 12.13: named 256-colour palettes with a classic fallback, mirrored by the installer
+if grep -q 'MRM_PALETTE="${MRM_PALETTE:-amber}"' "$PROJECT_DIR/manager/ui.sh" && \
+   grep -q '^        slate) _UI_P=' "$PROJECT_DIR/manager/ui.sh" && \
+   grep -q '^        teal)  _UI_P=' "$PROJECT_DIR/manager/ui.sh" && \
+   grep -q '"$MRM_PALETTE" != "classic"' "$PROJECT_DIR/manager/ui.sh" && \
+   grep -q '38;5;179m' "$PROJECT_DIR/install.sh"; then
+    pass "ui.sh ships amber/slate/teal palettes (classic fallback) and install.sh mirrors the default"
+else
+    fail "palette system missing or installer palette out of sync with ui.sh"
+fi
+
+# 12.14: palette selection is honoured and colours stay off with NO_COLOR
+_PAL_OUT=$(cd "$PROJECT_DIR" && TERM=xterm-256color MRM_COLOR=always MRM_PALETTE=slate bash -c 'source manager/ui.sh; printf "%s" "$UI_C_ACCENT"' 2>/dev/null || true)
+_PAL_OFF=$(cd "$PROJECT_DIR" && TERM=xterm-256color NO_COLOR=1 MRM_PALETTE=slate bash -c 'source manager/ui.sh; printf "%s%s%s" "$UI_C_ACCENT" "$UI_C_TEXT" "$UI_C_FRAME"' 2>/dev/null || true)
+if [ "$_PAL_OUT" = '\033[38;5;75m' ] && [ -z "$_PAL_OFF" ]; then
+    pass "MRM_PALETTE is honoured and NO_COLOR disables the palette"
+else
+    fail "palette selection broken (accent='$_PAL_OUT', no_color='$_PAL_OFF')"
 fi
 
 # 12.9: install.sh mini palette is self-contained (defines YELLOW etc. before use)

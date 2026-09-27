@@ -7,7 +7,7 @@ INSTALL_DIR="/opt/mrm-manager"
 # verified against checksums.txt (integrity). install.sh itself is bootstrapped
 # via the README curl command and therefore cannot self-verify.
 REPO_BASE_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard"
-REPO_REF="v1.5.1"
+REPO_REF="v1.5.2"
 MANAGER_REPO_URL="$REPO_BASE_URL/$REPO_REF"
 VERSION_REGISTRY_URL="$MANAGER_REPO_URL/versions.conf"
 CHECKSUMS_URL="$MANAGER_REPO_URL/checksums.txt"
@@ -17,24 +17,29 @@ CURL_BASE=(curl -fsSL --connect-timeout 10 --max-time 60 --proto '=https' --tlsv
 # ─── Minimal UI (ui.sh is not installed yet — same look, self-contained) ─────
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
     RED=$'\033[0;31m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[0;33m'; CYAN=$'\033[0;36m'
-    BOLD=$'\033[1m'; DIM=$'\033[2m'; NC=$'\033[0m'
-    # Same rule as ui.sh: a fixed grey on 256-colour terminals (DIM is ignored by some clients)
-    [ "$(tput colors 2>/dev/null || echo 8)" -ge 256 ] 2>/dev/null && DIM=$'\033[38;5;245m'
+    BOLD=$'\033[1m'; DIM=$'\033[2m'; NC=$'\033[0m'; TEXT=""; FRAME=$CYAN
+    # Same palette as manager/ui.sh (amber) on 256-colour terminals, so the
+    # installer looks like the manager regardless of the client's 16-colour theme.
+    if [ "$(tput colors 2>/dev/null || echo 8)" -ge 256 ] 2>/dev/null && [ "${MRM_PALETTE:-amber}" != "classic" ]; then
+        RED=$'\033[38;5;174m'; GREEN=$'\033[38;5;108m'; YELLOW=$'\033[38;5;215m'
+        CYAN=$'\033[38;5;179m'; DIM=$'\033[38;5;244m'; TEXT=$'\033[38;5;250m'; FRAME=$'\033[38;5;238m'
+        [ "${MRM_THEME:-dark}" = "light" ] && TEXT=""
+    fi
 else
-    RED=""; GREEN=""; YELLOW=""; CYAN=""; BOLD=""; DIM=""; NC=""
+    RED=""; GREEN=""; YELLOW=""; CYAN=""; BOLD=""; DIM=""; NC=""; TEXT=""; FRAME=""
 fi
 PAD="  "
-ui_success() { printf '%s%s✔%s %s\n' "$PAD" "$GREEN" "$NC" "$1"; }
-ui_error()   { printf '%s%s✘%s %s\n' "$PAD" "$RED" "$NC" "$1" >&2; }
-ui_warning() { printf '%s%s⚠%s %s\n' "$PAD" "$YELLOW" "$NC" "$1"; }
+ui_success() { printf '%s%s✔%s %s%s%s\n' "$PAD" "$GREEN" "$NC" "$TEXT" "$1" "$NC"; }
+ui_error()   { printf '%s%s✘%s %s%s%s\n' "$PAD" "$RED" "$NC" "$TEXT" "$1" "$NC" >&2; }
+ui_warning() { printf '%s%s⚠%s %s%s%s\n' "$PAD" "$YELLOW" "$NC" "$TEXT" "$1" "$NC"; }
 ui_note()    { printf '%s%s%s%s\n' "$PAD" "$DIM" "$1" "$NC"; }
-ui_step()    { printf '\n%s%s[%s/%s]%s %s%s%s\n' "$PAD" "$CYAN" "$1" "$2" "$NC" "$BOLD" "$3" "$NC"; }
+ui_step()    { printf '\n%s%s[%s/%s]%s %s%s%s\n' "$PAD" "$CYAN" "$1" "$2" "$NC" "$BOLD$TEXT" "$3" "$NC"; }
 ui_header() {
     local TITLE="$1" W=56 LINE
     LINE="$(printf '%*s' $((W - 2)) '' | tr ' ' '─')"
-    printf '\n%s%s┌%s┐%s\n' "$PAD" "$CYAN" "$LINE" "$NC"
-    printf '%s%s│%s %s%-*s%s %s│%s\n' "$PAD" "$CYAN" "$NC" "$BOLD" $((W - 4)) "$TITLE" "$NC" "$CYAN" "$NC"
-    printf '%s%s└%s┘%s\n\n' "$PAD" "$CYAN" "$LINE" "$NC"
+    printf '\n%s%s┌%s┐%s\n' "$PAD" "$FRAME" "$LINE" "$NC"
+    printf '%s%s│%s %s%-*s%s %s│%s\n' "$PAD" "$FRAME" "$NC" "$BOLD$TEXT" $((W - 4)) "$TITLE" "$NC" "$FRAME" "$NC"
+    printf '%s%s└%s┘%s\n\n' "$PAD" "$FRAME" "$LINE" "$NC"
 }
 
 # MRM-006: POSIX-safe root check (EUID is undefined under dash)
@@ -59,7 +64,7 @@ rm -f "$VERSION_REGISTRY_FILE"
 
 # Fallback only if registry fetch failed
 if [ -z "$MRM_VERSION" ]; then
-    MRM_VERSION="1.5.1"
+    MRM_VERSION="1.5.2"
 fi
 
 ui_header "MRM Manager Installer  v${MRM_VERSION}"
@@ -257,7 +262,7 @@ cat > /usr/local/bin/mrm << 'EOF'
 #!/bin/bash
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then
     [ -r /opt/mrm-manager/versions.conf ] && source /opt/mrm-manager/versions.conf
-    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.5.1")}"
+    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.5.2")}"
     exit 0
 fi
 exec bash /opt/mrm-manager/main.sh "$@"
@@ -274,7 +279,7 @@ echo ""
 
 # Safe read with fallback for non-interactive environments
 if [ -t 0 ]; then
-    printf '%s%s›%s Run MRM Manager now? %s[y/N]%s ' "$PAD" "$CYAN" "$NC" "$DIM" "$NC"
+    printf '%s%s›%s %sRun MRM Manager now?%s %s[y/N]%s ' "$PAD" "$CYAN" "$NC" "$TEXT" "$NC" "$DIM" "$NC"
     read -t 10 -r RUN_NOW 2>/dev/null || RUN_NOW="n"
 else
     RUN_NOW="n"

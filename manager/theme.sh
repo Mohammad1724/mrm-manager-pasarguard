@@ -49,7 +49,7 @@ theme_get_special_source() {
     local dl_dst="$DATA_DIR/templates/.special.pristine.html"
     mkdir -p "$(dirname "$dl_dst")" 2>/dev/null || true
     local ver
-    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.5.1")"
+    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.5.2")"
     local dl_url="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v${ver}/templates/subscription/index.html"
     if curl -sL -f -o "$dl_dst" "$dl_url" 2>/dev/null && [ -s "$dl_dst" ] && ! grep -q "guideBanner" "$dl_dst" 2>/dev/null; then
         printf '%s\n' "$dl_dst"
@@ -80,7 +80,7 @@ theme_get_classic_source() {
     local dl_dst="$DATA_DIR/templates/.classic.pristine.html"
     mkdir -p "$(dirname "$dl_dst")" 2>/dev/null || true
     local ver
-    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.5.1")"
+    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.5.2")"
     local dl_url="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v${ver}/templates/subscription-classic/index.html"
     if curl -sL -f -o "$dl_dst" "$dl_url" 2>/dev/null && [ -s "$dl_dst" ] && grep -q "guideBanner" "$dl_dst" 2>/dev/null; then
         printf '%s\n' "$dl_dst"
@@ -617,6 +617,12 @@ install_theme_wizard() {
     export SPECIAL_FINAL_FILE="$DATA_DIR/templates/subscription-special/index.html"
     export CLASSIC_NEW_FILE="$CLASSIC_DL"
     export CLASSIC_FINAL_FILE="$CLASSIC_FILE"
+    # Hand the active ui.sh palette to the interactive Python step (same look)
+    export MRM_PY_ACCENT MRM_PY_MUTED MRM_PY_OK MRM_PY_ERR MRM_PY_TEXT MRM_PY_TITLE MRM_PY_FRAME MRM_PY_NC
+    printf -v MRM_PY_ACCENT '%b' "$UI_C_ACCENT"; printf -v MRM_PY_MUTED '%b' "$UI_C_MUTED"
+    printf -v MRM_PY_OK '%b' "$UI_C_OK";         printf -v MRM_PY_ERR '%b' "$UI_C_ERR"
+    printf -v MRM_PY_TEXT '%b' "$UI_C_TEXT";     printf -v MRM_PY_TITLE '%b' "$UI_C_TITLE"
+    printf -v MRM_PY_FRAME '%b' "$UI_C_FRAME";   printf -v MRM_PY_NC '%b' "$NC"
 
     cat > "$PY_SCRIPT" << 'PYEOF'
 import html
@@ -624,10 +630,14 @@ import os
 import re
 import sys
 
-CYAN = '\033[0;36m'
-YELLOW = '\033[1;33m'
-GREEN = '\033[0;32m'
-NC = '\033[0m'
+ACCENT = os.environ.get('MRM_PY_ACCENT', '')
+MUTED = os.environ.get('MRM_PY_MUTED', '')
+OK = os.environ.get('MRM_PY_OK', '')
+ERR = os.environ.get('MRM_PY_ERR', '')
+TEXT = os.environ.get('MRM_PY_TEXT', '')
+TITLE = os.environ.get('MRM_PY_TITLE', '')
+FRAME = os.environ.get('MRM_PY_FRAME', '')
+NC = os.environ.get('MRM_PY_NC', '')
 
 old_path = os.environ.get('OLD_FILE')
 pairs = []
@@ -733,13 +743,13 @@ try:
 except Exception:
     pass
 
-print(f'\n{CYAN}=== Theme Settings ==={NC}')
-print(f'Press {YELLOW}ENTER{NC} to keep the current value [in brackets].\n')
+print(f"\n  {FRAME}──{NC} {TITLE}Theme Settings{NC} {FRAME}{'─' * 50}{NC}")
+print(f'  {MUTED}Press Enter to keep the current value shown in brackets.{NC}\n')
 
 
 def get_input(label, key):
     try:
-        val = input(f'{label} [{defaults[key]}]: ').strip()
+        val = input(f'  {ACCENT}›{NC} {TEXT}{label}{NC} {MUTED}[{defaults[key]}]{NC}{TEXT}:{NC} ').strip()
         if not val:
             return defaults[key]
         return val
@@ -764,7 +774,7 @@ try:
 
         with open(final_path, 'w', encoding='utf-8') as f:
             f.write(content)
-        print(f'{GREEN}✔ Written: {final_path}{NC}')
+        print(f'  {OK}✔{NC} {TEXT}Written: {final_path}{NC}')
 
     # Persist the entered values for non-interactive template refreshes
     # (theme_redeploy on every 'mrm update').
@@ -783,9 +793,9 @@ try:
     except Exception:
         pass
 
-    print(f'\n{GREEN}✔ Settings saved successfully.{NC}')
+    print(f'\n  {OK}✔{NC} {TEXT}Settings saved successfully.{NC}')
 except Exception as e:
-    print(f'\nError processing file: {e}')
+    print(f'\n  {ERR}✘{NC} {TEXT}Error processing file: {e}{NC}', file=sys.stderr)
     sys.exit(1)
 PYEOF
 
