@@ -1403,6 +1403,23 @@ else
     fail "palette selection broken (accent='$_PAL_OUT', no_color='$_PAL_OFF')"
 fi
 
+# 12.15: UTF-8 safe box drawing in the installer (tr is byte-based) + shared colour-depth detection
+if ! grep -qE "tr ' ' '─'" "$PROJECT_DIR/install.sh" && grep -q '^has_256_colors()' "$PROJECT_DIR/install.sh" && \
+   grep -q '^_ui_has_256()' "$PROJECT_DIR/manager/ui.sh" && grep -q '_ui_has_256 && _UI_256=1' "$PROJECT_DIR/manager/ui.sh"; then
+    pass "installer draws its header without tr and both installer and ui.sh detect 256 colours the same way"
+else
+    fail "installer header still uses tr on UTF-8, or colour-depth detection is not shared"
+fi
+
+# 12.16: TERM=xterm over SSH (Termius/PuTTY) still gets the 256-colour palette; linux console does not
+_T1=$(cd "$PROJECT_DIR" && env -u COLORTERM TERM=xterm MRM_COLOR=always bash -c 'source manager/ui.sh; printf "%s" "$_UI_256"' 2>/dev/null || true)
+_T2=$(cd "$PROJECT_DIR" && env -u COLORTERM TERM=linux MRM_COLOR=always bash -c 'source manager/ui.sh; printf "%s" "$_UI_256"' 2>/dev/null || true)
+if [ "$_T1" = "1" ] && [ "$_T2" = "0" ]; then
+    pass "colour-depth detection: TERM=xterm → 256 colours, TERM=linux → classic"
+else
+    fail "colour-depth detection wrong (xterm=$_T1, linux=$_T2)"
+fi
+
 # 12.9: install.sh mini palette is self-contained (defines YELLOW etc. before use)
 if grep -q 'YELLOW=' "$PROJECT_DIR/install.sh" && ! grep -q 'BLUE' "$PROJECT_DIR/install.sh"; then
     pass "install.sh palette is self-contained (YELLOW defined, no undefined BLUE)"

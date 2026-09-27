@@ -18,7 +18,7 @@ fi
 
 CONFIG_FILE="/opt/mrm-manager/panel.conf"
 MRM_VERSION_FILE="/opt/mrm-manager/VERSION"
-MRM_DEFAULT_VERSION="1.5.2"
+MRM_DEFAULT_VERSION="1.5.3"
 
 ensure_mrm_config_dir() {
     mkdir -p "$(dirname "$CONFIG_FILE")"

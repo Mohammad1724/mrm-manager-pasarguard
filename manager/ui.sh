@@ -4,7 +4,7 @@
 # Every menu, prompt, message, table and report in MRM Manager is rendered
 # through the helpers in this file, so the whole tool has ONE visual language:
 #
-#   ┌─ MRM Manager ─────────────────────────────────────────── v1.5.2 ─┐
+#   ┌─ MRM Manager ─────────────────────────────────────────── v1.5.3 ─┐
 #   │ SSL Certificates                                                 │
 #   │ Panel: pasarguard · Certs: /var/lib/pasarguard/certs             │
 #   └──────────────────────────────────────────────────────────────────┘
@@ -43,7 +43,22 @@ _MRM_UI_LOADED=1
 #
 #   MRM_PALETTE = amber (default) | slate | teal | classic
 #   MRM_THEME   = dark (default) | light   (light keeps the terminal's own text colour)
+#   MRM_COLORS  = 256 | 16                  (override colour-depth detection)
 #   NO_COLOR, MRM_COLOR=never|always        (disable / force colours)
+# 256-colour capable? `tput colors` is unreliable over SSH (Termius, PuTTY and
+# Windows Terminal often announce TERM=xterm yet render 256 colours), so the
+# terminal name / COLORTERM are trusted first. MRM_COLORS=16|256 overrides.
+_ui_has_256() {
+    case "${MRM_COLORS:-}" in 256) return 0 ;; 16|8) return 1 ;; esac
+    case "${COLORTERM:-}" in truecolor|24bit) return 0 ;; esac
+    case "${TERM:-}" in
+        *256color*|*truecolor*|*direct*|xterm-kitty|alacritty|wezterm*|foot*) return 0 ;;
+        dumb|linux|vt*|ansi|cons25|sun*) return 1 ;;
+    esac
+    [ "$(tput colors 2>/dev/null || echo 0)" -ge 256 ] 2>/dev/null && return 0
+    case "${TERM:-}" in xterm*|screen*|tmux*|rxvt*|putty*|st|st-*|konsole*|gnome*|"") return 0 ;; esac
+    return 1
+}
 _UI_256=0
 if [ -n "${NO_COLOR:-}" ] || [ "${MRM_COLOR:-auto}" = "never" ] || { [ ! -t 1 ] && [ "${MRM_COLOR:-auto}" != "always" ]; }; then
     RED=''; GREEN=''; YELLOW=''; BLUE=''; CYAN=''; PURPLE=''; ORANGE=''
@@ -52,7 +67,7 @@ else
     RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'
     CYAN='\033[0;36m'; PURPLE='\033[0;35m'; ORANGE='\033[0;33m'; WHITE='\033[1;37m'
     BOLD='\033[1m'; DIM='\033[2m'; NC='\033[0m'
-    [ "$(tput colors 2>/dev/null || echo 8)" -ge 256 ] 2>/dev/null && _UI_256=1
+    _ui_has_256 && _UI_256=1
     # Several clients (Termius, older Windows terminals) ignore the DIM
     # attribute, which made hints/labels indistinguishable from values. On
     # 256-colour terminals use a fixed mid-grey instead.
@@ -210,7 +225,7 @@ ui_version() {
     if [ -z "$V" ] && [ -s /opt/mrm-manager/VERSION ]; then
         V="$(head -1 /opt/mrm-manager/VERSION 2>/dev/null)"
     fi
-    echo "${V:-1.5.2}"
+    echo "${V:-1.5.3}"
 }
 
 # ─── Screen & header ────────────────────────────────────────────────────────
