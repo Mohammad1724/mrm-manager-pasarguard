@@ -4,11 +4,14 @@ DATA_DIR="${MRM_DATA_DIR:-/var/lib/pasarguard/mrm}"
 REQUEST_FILE="${DATA_DIR}/update-request.json"; STATUS_FILE="${DATA_DIR}/update-status.json"; LOG_FILE="${DATA_DIR}/panel-update.log"; LOCK_FILE="${DATA_DIR}/.panel-update.lock"; MRM_CLI="${MRM_CLI:-/usr/local/bin/mrm}"
 mkdir -p "${DATA_DIR}"; touch "${LOCK_FILE}"; chmod 600 "${LOCK_FILE}" || true; exec 9>"${LOCK_FILE}"; flock -n 9 || exit 0
 trap 'rm -f "${REQUEST_FILE}"' EXIT; [[ -s "${REQUEST_FILE}" ]] || exit 0
+# The panel queues a release version ("1.5.4"); older builds queued a commit SHA.
 read_target() { python3 - "${REQUEST_FILE}" <<'PY2'
 import json,re,sys
-try: value=json.load(open(sys.argv[1],encoding='utf-8')).get('target_sha','')
+try:
+    data=json.load(open(sys.argv[1],encoding='utf-8')); value=data.get('target') or data.get('target_sha') or ''
 except Exception: value=''
-print(value if re.fullmatch(r'[0-9a-f]{40}',str(value)) else '')
+value=str(value).strip()
+print(value if re.fullmatch(r'v?\d+\.\d+\.\d+|[0-9a-f]{40}',value) else '')
 PY2
 }
 write_status() { python3 - "${STATUS_FILE}" "$1" "$2" "${3:-}" "${4:-}" <<'PY2'
@@ -18,7 +21,7 @@ from pathlib import Path
 p=Path(sys.argv[1]); state=sys.argv[2]; message=sys.argv[3]; finished=sys.argv[4]; target=sys.argv[5] or None
 try: old=json.loads(p.read_text(encoding='utf-8'))
 except Exception: old={}
-now=datetime.now(timezone.utc).isoformat(); payload={'status':state,'message':message,'started_at':old.get('started_at') or now,'finished_at':now if finished else None,'target_sha':target or old.get('target_sha')}; t=p.with_suffix('.json.tmp'); t.write_text(json.dumps(payload,indent=2)+'\n',encoding='utf-8'); t.chmod(0o600); t.replace(p)
+now=datetime.now(timezone.utc).isoformat(); payload={'status':state,'message':message,'started_at':old.get('started_at') or now,'finished_at':now if finished else None,'target':target or old.get('target') or old.get('target_sha')}; t=p.with_suffix('.json.tmp'); t.write_text(json.dumps(payload,indent=2)+'\n',encoding='utf-8'); t.chmod(0o600); t.replace(p)
 PY2
 }
 target="$(read_target)"; write_status running "MRM update is running on the host" "" "$target"; rm -f "${LOG_FILE}"

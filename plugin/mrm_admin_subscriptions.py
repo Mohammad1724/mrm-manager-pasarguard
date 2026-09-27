@@ -74,9 +74,14 @@ UPDATE_REQUEST_FILE = DATA_DIR / "update-request.json"
 UPDATE_STATUS_FILE = DATA_DIR / "update-status.json"
 TEMPLATE_REQUEST_FILE = DATA_DIR / "template-request.json"
 TEMPLATE_STATUS_FILE = DATA_DIR / "template-status.json"
-UPDATE_REPO_API = "https://api.github.com/repos/PEDIHS/mrm-template/commits/main"
+# Release check is version-based: the published release number lives in
+# versions.conf on the main branch of the MRM Manager repository, and the
+# installed version is recorded by the installer in install-state.json.
+UPDATE_VERSIONS_URL = os.getenv("MRM_UPDATE_VERSIONS_URL", "https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/main/versions.conf")
+INSTALLED_VERSION_FILE = Path(os.getenv("MRM_INSTALL_DIR", "/opt/mrm-manager")) / "VERSION"
 UPDATE_CACHE_TTL = 300
-_UPDATE_CACHE: dict[str, object] = {"checked_at": 0.0, "latest_sha": None, "error": None}
+_UPDATE_CACHE: dict[str, object] = {"checked_at": 0.0, "latest_version": None, "error": None}
+_VERSION_RE = re.compile(r"v?(\d+)\.(\d+)\.(\d+)")
 _ROUTES_CACHE: dict[str, object] = {"mtime_ns": None, "size": None, "state": None}
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 RESERVED_SLUGS = {"api", "info", "raw", "apps", "usage", "admin"}
@@ -247,33 +252,53 @@ def _atomic_json_write(path: Path, payload: dict) -> None:
     os.replace(tmp, path)
 
 
-def _valid_commit_sha(value: object) -> str | None:
-    text = str(value or "").strip().lower()
-    return text if re.fullmatch(r"[0-9a-f]{40}", text) else None
+def _valid_version(value: object) -> str | None:
+    """Normalise 'v1.5.4' / '1.5.4' to '1.5.4'; anything else is None."""
+    match = _VERSION_RE.fullmatch(str(value or "").strip().lower())
+    return ".".join(str(int(part)) for part in match.groups()) if match else None
 
 
-def _installed_commit() -> str | None:
+def _version_key(version: str) -> tuple[int, int, int]:
+    major, minor, patch = (int(part) for part in version.split("."))
+    return major, minor, patch
+
+
+def _installed_version() -> str | None:
     state = _read_json_file(INSTALL_STATE_FILE)
-    return _valid_commit_sha(state.get("commit") or state.get("source_ref"))
+    version = _valid_version(state.get("version"))
+    if version:
+        return version
+    try:
+        return _valid_version(INSTALLED_VERSION_FILE.read_text(encoding="utf-8"))
+    except OSError:
+        return None
 
 
-def _fetch_latest_commit_sync(force: bool = False) -> tuple[str | None, str | None]:
+def _parse_versions_conf(text: str) -> str | None:
+    match = re.search(r'^MRM_VERSION=["\']?([^"\'\s#]+)', text, flags=re.MULTILINE)
+    return _valid_version(match.group(1)) if match else None
+
+
+def _fetch_latest_version_sync(force: bool = False) -> tuple[str | None, str | None]:
     now = time.time()
     if not force and now - float(_UPDATE_CACHE.get("checked_at") or 0) < UPDATE_CACHE_TTL:
-        return _valid_commit_sha(_UPDATE_CACHE.get("latest_sha")), str(_UPDATE_CACHE.get("error") or "") or None
-    request = urllib.request.Request(f"{UPDATE_REPO_API}?t={int(now)}", headers={"Accept": "application/vnd.github+json", "Cache-Control": "no-cache", "User-Agent": "MRM-Update-Checker"})
+        return _valid_version(_UPDATE_CACHE.get("latest_version")), str(_UPDATE_CACHE.get("error") or "") or None
+    request = urllib.request.Request(f"{UPDATE_VERSIONS_URL}?t={int(now)}", headers={"Cache-Control": "no-cache", "User-Agent": "MRM-Update-Checker"})
     latest = None
     error = None
     try:
         with urllib.request.urlopen(request, timeout=8) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        latest = _valid_commit_sha(payload.get("sha"))
+            latest = _parse_versions_conf(response.read(65536).decode("utf-8", "replace"))
         if latest is None:
-            error = "GitHub returned an invalid commit SHA"
+            error = "versions.conf does not contain a valid MRM_VERSION"
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError, OSError) as exc:
         error = f"{type(exc).__name__}: {exc}"
-    _UPDATE_CACHE.update({"checked_at": now, "latest_sha": latest, "error": error})
+    _UPDATE_CACHE.update({"checked_at": now, "latest_version": latest, "error": error})
     return latest, error
+
+
+def _update_is_available(installed: str | None, latest: str | None) -> bool:
+    return bool(installed and latest and _version_key(latest) > _version_key(installed))
 
 
 def _update_runtime_state() -> dict:
@@ -722,27 +747,39 @@ def _public_routes(state: dict) -> list[dict]:
 
 @router.get("/api/mrm/update-status")
 async def get_mrm_update_status(refresh: bool = False, _owner: AdminDetails = Depends(_require_owner)):
-    latest_sha, check_error = await asyncio.to_thread(_fetch_latest_commit_sync, bool(refresh))
-    installed_sha = _installed_commit()
+    latest_version, check_error = await asyncio.to_thread(_fetch_latest_version_sync, bool(refresh))
+    installed_version = _installed_version()
     runtime = _update_runtime_state()
-    return {"installed_sha": installed_sha, "latest_sha": latest_sha, "update_available": bool(installed_sha and latest_sha and installed_sha != latest_sha), "check_error": check_error, "status": runtime.get("status") or "idle", "message": runtime.get("message") or "", "started_at": runtime.get("started_at"), "finished_at": runtime.get("finished_at"), "target_sha": _valid_commit_sha(runtime.get("target_sha"))}
+    if installed_version is None and check_error is None:
+        check_error = "Installed MRM version is unknown — run 'mrm update' on the host once"
+    return {
+        "installed_version": installed_version,
+        "latest_version": latest_version,
+        "update_available": _update_is_available(installed_version, latest_version),
+        "check_error": check_error,
+        "status": runtime.get("status") or "idle",
+        "message": runtime.get("message") or "",
+        "started_at": runtime.get("started_at"),
+        "finished_at": runtime.get("finished_at"),
+        "target": _valid_version(runtime.get("target")),
+    }
 
 
 @router.post("/api/mrm/update", status_code=status.HTTP_202_ACCEPTED)
 async def queue_mrm_update(_owner: AdminDetails = Depends(_require_owner)):
-    latest_sha, check_error = await asyncio.to_thread(_fetch_latest_commit_sync, True)
-    if latest_sha is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=check_error or "Could not resolve the latest MRM commit")
-    installed_sha = _installed_commit()
+    latest_version, check_error = await asyncio.to_thread(_fetch_latest_version_sync, True)
+    if latest_version is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=check_error or "Could not resolve the latest MRM release")
+    installed_version = _installed_version()
     runtime = _update_runtime_state()
     if runtime.get("status") in {"queued", "running"}:
-        return {"status": runtime.get("status"), "latest_sha": latest_sha, "installed_sha": installed_sha}
-    if installed_sha == latest_sha:
-        return {"status": "current", "latest_sha": latest_sha, "installed_sha": installed_sha}
+        return {"status": runtime.get("status"), "latest_version": latest_version, "installed_version": installed_version}
+    if installed_version is not None and not _update_is_available(installed_version, latest_version):
+        return {"status": "current", "latest_version": latest_version, "installed_version": installed_version}
     now = datetime.now(UTC).isoformat()
-    _atomic_json_write(UPDATE_REQUEST_FILE, {"requested_at": now, "requested_by": _owner.username, "target_sha": latest_sha})
-    _atomic_json_write(UPDATE_STATUS_FILE, {"status": "queued", "message": "Update queued on the host", "started_at": now, "finished_at": None, "target_sha": latest_sha})
-    return {"status": "queued", "latest_sha": latest_sha, "installed_sha": installed_sha}
+    _atomic_json_write(UPDATE_REQUEST_FILE, {"requested_at": now, "requested_by": _owner.username, "target": latest_version})
+    _atomic_json_write(UPDATE_STATUS_FILE, {"status": "queued", "message": "Update queued on the host", "started_at": now, "finished_at": None, "target": latest_version})
+    return {"status": "queued", "latest_version": latest_version, "installed_version": installed_version}
 
 
 class TemplateSwitch(BaseModel):

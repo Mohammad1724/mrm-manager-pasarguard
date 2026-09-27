@@ -165,8 +165,10 @@ debug_backup_size() {
     [ ! -d "$NODE_DIR" ] && [ ! -d "$NODE_DATA_DIR" ] && ui_note "No node on this server"
     echo ""
     ui_section "Other"
-    ui_kv "/etc/letsencrypt" "$(du -sh /etc/letsencrypt 2>/dev/null | cut -f1 || echo "not found")"
-    ui_kv "/etc/nginx" "$(du -sh /etc/nginx 2>/dev/null | cut -f1 || echo "not found")"
+    if [ -d /etc/letsencrypt ]; then ui_kv "Let's Encrypt" "$(du -sh /etc/letsencrypt 2>/dev/null | cut -f1)" "/etc/letsencrypt"
+    else ui_kv "Let's Encrypt" "not present" "/etc/letsencrypt"; fi
+    if [ -d /etc/nginx ]; then ui_kv "Nginx" "$(du -sh /etc/nginx 2>/dev/null | cut -f1)" "/etc/nginx"
+    else ui_kv "Nginx" "not present" "/etc/nginx"; fi
     echo ""
     ui_note "Excluded from archives: assets/*, xray-core/*, backup/*, geoip.dat, geosite.dat, xray binary."
     ui_pause
@@ -180,8 +182,8 @@ backup_menu() {
         setup_env
         ui_header "Backup & Restore" "$BACKUP_DIR"
         local BACKUP_COUNT LAST_FILE
-        BACKUP_COUNT=$(ls "$BACKUP_DIR"/*.tar.gz 2>/dev/null | wc -l)
-        LAST_FILE=$(ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null | grep -v '/pre_restore_' | head -1)
+        BACKUP_COUNT=$(find "$BACKUP_DIR" -maxdepth 1 -name '*.tar.gz' 2>/dev/null | wc -l)
+        LAST_FILE=$(find "$BACKUP_DIR" -maxdepth 1 -name '*.tar.gz' ! -name 'pre_restore_*' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
         if [ -n "$LAST_FILE" ]; then
             ui_kv_state "Last backup" ok "$(date -r "$LAST_FILE" '+%Y-%m-%d %H:%M' 2>/dev/null)" "$(basename "$LAST_FILE") · $(du -h "$LAST_FILE" | cut -f1)"
         else

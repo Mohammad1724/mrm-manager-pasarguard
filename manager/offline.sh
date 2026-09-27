@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager offline.sh — OFFLINE / IRAN MODE v1.5.3
+# MRM Manager offline.sh — OFFLINE / IRAN MODE v1.5.4
 # Iran-friendly APT/Docker mirrors and local (tarball) PasarGuard installs.
 # Safe handling of sources.list.d: third-party repos are always preserved.
 
@@ -322,7 +322,7 @@ offline_show_status() {
     CURRENT_APT="$(offline_get_current_apt_mirror 2>/dev/null || true)"
     CURRENT_DOCKER="$(offline_get_current_docker_mirror 2>/dev/null || true)"
     ui_section "Environment"
-    ui_kv "Ubuntu codename" "${CODENAME:-unknown}"
+    ui_kv "Codename" "${CODENAME:-unknown}"
     if offline_is_known_apt_mirror "$CURRENT_APT"; then
         ui_kv_state "APT mirror" ok "${CURRENT_APT}" "known Iran mirror"
     else
@@ -371,7 +371,7 @@ offline_apply_recommended_apt() {
     local BACKUP_DIR
     ui_header "Apply Ubuntu APT Mirror"
     offline_require_ubuntu_or_pause || return
-    ui_kv "Recommended mirror" "$OFFLINE_RECOMMENDED_APT_MIRROR"
+    ui_kv "Recommended" "$OFFLINE_RECOMMENDED_APT_MIRROR"
     ui_note "A backup is created first; third-party repos (docker, nginx, …) are preserved."
     echo ""
     ui_confirm "Apply this Ubuntu mirror now?" || { ui_cancelled; pause; return; }
@@ -393,7 +393,7 @@ offline_apply_recommended_apt() {
 offline_apply_recommended_docker() {
     local BACKUP_DIR
     ui_header "Apply Docker Mirror"
-    ui_kv "Recommended mirror" "$OFFLINE_RECOMMENDED_DOCKER_MIRROR"
+    ui_kv "Recommended" "$OFFLINE_RECOMMENDED_DOCKER_MIRROR"
     ui_note "A backup of /etc/docker/daemon.json is created first."
     echo ""
     ui_confirm "Apply this Docker mirror now?" || { ui_cancelled; pause; return; }

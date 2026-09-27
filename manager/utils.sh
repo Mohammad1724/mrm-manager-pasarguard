@@ -18,7 +18,7 @@ fi
 
 CONFIG_FILE="/opt/mrm-manager/panel.conf"
 MRM_VERSION_FILE="/opt/mrm-manager/VERSION"
-MRM_DEFAULT_VERSION="1.5.3"
+MRM_DEFAULT_VERSION="1.5.4"
 
 ensure_mrm_config_dir() {
     mkdir -p "$(dirname "$CONFIG_FILE")"
@@ -86,6 +86,26 @@ find_compose_file() {
 
 get_panel_compose_file() {
     find_compose_file "$PANEL_DIR"
+}
+
+# "Installed" means a real checkout (directory + .env or compose file). A bare
+# /opt/pasarguard left behind by an old install, or created by MRM on a
+# node-only server, must never be reported as a stopped panel.
+mrm_panel_installed() {
+    [ -d "${PANEL_DIR:-}" ] || return 1
+    [ -f "${PANEL_ENV:-$PANEL_DIR/.env}" ] && return 0
+    get_panel_compose_file >/dev/null 2>&1
+}
+mrm_node_installed() {
+    [ -n "${NODE_DIR:-}" ] && [ -d "$NODE_DIR" ] || return 1
+    [ -f "${NODE_ENV:-$NODE_DIR/.env}" ] && return 0
+    get_node_compose_file >/dev/null 2>&1
+}
+# panel | node | none — which service this server is responsible for
+mrm_server_role() {
+    if mrm_panel_installed; then echo panel
+    elif mrm_node_installed; then echo node
+    else echo none; fi
 }
 
 get_node_compose_file() {

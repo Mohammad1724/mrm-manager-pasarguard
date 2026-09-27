@@ -228,7 +228,7 @@ echo "⚙️ Group 8: Medium-Severity Checks"
 echo ""
 
 # Check MRM_BACKUP_VERSION fallback
-if grep -q 'BACKUP_VERSION:-1\.0\.5' "$PROJECT_DIR/manager/backup/init.sh"; then
+if grep -q 'BACKUP_VERSION:-1\.0\.6' "$PROJECT_DIR/manager/backup/init.sh"; then
     pass "MRM_BACKUP_VERSION fallback matches current version"
 else
     fail "MRM_BACKUP_VERSION fallback mismatch"
@@ -270,7 +270,7 @@ else
 fi
 
 # Check restore_core.sh excludes pre_restore safety backups from restore list (MRM-062)
-if grep -qF "grep -v '/pre_restore_'" "$PROJECT_DIR/manager/backup/restore_core.sh"; then
+if grep -qE "grep -v '/pre_restore_'|! -name 'pre_restore_\*'" "$PROJECT_DIR/manager/backup/restore_core.sh"; then
     pass "restore_core.sh excludes pre_restore_* from restore list"
 else
     fail "restore_core.sh still lists pre_restore_* as restorable"
@@ -479,7 +479,7 @@ else
 fi
 
 # Check diagnostics.sh skips pre_restore_* safety copies (MRM-089)
-if grep -q "grep -v '/pre_restore_'" "$DIAG"; then
+if grep -qE "grep -v '/pre_restore_'|! -name 'pre_restore_\*'" "$DIAG"; then
     pass "mrm_latest_backup_file excludes pre_restore_* safety copies"
 else
     fail "mrm_latest_backup_file can pick a pre_restore_* file"
@@ -1361,7 +1361,7 @@ else
 fi
 
 # 12.10: a bare /opt/pasarguard directory must not be reported as a stopped panel (node-only servers)
-if grep -q '^mrm_panel_installed()' "$PROJECT_DIR/manager/diagnostics.sh" && \
+if grep -q '^mrm_panel_installed()' "$PROJECT_DIR/manager/utils.sh" && \
    grep -q 'mrm_panel_installed && PANEL_HERE=1' "$PROJECT_DIR/manager/diagnostics.sh" && \
    grep -q '"Panel" off "Not on this server"' "$PROJECT_DIR/manager/diagnostics.sh"; then
     pass "status panel distinguishes installed / node-only / not installed (no false 'Stopped')"
@@ -1425,6 +1425,133 @@ if grep -q 'YELLOW=' "$PROJECT_DIR/install.sh" && ! grep -q 'BLUE' "$PROJECT_DIR
     pass "install.sh palette is self-contained (YELLOW defined, no undefined BLUE)"
 else
     fail "install.sh palette incomplete"
+fi
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Group 13: v1.5.4 audit fixes
+# ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "Group 13: v1.5.4 audit fixes"
+echo ""
+
+# 13.1: ssl.sh discover_all_certificates prints nothing for zero certificates
+#       (an empty array used to print one blank line → "1 found · 99999 days")
+_T=$(mktemp -d)
+mkdir -p "$_T/live" "$_T/pc" "$_T/nc"
+sed "s#/etc/letsencrypt/live#$_T/live#g" "$PROJECT_DIR/manager/ssl.sh" > "$_T/ssl_t.sh"
+_LINES=$(cd "$PROJECT_DIR/manager" && CONFIG_DIR="$PWD" PANEL_DEF_CERTS="$_T/pc" NODE_DEF_CERTS="$_T/nc" \
+    bash -c "source '$_T/ssl_t.sh' >/dev/null 2>&1; discover_all_certificates | wc -l" 2>/dev/null || echo "err")
+rm -rf "$_T"
+if [ "$_LINES" = "0" ]; then
+    pass "ssl.sh: no certificates → discover_all_certificates prints 0 lines"
+else
+    fail "ssl.sh: discover_all_certificates printed '$_LINES' line(s) with no certificates"
+fi
+
+# 13.2: ssl.sh expiry table maps VALID → ok (get_cert_status never returns OK)
+if grep -q 'VALID|OK) *mode=ok' "$PROJECT_DIR/manager/ssl.sh" && \
+   grep -q 'UNKNOWN) *mode=off' "$PROJECT_DIR/manager/ssl.sh"; then
+    pass "ssl.sh: expiry table colours VALID certificates green"
+else
+    fail "ssl.sh: expiry table still treats VALID as an error state"
+fi
+
+# 13.3: ssl.sh honours MRM_DIR / its own directory and requires ui.sh (no partial stand-ins)
+if grep -q 'CONFIG_DIR="\$MRM_DIR"' "$PROJECT_DIR/manager/ssl.sh" && \
+   ! grep -q 'ui_header()  { echo ""' "$PROJECT_DIR/manager/ssl.sh" && \
+   grep -q 'ui.sh not found' "$PROJECT_DIR/manager/ssl.sh"; then
+    pass "ssl.sh: resolves CONFIG_DIR from MRM_DIR and fails clearly without ui.sh"
+else
+    fail "ssl.sh: CONFIG_DIR hard-coded or partial ui_* stand-ins still present"
+fi
+
+# 13.4: ssl.sh log_message is silent before init_logging created the log dir
+if grep -q '\[ -d "\$SSL_LOG_DIR" \] || return 0' "$PROJECT_DIR/manager/ssl.sh"; then
+    pass "ssl.sh: log_message does not error before init_logging"
+else
+    fail "ssl.sh: log_message writes to a missing log directory"
+fi
+
+# 13.5: monitor.sh is role-aware (node-only servers are judged by the node, not a missing panel)
+if grep -q '^get_service_role()' "$PROJECT_DIR/manager/monitor.sh" && \
+   grep -q '^get_node_status()' "$PROJECT_DIR/manager/monitor.sh" && \
+   grep -q 'PANEL_STATUS=$(get_service_status)' "$PROJECT_DIR/manager/monitor.sh" && \
+   grep -q '\${SERVICE_LABEL^^} DOWN' "$PROJECT_DIR/manager/monitor.sh" && \
+   grep -q '^mrm_server_role()' "$PROJECT_DIR/manager/utils.sh"; then
+    pass "monitor.sh: alerts follow the server role (panel / node / none)"
+else
+    fail "monitor.sh: still alerts PANEL DOWN on servers without a panel"
+fi
+
+# 13.6: shared installed-checks live in utils.sh (single definition)
+_DEFS=$(grep -l '^mrm_panel_installed()' "$PROJECT_DIR"/manager/*.sh "$PROJECT_DIR"/manager/backup/*.sh 2>/dev/null | wc -l)
+if [ "$_DEFS" = "1" ] && grep -q '^mrm_panel_installed()' "$PROJECT_DIR/manager/utils.sh"; then
+    pass "mrm_panel_installed / mrm_node_installed defined once, in utils.sh"
+else
+    fail "mrm_panel_installed defined $_DEFS times (expected once, in utils.sh)"
+fi
+
+# 13.7: mrm update verifies the installer against the release checksums.txt
+if grep -q 'checksums.txt" -o "\$TMP_SUMS"' "$PROJECT_DIR/manager/main.sh" && \
+   grep -q 'sha256sum "\$TMP_SCRIPT"' "$PROJECT_DIR/manager/main.sh" && \
+   grep -q 'Installer checksum mismatch' "$PROJECT_DIR/manager/main.sh"; then
+    pass "main.sh: mrm update checks the installer SHA-256 against checksums.txt"
+else
+    fail "main.sh: mrm update runs an installer that is not checksum-verified"
+fi
+
+# 13.8: in-panel update check compares MRM release versions (not a foreign repo's commits)
+if grep -q 'Mohammad1724/mrm-manager-pasarguard/main/versions.conf' "$PROJECT_DIR/plugin/mrm_admin_subscriptions.py" && \
+   ! grep -q 'PEDIHS' "$PROJECT_DIR/plugin/mrm_admin_subscriptions.py" && \
+   grep -q 'def _installed_version' "$PROJECT_DIR/plugin/mrm_admin_subscriptions.py" && \
+   grep -q '"installed_version"' "$PROJECT_DIR/plugin/mrm_admin_subscriptions.py" && \
+   grep -q 'installed_version' "$PROJECT_DIR/plugin/mrm-special.js" && \
+   ! grep -q 'latest_commit' "$PROJECT_DIR/plugin/mrm-special.js"; then
+    pass "plugin: update check is version-based against the MRM repository"
+else
+    fail "plugin: update check still points at a foreign repository / commit SHAs"
+fi
+
+# 13.9: the installed version is recorded for the panel (installer + self-healing integrator)
+if grep -q 'install-state.json' "$PROJECT_DIR/install.sh" && \
+   grep -q '^record_installed_version()' "$PROJECT_DIR/plugin/integrate-dashboard.sh" && \
+   grep -qE "target'\) or data.get\('target_sha'\)" "$PROJECT_DIR/plugin/update-from-panel.sh"; then
+    pass "install-state.json is written by install.sh and integrate-dashboard.sh; bridge accepts versions"
+else
+    fail "install-state.json is never written, or the host bridge only accepts commit SHAs"
+fi
+
+# 13.10: nginx / systemctl are guarded — no raw 'command not found' in menus
+_NG=$(grep -c 'command -v nginx' "$PROJECT_DIR/manager/diagnostics.sh" || true)
+if [ "${_NG:-0}" -ge 4 ] && grep -q 'command -v nginx' "$PROJECT_DIR/manager/domain_separator.sh"; then
+    pass "diagnostics.sh / domain_separator.sh check that nginx exists before calling it"
+else
+    fail "nginx is called without checking that it is installed (diagnostics: $_NG guards)"
+fi
+
+# 13.11: backup log is quiet (no per-menu-open Env line, no Permission denied for non-root)
+if ! grep -q '^    log_backup "INFO" "Env: PANEL_DIR' "$PROJECT_DIR/manager/backup/init.sh" && \
+   grep -q '2>/dev/null || true' <(grep 'BACKUP_LOG"' "$PROJECT_DIR/manager/backup/init.sh"); then
+    pass "backup/init.sh: Env line only at MRM_DEBUG=1, log append never errors"
+else
+    fail "backup/init.sh: still logs Env on every menu open or errors when the log is not writable"
+fi
+
+# 13.12: full doctor report is role-aware (no 'Panel is DOWN' advice where no panel is installed)
+if grep -q 'if \[ "\$PANEL_HERE" -eq 1 \] && ! mrm_panel_running; then diag_report_line error "Panel is DOWN' "$PROJECT_DIR/manager/diagnostics.sh" && \
+   ! grep -q '! mrm_panel_running && diag_report_line error "ACTION' "$PROJECT_DIR/manager/diagnostics.sh"; then
+    pass "diagnostics.sh: full report only recommends restarting a panel that is installed here"
+else
+    fail "diagnostics.sh: full report still says 'Panel is DOWN' on node-only servers"
+fi
+
+# 13.13: pg_health JOB rows use short aligned labels (full key in the hint)
+if grep -q 'LABEL="\${KEY#JOB_}"' "$PROJECT_DIR/manager/pg_health.sh" && \
+   grep -q 'local UI_KV_WIDTH=30' "$PROJECT_DIR/manager/pg_health.sh"; then
+    pass "pg_health.sh: JOB_* rows are aligned (short labels, wide key column)"
+else
+    fail "pg_health.sh: JOB_* rows still use the raw 30+ character keys as labels"
 fi
 
 # ─── Summary ─────────────────────────────────────────────────────────────────

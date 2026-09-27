@@ -49,7 +49,7 @@ theme_get_special_source() {
     local dl_dst="$DATA_DIR/templates/.special.pristine.html"
     mkdir -p "$(dirname "$dl_dst")" 2>/dev/null || true
     local ver
-    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.5.3")"
+    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.5.4")"
     local dl_url="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v${ver}/templates/subscription/index.html"
     if curl -sL -f -o "$dl_dst" "$dl_url" 2>/dev/null && [ -s "$dl_dst" ] && ! grep -q "guideBanner" "$dl_dst" 2>/dev/null; then
         printf '%s\n' "$dl_dst"
@@ -80,7 +80,7 @@ theme_get_classic_source() {
     local dl_dst="$DATA_DIR/templates/.classic.pristine.html"
     mkdir -p "$(dirname "$dl_dst")" 2>/dev/null || true
     local ver
-    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.5.3")"
+    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.5.4")"
     local dl_url="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v${ver}/templates/subscription-classic/index.html"
     if curl -sL -f -o "$dl_dst" "$dl_url" 2>/dev/null && [ -s "$dl_dst" ] && grep -q "guideBanner" "$dl_dst" 2>/dev/null; then
         printf '%s\n' "$dl_dst"
@@ -772,6 +772,9 @@ try:
         content = content.replace('__SUP__', new_sup)
         content = content.replace('__NEWS__', new_news)
 
+        # The per-template directories (subscription-special/, subscription-classic/)
+        # may not exist yet on a fresh data dir — create them instead of failing.
+        os.makedirs(os.path.dirname(final_path) or '.', exist_ok=True)
         with open(final_path, 'w', encoding='utf-8') as f:
             f.write(content)
         print(f'  {OK}✔{NC} {TEXT}Written: {final_path}{NC}')
@@ -832,8 +835,9 @@ PYEOF
             echo ""
             ui_box_start ok "Template installed"
             ui_box_line "Active" "$(theme_template_display_name "$active_choice")"
-            ui_box_line "MRM Special" "$TEMPLATE_FILE ($(stat -c%s "$TEMPLATE_FILE" 2>/dev/null) bytes)"
-            ui_box_line "MRM Classic" "$CLASSIC_FILE ($(stat -c%s "$CLASSIC_FILE" 2>/dev/null || echo 0) bytes)"
+            ui_box_line "MRM Special" "$TEMPLATE_FILE"
+            ui_box_line "MRM Classic" "$CLASSIC_FILE"
+            ui_box_line "Size" "special $(du -h "$TEMPLATE_FILE" 2>/dev/null | cut -f1 || echo '?') · classic $(du -h "$CLASSIC_FILE" 2>/dev/null | cut -f1 || echo '?')"
             ui_box_end
             ui_note "Switch templates any time in the panel: Settings › MRM."
         else

@@ -336,7 +336,7 @@ test_and_start_nginx() {
 restart_panel() {
     log_msg step "Restarting panel"
 
-    if [ -d "$PANEL_DIR" ] && [ -f "$PANEL_DIR/docker-compose.yml" -o -f "$PANEL_DIR/compose.yml" ]; then
+    if [ -d "$PANEL_DIR" ] && { [ -f "$PANEL_DIR/docker-compose.yml" ] || [ -f "$PANEL_DIR/compose.yml" ]; }; then
         cd "$PANEL_DIR"
         docker compose restart 2>/dev/null && {
             log_msg ok "Panel restarted"

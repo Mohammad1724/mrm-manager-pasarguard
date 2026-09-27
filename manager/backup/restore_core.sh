@@ -11,7 +11,8 @@ do_restore() {
     # FIX: exclude pre_restore_* safety backups from the restore list — their
     # tar layout has no MRM root, so selecting one silently restores nothing
     # while reporting success (MRM-062)
-    local FILES=($(ls -t "$BACKUP_DIR"/*.tar.gz 2>/dev/null | grep -v '/pre_restore_'))
+    local FILES=()
+    mapfile -t FILES < <(find "$BACKUP_DIR" -maxdepth 1 -name '*.tar.gz' ! -name 'pre_restore_*' -printf '%T@ %p\n' 2>/dev/null | sort -rn | cut -d' ' -f2-)
     if [ ${#FILES[@]} -eq 0 ]; then
         ui_error "No backups found in $BACKUP_DIR"
         ui_note "Upload an archive to $BACKUP_DIR (or download one from Telegram) and try again."

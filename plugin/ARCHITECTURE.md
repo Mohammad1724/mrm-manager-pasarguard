@@ -148,7 +148,7 @@ dashboard/src/*
 در عوض، MRM فایل‌های مالک خودش را اینجا نگه می‌دارد:
 
 ```text
-/opt/mrm/
+/opt/mrm-manager/
 ```
 
 و فقط به Build تولیدشده Dashboard یک Loader کوچک اضافه می‌کند.
@@ -168,7 +168,7 @@ PasarGuard تب‌های Settings را داخل یک نوار افقی Render م
 اسکریپت زیر idempotent است:
 
 ```text
-/opt/mrm/plugin/integrate-dashboard.sh
+/opt/mrm-manager/plugin/integrate-dashboard.sh
 ```
 
 هر بار اجرا:
@@ -275,7 +275,7 @@ MRM Special به این رفتارهای upstream متکی است:
 اجرای دستی Integration:
 
 ```bash
-sudo /opt/mrm/plugin/integrate-dashboard.sh
+sudo /opt/mrm-manager/plugin/integrate-dashboard.sh
 ```
 
 بررسی Timer و Watcher:
@@ -286,10 +286,10 @@ systemctl status mrm-integrator.timer
 journalctl -u mrm-integrator.service --no-pager -n 100
 ```
 
-Backupهای Installer:
+Restore pointهای عملیات پرریسک (safe_ops.sh):
 
 ```text
-/opt/mrm/backups/<timestamp>/
+/opt/mrm-manager/restore-points/<id>/
 ```
 
 ## اصل طراحی

@@ -93,19 +93,23 @@ ph_ca_check() {
 
 # ─── 3) JOB_* vs official defaults ──────────────────────────────────────────
 ph_job_report() {
-    local IFS_OLD="$IFS" ENTRY KEY DEF DESC VAL
+    local IFS_OLD="$IFS" ENTRY KEY REST DEF DESC VAL LABEL
+    # Labels are the JOB_* name without the JOB_ / _INTERVAL noise, in a wider
+    # column so the rows line up (the full key is in the hint).
+    local UI_KV_WIDTH=30
     IFS='|'
     for ENTRY in $PH_JOB_DEFAULTS; do
         KEY="${ENTRY%%:*}"; REST="${ENTRY#*:}"; DEF="${REST%%:*}"; DESC="${REST#*:}"
+        LABEL="${KEY#JOB_}"; LABEL="${LABEL%_INTERVAL}"
         VAL="$(ph_env_get "$KEY")"
         if [ -z "$VAL" ]; then
             # FIX: a standard official install has NO JOB_* keys in .env and
             # uses the config.py defaults — that is HEALTHY, not a failure (MRM-085)
-            ui_kv_state "$KEY" ok "official default ($DEF)" "$DESC"
+            ui_kv_state "$LABEL" ok "${DEF}s" "official default · $DESC"
         elif [ "$VAL" != "$DEF" ]; then
-            ui_kv_state "$KEY" warn "$VAL (default $DEF)" "$DESC"
+            ui_kv_state "$LABEL" warn "${VAL}s" "default ${DEF}s · $DESC"
         else
-            ui_kv_state "$KEY" ok "$VAL" "$DESC"
+            ui_kv_state "$LABEL" ok "${VAL}s" "$DESC"
         fi
     done
     IFS="$IFS_OLD"

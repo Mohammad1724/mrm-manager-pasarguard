@@ -460,7 +460,7 @@
     mountShell(`<div class="z-error">MRM could not load your settings.<br>${escapeHtml(error?.name === 'AbortError' ? 'Request timed out' : (error?.message || error))}</div>`);
   }
 
-  function shortSha(value) { return typeof value === 'string' && value.length >= 8 ? value.slice(0, 8) : 'unknown'; }
+  function versionLabel(value) { return typeof value === 'string' && /^v?\d+\.\d+\.\d+$/.test(value) ? `v${value.replace(/^v/, '')}` : 'unknown'; }
   function removeUpdateNotice() { document.getElementById(UPDATE_NOTICE_ID)?.remove(); }
   function isUpdateDismissed(commit) {
     if (!commit) return false;
@@ -478,7 +478,7 @@
     removeUpdateNotice();
   }
   function renderUpdateNotice() {
-    const latestCommit = cachedUpdate?.latest_commit;
+    const latestCommit = cachedUpdate?.latest_version;
     if (!isOwner || !cachedUpdate?.update_available || isUpdateDismissed(latestCommit)) {
       removeUpdateNotice();
       return;
@@ -517,12 +517,12 @@
     const status = cachedUpdate.status || 'idle', available = cachedUpdate.update_available === true, busy = status === 'queued' || status === 'running';
     if (!available && !busy && status !== 'failed') return '';
     const stateText = busy ? 'بروزرسانی در حال اجراست…' : status === 'failed' ? `خطا: ${escapeHtml(cachedUpdate.message || 'Update failed')}` : 'نسخه جدید آماده نصب است.';
-    return `<section class="z-card z-update-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.gem}</span>بروزرسانی MRM</h3><div class="z-card-note">بروزرسانی فقط توسط Owner انجام می‌شود و روی Host اجرا می‌شود.</div></div><span class="z-native">OWNER ONLY</span></div><div class="z-update-row"><div><div class="z-status ${status === 'failed' ? 'err' : (available || busy ? '' : 'ok')}">${stateText}</div><div class="z-update-sha">installed ${shortSha(cachedUpdate.installed_sha)} · latest ${shortSha(cachedUpdate.latest_sha)}</div></div><button type="button" id="z-update-now" class="z-update-btn" ${(!available || busy) ? 'disabled' : ''}>${busy ? 'Updating…' : 'Update now'}</button></div></section>`;
+    return `<section class="z-card z-update-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.gem}</span>بروزرسانی MRM</h3><div class="z-card-note">بروزرسانی فقط توسط Owner انجام می‌شود و روی Host اجرا می‌شود.</div></div><span class="z-native">OWNER ONLY</span></div><div class="z-update-row"><div><div class="z-status ${status === 'failed' ? 'err' : (available || busy ? '' : 'ok')}">${stateText}</div><div class="z-update-sha">installed ${versionLabel(cachedUpdate.installed_version)} · latest ${versionLabel(cachedUpdate.latest_version)}</div></div><button type="button" id="z-update-now" class="z-update-btn" ${(!available || busy) ? 'disabled' : ''}>${busy ? 'Updating…' : 'Update now'}</button></div></section>`;
   }
   function stopUpdatePolling() { if (updatePollTimer) clearInterval(updatePollTimer); updatePollTimer = null; }
   function startUpdatePolling() {
     stopUpdatePolling(); let attempts = 0;
-    updatePollTimer = setInterval(async () => { attempts += 1; try { const state = await loadUpdateStatus(true); if (active && isOwner && cachedSettings) renderOwner(cachedSettings); if (state?.status === 'success' || (!state?.update_available && state?.installed_sha && state?.latest_sha)) { stopUpdatePolling(); setTimeout(() => location.reload(), 1200); } else if (state?.status === 'failed' || attempts >= 100) stopUpdatePolling(); } catch (_) {} }, 3000);
+    updatePollTimer = setInterval(async () => { attempts += 1; try { const state = await loadUpdateStatus(true); if (active && isOwner && cachedSettings) renderOwner(cachedSettings); if (state?.status === 'success' || (!state?.update_available && state?.installed_version && state?.latest_version)) { stopUpdatePolling(); setTimeout(() => location.reload(), 1200); } else if (state?.status === 'failed' || attempts >= 100) stopUpdatePolling(); } catch (_) {} }, 3000);
   }
   function bindUpdateActions(root) {
     if (!isOwner) return;

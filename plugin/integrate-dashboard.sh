@@ -307,9 +307,29 @@ integrate_docker() {
   [[ ${subscription_ok} -eq 1 || ${dashboard_ok} -eq 1 || ${backend_ok} -eq 1 ]]
 }
 
+# Keep install-state.json (read by the in-panel update check) in sync with the
+# version actually installed under MRM_ROOT — self-heals installs that predate it.
+record_installed_version() {
+  local version state_dir state_file current
+  version="$(tr -d '[:space:]' < "${MRM_ROOT}/VERSION" 2>/dev/null || true)"
+  [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 0
+  state_dir="${MRM_DATA_DIR:-/var/lib/pasarguard/mrm}"
+  state_file="${state_dir}/install-state.json"
+  [[ -d "$(dirname "${state_dir}")" ]] || return 0
+  current="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('version') or '')" "${state_file}" 2>/dev/null || true)"
+  [[ "${current}" == "${version}" ]] && return 0
+  mkdir -p "${state_dir}" 2>/dev/null || return 0
+  printf '{\n  "version": "%s",\n  "release": "v%s",\n  "installed_at": "%s",\n  "source": "integrate-dashboard.sh"\n}\n' \
+    "${version}" "${version}" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "${state_file}.tmp" 2>/dev/null || return 0
+  chmod 600 "${state_file}.tmp" 2>/dev/null || true
+  mv -f "${state_file}.tmp" "${state_file}" 2>/dev/null || true
+  log "recorded installed MRM version ${version} for the in-panel update check"
+}
+
 main() {
   [[ ${EUID} -eq 0 ]] || { warn "run as root"; exit 1; }
   [[ -s "${ADMIN_JS}" ]] || { warn "admin integration JS not found: ${ADMIN_JS}"; exit 1; }
+  record_installed_version || true
   inject_subscription_runtime || true
 
   local host_router build_dir

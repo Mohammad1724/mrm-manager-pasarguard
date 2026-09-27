@@ -6,16 +6,15 @@
 # Instagram: https://instagram.com/maral.rahmani.7
 # Telegram:  https://t.me/MaralRahmani
 #
-# Installs "MRM Special" (Zomorod-style feature parity):
+# Installs "MRM Special" (in-panel integration for the special template):
 #   - subscription runtime hook  (mrm-runtime.js → page JS on /raw)
 #   - in-panel settings tab     (mrm-special.js + /api/mrm/profile bridge)
 #   - profile storage           (per-admin custom variables — survives updates)
 #   - theme CSS injection       (primary/secondary via template theme engine)
 #   - systemd watchers          (self-healing: dashboard rebuilds/restarts)
 #
-# Marker convention (copied from zomorod v2 strategy — the dumbest reliable
-# one): every injected string wrapped in literal markers so injection is fully
-# idempotent and reversible. DO NOT change without bumping SPECIAL_VERSION and
+# Marker convention (the simplest reliable strategy): every injected string is
+# wrapped in literal markers so injection is fully idempotent and reversible. DO NOT change without bumping SPECIAL_VERSION and
 # keeping legacy markers recognized (legacy imports must stay cleanable).
 #
 # Data layout:   /var/lib/pasarguard/mrm/
@@ -35,7 +34,7 @@ source "$MRM_DIR/domain_separator.sh"
 
 # --- Patched PasarGuard source tree (via detect_active_panel) ---------------
 # Panel Docker integration (optional — used only if the PasarGuard panel runs
-# in a Docker container) — copied from zomorod installer.
+# in a Docker container).
 PASARGUARD_CONTAINER="${PASARGUARD_CONTAINER:-}"
 DOCKER_BIN="${DOCKER_BIN:-$(command -v docker 2>/dev/null || true)}"
 CONTAINERS=("pasarguard" "pasarguard-panel" "pasarguard-panel-1")
@@ -442,9 +441,9 @@ special_status() {
     ui_header "MRM Special Status" "integration v$SPECIAL_VERSION"
     # template
     if grep -q "$MARKER_RUNTIME" "$SUB_TEMPLATE" 2>/dev/null; then
-        ui_kv_state "Template runtime" ok "Installed"
+        ui_kv_state "Runtime" ok "Installed" "template runtime"
     else
-        ui_kv_state "Template runtime" bad "Missing"
+        ui_kv_state "Runtime" bad "Missing" "template runtime"
     fi
     # dashboard (host build first, then the panel container build)
     local bd cid
@@ -475,9 +474,9 @@ special_status() {
     if [ -s "$PROFILES_DIR/profiles.json" ]; then
         local n
         n=$(python3 -c "import json;print(len(json.load(open('$PROFILES_DIR/profiles.json')).get('admins',{})))" 2>/dev/null || echo 0)
-        ui_kv_state "Profiles stored" ok "$n admin(s)" "$DATA_NS"
+        ui_kv_state "Profiles" ok "$n admin(s)" "$DATA_NS"
     else
-        ui_kv_state "Profiles stored" off "none"
+        ui_kv_state "Profiles" off "none"
     fi
     # active template (both can be installed; one is live)
     local _cur _lbl
@@ -487,7 +486,7 @@ special_status() {
         special) _lbl="MRM Special" ;;
         *) _lbl="none" ;;
     esac
-    ui_kv "Active template" "$_lbl" "select in the panel: Settings › MRM"
+    ui_kv "Template" "$_lbl" "select in the panel: Settings › MRM"
     # other products — informational only (never removed)
     if special_competing_present; then
         ui_kv_state "Other products" warn "Another integration present" "left untouched"

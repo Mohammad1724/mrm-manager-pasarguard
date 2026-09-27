@@ -37,7 +37,7 @@ mrm_usage() {
     echo ""
     printf '  %b%-12s%b %s\n' "$CYAN" "(none)"    "$NC" "Interactive menu"
     printf '  %b%-12s%b %s\n' "$CYAN" "health"    "$NC" "PasarGuard health report (nodes / TLS / jobs)"
-    printf '  %b%-12s%b %s\n' "$CYAN" "doctor"    "$NC" "Full system diagnostics (plain output)"
+    printf '  %b%-12s%b %s\n' "$CYAN" "doctor"    "$NC" "Quick health summary (exit 1 when critical)"
     printf '  %b%-12s%b %s\n' "$CYAN" "monitor"   "$NC" "Telegram alerts (menu)"
     printf '  %b%-12s%b %s\n' "$CYAN" "special"   "$NC" "MRM Special — in-panel settings tab + subscription page"
     printf '  %b%-12s%b %s\n' "$CYAN" "temp-key"  "$NC" "Generate a one-time Owner setup key"
@@ -51,12 +51,13 @@ mrm_self_update() {
     # SECURITY: pinned-release update (MRM-001/MRM-012). Resolve the release
     # ref from versions.conf on main (parsed, never sourced), then download
     # install.sh from that exact ref — never from a mutable branch.
-    local TMP_SCRIPT TMP_VERSION TARGET_REF=""
+    local TMP_SCRIPT TMP_VERSION TMP_SUMS TARGET_REF=""
     TMP_SCRIPT=$(mktemp /tmp/mrm-update.XXXXXX.sh)
     TMP_VERSION=$(mktemp /tmp/mrm-version.XXXXXX)
+    TMP_SUMS=$(mktemp /tmp/mrm-sums.XXXXXX)
 
     echo ""
-    ui_step 1 2 "Resolving latest release"
+    ui_step 1 3 "Resolving latest release"
     if curl -fsSL --connect-timeout 10 --max-time 60 \
         "$MRM_REPO_RAW/main/versions.conf" -o "$TMP_VERSION" 2>/dev/null; then
         TARGET_REF="v$(grep -E '^MRM_VERSION=' "$TMP_VERSION" 2>/dev/null | head -1 | cut -d'"' -f2)"
@@ -64,24 +65,50 @@ mrm_self_update() {
     rm -f "$TMP_VERSION"
     if [ -z "$TARGET_REF" ] || [ "$TARGET_REF" = "v" ]; then
         ui_error "Could not resolve the latest release version"
-        rm -f "$TMP_SCRIPT"
+        rm -f "$TMP_SCRIPT" "$TMP_SUMS"
+        return 1
+    fi
+    if ! printf '%s' "$TARGET_REF" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+        ui_error "Unexpected release tag in versions.conf: ${TARGET_REF}"
+        rm -f "$TMP_SCRIPT" "$TMP_SUMS"
         return 1
     fi
     ui_success "Latest release: ${TARGET_REF}  (installed: v${MRM_VERSION})"
 
-    ui_step 2 2 "Downloading installer for ${TARGET_REF}"
+    ui_step 2 3 "Downloading installer for ${TARGET_REF}"
     if ! curl -fsSL --connect-timeout 30 --max-time 120 \
         "$MRM_REPO_RAW/${TARGET_REF}/install.sh" -o "$TMP_SCRIPT" 2>/dev/null; then
         ui_error "Failed to download install.sh (ref ${TARGET_REF})"
-        rm -f "$TMP_SCRIPT"
+        rm -f "$TMP_SCRIPT" "$TMP_SUMS"
         return 1
     fi
     if ! head -1 "$TMP_SCRIPT" | grep -q '^#!/bin/bash' || ! bash -n "$TMP_SCRIPT" 2>/dev/null; then
         ui_error "Downloaded installer failed syntax verification"
+        rm -f "$TMP_SCRIPT" "$TMP_SUMS"
+        return 1
+    fi
+
+    # SECURITY: the release ships checksums.txt — the installer must match the
+    # SHA-256 recorded for that exact tag, otherwise nothing is executed.
+    ui_step 3 3 "Verifying installer checksum"
+    local EXPECTED ACTUAL
+    if ! curl -fsSL --connect-timeout 30 --max-time 60 \
+        "$MRM_REPO_RAW/${TARGET_REF}/checksums.txt" -o "$TMP_SUMS" 2>/dev/null; then
+        ui_error "Failed to download checksums.txt (ref ${TARGET_REF})"
+        rm -f "$TMP_SCRIPT" "$TMP_SUMS"
+        return 1
+    fi
+    EXPECTED=$(awk '$2 == "install.sh" {print $1; exit}' "$TMP_SUMS")
+    ACTUAL=$(sha256sum "$TMP_SCRIPT" | awk '{print $1}')
+    rm -f "$TMP_SUMS"
+    if [ -z "$EXPECTED" ] || [ "$EXPECTED" != "$ACTUAL" ]; then
+        ui_error "Installer checksum mismatch — update aborted"
+        ui_note "expected: ${EXPECTED:-missing}"
+        ui_note "got:      ${ACTUAL}"
         rm -f "$TMP_SCRIPT"
         return 1
     fi
-    ui_success "Installer verified — starting update"
+    ui_success "Installer verified (sha256 ok) — starting update"
     echo ""
     exec bash "$TMP_SCRIPT"
 }

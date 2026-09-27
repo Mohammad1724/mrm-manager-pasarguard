@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager v1.5.3
+# MRM Manager v1.5.4
 # domain_separator.sh — separate panel and subscription domains via nginx
 
 # ─── Shared libraries ────────────────────────────────────────────────────────
@@ -420,14 +420,24 @@ domain_menu() {
         case $OPT in
             1) setup_domain_separation ;;
             2)
-                if restart_nginx_checked; then
+                if ! command -v nginx >/dev/null 2>&1; then
+                    ui_warning "nginx is not installed — the separation wizard installs it"
+                elif restart_nginx_checked; then
                     ui_success "nginx restarted"
                 else
                     ui_error "nginx restart failed — check the configuration with: nginx -t"
                 fi
                 sleep 1
                 ;;
-            3) echo ""; systemctl status nginx --no-pager; ui_pause ;;
+            3)
+                if ! command -v nginx >/dev/null 2>&1; then
+                    ui_warning "nginx is not installed on this server"
+                else
+                    echo ""
+                    systemctl status nginx --no-pager 2>&1 | head -n 15 | sed "s/^/${UI_PAD}/"
+                fi
+                ui_pause
+                ;;
             4) edit_nginx_config_manually ;;
             0) return ;;
             *) ui_invalid ;;

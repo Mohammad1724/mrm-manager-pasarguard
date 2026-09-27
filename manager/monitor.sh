@@ -170,9 +170,36 @@ clear_alert_state() {
     rm -f "$MONITOR_STATE/$ALERT_TYPE" 2>/dev/null
 }
 
+# Which service this server is responsible for: panel | node | none.
+# A node-only server must be judged by its node container, not by a panel
+# that was never installed here (that used to raise a PANEL DOWN alert every run).
+get_service_role() {
+    if declare -f mrm_server_role >/dev/null 2>&1; then mrm_server_role; else echo panel; fi
+}
+get_node_status() {
+    local COMPOSE_FILE=""
+    if declare -f get_node_compose_file >/dev/null 2>&1; then
+        COMPOSE_FILE="$(get_node_compose_file 2>/dev/null || true)"
+    fi
+    if [ -n "$COMPOSE_FILE" ]; then
+        if docker compose -f "$COMPOSE_FILE" ps 2>/dev/null | grep -q "Up"; then echo "up"; else echo "down"; fi
+    elif docker ps --format '{{.Image}}' 2>/dev/null | grep -qE '^pasarguard/node(:|$)'; then
+        echo "up"
+    else
+        echo "down"
+    fi
+}
+# Status of whichever service lives here (up | down | none)
+get_service_status() {
+    case "$(get_service_role)" in
+        panel) get_panel_status ;;
+        node)  get_node_status ;;
+        *)     echo "none" ;;
+    esac
+}
+
 check_and_alert() {
-    local PANEL_STATUS DISK_USAGE CPU_USAGE RAM_PERCENT
-    local ALERTS=()
+    local PANEL_STATUS DISK_USAGE CPU_USAGE RAM_PERCENT ROLE SERVICE_LABEL
     # FIX: monitor.conf used to be write-only — its values had NO effect.
     # Load it now so ENABLED / thresholds / cooldown actually apply (MRM-079)
     if [ -f "$MONITOR_CONFIG" ]; then
@@ -186,39 +213,44 @@ check_and_alert() {
     local HOST=$(hostname)
     local IP=$(curl -4 -s --connect-timeout 5 icanhazip.com 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
 
-    PANEL_STATUS=$(get_panel_status)
+    ROLE=$(get_service_role)
+    case "$ROLE" in
+        panel) SERVICE_LABEL="Panel" ;;
+        node)  SERVICE_LABEL="Node" ;;
+        *)     SERVICE_LABEL="Service" ;;
+    esac
+    PANEL_STATUS=$(get_service_status)
     DISK_USAGE=$(get_disk_usage)
     CPU_USAGE=$(get_cpu_usage)
     RAM_PERCENT=$(get_ram_usage_percent)
 
-    log_monitor "INFO" "Check - Panel:$PANEL_STATUS Disk:${DISK_USAGE}% CPU:${CPU_USAGE}% RAM:${RAM_PERCENT}%"
+    log_monitor "INFO" "Check - ${SERVICE_LABEL}:$PANEL_STATUS Disk:${DISK_USAGE}% CPU:${CPU_USAGE}% RAM:${RAM_PERCENT}%"
 
-    # 1. Panel Down
+    # 1. Service down (the panel where it is installed, otherwise the node)
     if [ "${CHECK_PANEL_DOWN:-true}" = "true" ] && [ "$PANEL_STATUS" == "down" ]; then
         if should_alert "panel_down"; then
-            local MSG="🚨 *MRM ALERT - PANEL DOWN*
+            local SVC_DIR SVC_COMPOSE
+            if [ "$ROLE" = "node" ]; then SVC_DIR="$NODE_DIR"; SVC_COMPOSE="$(get_node_compose_file 2>/dev/null || true)"
+            else SVC_DIR="$PANEL_DIR"; SVC_COMPOSE="$(get_panel_compose_file 2>/dev/null || true)"; fi
+            local MSG="🚨 *MRM ALERT - ${SERVICE_LABEL^^} DOWN*
 🖥 Host: $HOST
 🌐 IP: $IP
-📊 Status: Panel is DOWN!
+📊 Status: ${SERVICE_LABEL} is DOWN!
 ⏰ Time: $(date '+%Y-%m-%d %H:%M:%S')
 🔧 Action: Auto-restarting...
 
-Panel container is not running. MRM will try to restart."
+${SERVICE_LABEL} container is not running. MRM will try to restart."
             send_telegram_alert "$MSG"
             # Try auto-restart
-            if [ -n "$PANEL_DIR" ] && [ -d "$PANEL_DIR" ]; then
-                local COMPOSE_FILE
-                COMPOSE_FILE="$(get_panel_compose_file 2>/dev/null || true)"
-                if [ -n "$COMPOSE_FILE" ]; then
-                    (cd "$PANEL_DIR" && docker compose up -d) >/dev/null 2>&1
-                    log_monitor "INFO" "Attempted auto-restart of panel"
-                    sleep 10
-                    if [ "$(get_panel_status)" == "up" ]; then
-                        send_telegram_alert "✅ *PANEL RECOVERED*
+            if [ -n "$SVC_DIR" ] && [ -d "$SVC_DIR" ] && [ -n "$SVC_COMPOSE" ]; then
+                (cd "$SVC_DIR" && docker compose up -d) >/dev/null 2>&1
+                log_monitor "INFO" "Attempted auto-restart of ${SERVICE_LABEL,,}"
+                sleep 10
+                if [ "$(get_service_status)" == "up" ]; then
+                    send_telegram_alert "✅ *${SERVICE_LABEL^^} RECOVERED*
 🖥 $HOST is UP again after auto-restart
 ⏰ $(date '+%Y-%m-%d %H:%M:%S')"
-                        clear_alert_state "panel_down"
-                    fi
+                    clear_alert_state "panel_down"
                 fi
             fi
         fi
@@ -314,7 +346,7 @@ EOF
 
 setup_cron() {
     local c CURRENT
-    ui_header "Monitor Schedule" "Checks: panel down · CPU · disk · RAM"
+    ui_header "Monitor Schedule" "Checks: panel / node down · CPU · disk · RAM"
     if crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH check"; then
         CURRENT=$(crontab -l | grep "$SCRIPT_PATH" | awk '{print $1" "$2" "$3" "$4" "$5}')
         ui_kv_state "Schedule" ok "Active" "$CURRENT"
@@ -380,10 +412,12 @@ test_alerts() {
     local DISK=$(get_disk_usage)
     local CPU=$(get_cpu_usage)
     local RAM=$(get_ram_usage_percent)
-    local PANEL=$(get_panel_status)
+    local ROLE SVC_LABEL PANEL
+    ROLE=$(get_service_role); PANEL=$(get_service_status)
+    case "$ROLE" in panel) SVC_LABEL="Panel" ;; node) SVC_LABEL="Node" ;; *) SVC_LABEL="Service" ;; esac
     local MSG="🧪 *MRM Monitor Test*
 🖥 Host: $HOST
-📊 Panel: $PANEL
+📊 ${SVC_LABEL}: $PANEL
 💾 Disk: ${DISK}%
 🔥 CPU: ${CPU}%
 🧠 RAM: ${RAM}%
@@ -439,19 +473,20 @@ monitor_menu() {
     init_monitor_logging
     setup_monitor_config 2>/dev/null || true
     while true; do
-        ui_header "Monitor & Alerts" "Telegram alerts for panel, CPU, disk and RAM"
-        local PANEL_STATUS DISK_USAGE DISK_FREE CPU_USAGE RAM_PERCENT
-        PANEL_STATUS=$(get_panel_status)
+        ui_header "Monitor & Alerts" "Telegram alerts for the panel or node, CPU, disk and RAM"
+        local PANEL_STATUS DISK_USAGE DISK_FREE CPU_USAGE RAM_PERCENT ROLE
+        ROLE=$(get_service_role)
+        PANEL_STATUS=$(get_service_status)
         DISK_USAGE=$(get_disk_usage)
         DISK_FREE=$(get_disk_free)
         CPU_USAGE=$(get_cpu_usage)
         RAM_PERCENT=$(get_ram_usage_percent)
 
-        if [ "$PANEL_STATUS" = "up" ]; then
-            ui_kv_state "Panel" ok "Running"
-        else
-            ui_kv_state "Panel" bad "Down"
-        fi
+        case "$ROLE" in
+            panel) if [ "$PANEL_STATUS" = "up" ]; then ui_kv_state "Panel" ok "Running"; else ui_kv_state "Panel" bad "Down"; fi ;;
+            node)  if [ "$PANEL_STATUS" = "up" ]; then ui_kv_state "Node" ok "Running" "node-only server"; else ui_kv_state "Node" bad "Down" "node-only server"; fi ;;
+            *)     ui_kv_state "Service" off "No panel or node on this server" "only CPU, disk and RAM are monitored" ;;
+        esac
         ui_kv "Resources" "Disk ${DISK_USAGE}% (${DISK_FREE} free) · CPU ${CPU_USAGE}% · RAM ${RAM_PERCENT}%"
         if [ -f "$TG_CONFIG" ]; then
             ui_kv_state "Telegram" ok "Configured"

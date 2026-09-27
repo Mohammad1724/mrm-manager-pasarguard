@@ -19,10 +19,21 @@ readonly SSL_LOG_FILE="${SSL_LOG_DIR}/ssl-manager.log"
 readonly CERTBOT_DEBUG_LOG="${SSL_LOG_DIR}/certbot-debug.log"
 readonly SERVERS_FILE="${SERVERS_FILE:-/opt/mrm-manager/ssl-servers.conf}"
 readonly SSL_BACKUP_DIR="${SSL_BACKUP_DIR:-/opt/mrm-manager/ssl-backups}"
-readonly CONFIG_DIR="${CONFIG_DIR:-/opt/mrm-manager}"
+# Module directory: explicit CONFIG_DIR, then MRM_DIR, then wherever this file
+# lives, then the default install path (same rule as the other modules).
+if [ -z "${CONFIG_DIR:-}" ]; then
+    if [ -n "${MRM_DIR:-}" ] && [ -r "${MRM_DIR}/utils.sh" ]; then
+        CONFIG_DIR="$MRM_DIR"
+    elif [ -r "$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/utils.sh" ]; then
+        CONFIG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    else
+        CONFIG_DIR="/opt/mrm-manager"
+    fi
+fi
+readonly CONFIG_DIR
 
 [ -r "$CONFIG_DIR/versions.conf" ] && source "$CONFIG_DIR/versions.conf"
-SSL_VERSION="${SSL_VERSION:-1.0.9}"
+SSL_VERSION="${SSL_VERSION:-1.0.10}"
 
 # Thresholds
 readonly EXPIRY_WARNING_DAYS=14
@@ -79,16 +90,12 @@ _load_external_modules() {
 }
 _load_external_modules
 
-# UI helpers come from ui.sh (loaded above). Minimal stand-ins keep the module
-# usable if it is ever run outside an MRM installation.
-if ! declare -f ui_header >/dev/null 2>&1; then
-    ui_header()  { echo ""; echo "── $1 ──"; echo ""; }
-    ui_error()   { echo "  ✘ $1" >&2; }
-    ui_success() { echo "  ✔ $1"; }
-    ui_warning() { echo "  ⚠ $1"; }
-    ui_info()    { echo "  ℹ $1"; }
-    ui_note()    { echo "  $1"; }
-    pause()      { echo ""; read -r -p "  Press Enter to continue… " _; }
+# UI helpers come from ui.sh (loaded above). The module uses the full design
+# system (ui_kv, ui_cmd, ui_table_*, …) so a partial stand-in set would only
+# hide the problem — fail clearly instead.
+if ! declare -f ui_header >/dev/null 2>&1 || ! declare -f ui_cmd >/dev/null 2>&1; then
+    echo "ssl.sh: ui.sh not found in ${CONFIG_DIR} — run 'mrm update' or reinstall MRM Manager" >&2
+    exit 1
 fi
 # Colors are defined by ui.sh; keep empty defaults so echo -e never prints raw names
 : "${RED:=}" "${GREEN:=}" "${YELLOW:=}" "${BLUE:=}" "${PURPLE:=}" "${CYAN:=}" "${ORANGE:=}" "${NC:=}" "${BOLD:=}" "${DIM:=}"
@@ -109,7 +116,8 @@ log_message() {
     local message="$2"
     local timestamp
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    echo "[$timestamp] [$level] $message" >> "$SSL_LOG_FILE" 2>/dev/null
+    [ -d "$SSL_LOG_DIR" ] || return 0
+    { echo "[$timestamp] [$level] $message" >> "$SSL_LOG_FILE"; } 2>/dev/null || true
 }
 
 log_info() { log_message "INFO" "$1"; }
@@ -928,7 +936,10 @@ discover_all_certificates() {
         done
     done
 
-    printf '%s\n' "${results[@]}"
+    # An empty array would still print one blank line, which callers count as
+    # "1 certificate" — print nothing instead.
+    [ ${#results[@]} -gt 0 ] && printf '%s\n' "${results[@]}"
+    return 0
 }
 
 # ─── Show Certificate Expiry Status ────────────────────────────────────
@@ -977,10 +988,12 @@ show_certificate_expiry() {
             node)  src_text="NOD" ;;
             *)     src_text="$source" ;;
         esac
+        # get_cert_status returns VALID / WARNING / CRITICAL / EXPIRED / UNKNOWN
         case "$status" in
-            OK)      mode=ok ;;
-            WARNING) mode=warn ;;
-            *)       mode=bad ;;
+            VALID|OK) mode=ok ;;
+            WARNING)  mode=warn ;;
+            UNKNOWN)  mode=off ;;
+            *)        mode=bad ;;
         esac
         [[ -n "$panel_dom" && "$domain" == "$panel_dom" ]] && role="dashboard"
         [[ -z "$role" && -n "$node_dom" && "$domain" == "$node_dom" ]] && role="node gRPC"
@@ -989,8 +1002,8 @@ show_certificate_expiry() {
         # the glyph+text is built with ui_state and padded manually (MRM-038)
         local status_cell
         status_cell="$(ui_state "$mode" "$status")"
-        printf '%s%-4s  %-30s  %-11s  %5s  %b%*s  %s\n' "$UI_PAD" "$src_text" "$(ui_truncate "$domain" 30)" \
-            "${formatted_date:0:11}" "$days" "$status_cell" "$(( 9 - ${#status} - 2 ))" "" "$role"
+        printf '%s%b%-4s  %-30s  %-11s  %5s  %b%b%*s  %b%s%b\n' "$UI_PAD" "$UI_C_TEXT" "$src_text" "$(ui_truncate "$domain" 30)" \
+            "${formatted_date:0:11}" "$days" "$NC" "$status_cell" "$(( 9 - ${#status} - 2 ))" "" "$UI_C_MUTED" "$role" "$NC"
     done
 
     echo ""

@@ -4,7 +4,7 @@
 # Every menu, prompt, message, table and report in MRM Manager is rendered
 # through the helpers in this file, so the whole tool has ONE visual language:
 #
-#   ┌─ MRM Manager ─────────────────────────────────────────── v1.5.3 ─┐
+#   ┌─ MRM Manager ─────────────────────────────────────────── v1.5.4 ─┐
 #   │ SSL Certificates                                                 │
 #   │ Panel: pasarguard · Certs: /var/lib/pasarguard/certs             │
 #   └──────────────────────────────────────────────────────────────────┘
@@ -225,7 +225,7 @@ ui_version() {
     if [ -z "$V" ] && [ -s /opt/mrm-manager/VERSION ]; then
         V="$(head -1 /opt/mrm-manager/VERSION 2>/dev/null)"
     fi
-    echo "${V:-1.5.3}"
+    echo "${V:-1.5.4}"
 }
 
 # ─── Screen & header ────────────────────────────────────────────────────────
@@ -524,6 +524,15 @@ ui_box_line() {
     _ui_plain PLAIN "$TEXT"
     _ui_w W "$PLAIN"
     FILL=$(( WIDTH - 4 - W ))
+    if [ "$FILL" -lt 0 ] && [ -n "$VALUE" ]; then
+        # Long values (paths, file names) are shortened so the box frame stays intact
+        local MAXV=$(( WIDTH - 4 - UI_KV_WIDTH - 1 ))
+        [ "$MAXV" -lt 8 ] && MAXV=8
+        printf -v TEXT '%b%-*s%b %b%b%b' "$UI_C_MUTED" "$UI_KV_WIDTH" "$KEY" "$NC" "$UI_C_TEXT" "$(ui_truncate "$VALUE" "$MAXV")" "$NC"
+        _ui_plain PLAIN "$TEXT"
+        _ui_w W "$PLAIN"
+        FILL=$(( WIDTH - 4 - W ))
+    fi
     [ "$FILL" -lt 0 ] && FILL=0
     printf '%b%s%b %b%s %b%s%b\n' "$_UI_BOX_COLOR" "$UI_V" "$NC" "$TEXT" "$(ui_repeat ' ' "$FILL")" "$_UI_BOX_COLOR" "$UI_V" "$NC"
 }

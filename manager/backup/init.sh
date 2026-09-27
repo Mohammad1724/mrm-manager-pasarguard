@@ -35,21 +35,23 @@ if [ "$(basename "$SCRIPT_PATH")" = "init.sh" ]; then
     SCRIPT_PATH="$(readlink -f "$(dirname "$SCRIPT_PATH")/../backup.sh")"
 fi
 BACKUP_LOG="/var/log/mrm-backup.log"
-MRM_BACKUP_VERSION="v${BACKUP_VERSION:-1.0.5}"
+MRM_BACKUP_VERSION="v${BACKUP_VERSION:-1.0.6}"
 
 # ==========================================
 # LOGGING
 # ==========================================
 init_backup_logging() {
-    mkdir -p "$(dirname "$BACKUP_LOG")"
-    touch "$BACKUP_LOG"
+    # Never fail the menu because the log is not writable (e.g. non-root preview)
+    mkdir -p "$(dirname "$BACKUP_LOG")" 2>/dev/null || true
+    touch "$BACKUP_LOG" 2>/dev/null || true
     chmod 600 "$BACKUP_LOG" 2>/dev/null || true
+    return 0
 }
 
 log_backup() {
     local LEVEL=$1
     local MESSAGE=$2
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$LEVEL] $MESSAGE" >> "$BACKUP_LOG"
+    { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$LEVEL] $MESSAGE" >> "$BACKUP_LOG"; } 2>/dev/null || true
 }
 
 # ==========================================
@@ -70,7 +72,9 @@ setup_env() {
             NODE_DEF_CERTS="/var/lib/pg-node/certs"
         fi
     fi
-    log_backup "INFO" "Env: PANEL_DIR=$PANEL_DIR DATA_DIR=$DATA_DIR PANEL_ENV=$PANEL_ENV"
+    # Logged at DEBUG only — this runs every time the menu opens (MRM_DEBUG=1 to see it)
+    [ "${MRM_DEBUG:-0}" = "1" ] && log_backup "DEBUG" "Env: PANEL_DIR=$PANEL_DIR DATA_DIR=$DATA_DIR PANEL_ENV=$PANEL_ENV"
+    return 0
 }
 
 get_existing_compose_file() {

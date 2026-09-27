@@ -7,7 +7,7 @@ INSTALL_DIR="/opt/mrm-manager"
 # verified against checksums.txt (integrity). install.sh itself is bootstrapped
 # via the README curl command and therefore cannot self-verify.
 REPO_BASE_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard"
-REPO_REF="v1.5.3"
+REPO_REF="v1.5.4"
 MANAGER_REPO_URL="$REPO_BASE_URL/$REPO_REF"
 VERSION_REGISTRY_URL="$MANAGER_REPO_URL/versions.conf"
 CHECKSUMS_URL="$MANAGER_REPO_URL/checksums.txt"
@@ -94,7 +94,7 @@ rm -f "$VERSION_REGISTRY_FILE"
 
 # Fallback only if registry fetch failed
 if [ -z "$MRM_VERSION" ]; then
-    MRM_VERSION="1.5.3"
+    MRM_VERSION="1.5.4"
 fi
 
 ui_header "MRM Manager Installer  v${MRM_VERSION}"
@@ -182,8 +182,8 @@ for FILE in "${FILES[@]}"; do
         elif [ "$FILE" = "versions.conf" ]; then
             cat > "$INSTALL_DIR/$FILE" << EOF
 MRM_VERSION="$MRM_VERSION"
-SSL_VERSION="1.0.9"
-BACKUP_VERSION="1.0.5"
+SSL_VERSION="1.0.10"
+BACKUP_VERSION="1.0.6"
 THEME_VERSION="2.2.1"
 EOF
             ui_warning "$FILE could not be downloaded — created locally"
@@ -305,7 +305,7 @@ cat > /usr/local/bin/mrm << 'EOF'
 #!/bin/bash
 if [[ "$1" == "--version" || "$1" == "-v" ]]; then
     [ -r /opt/mrm-manager/versions.conf ] && source /opt/mrm-manager/versions.conf
-    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.5.3")}"
+    echo "MRM Manager ${MRM_VERSION:-$(cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.5.4")}"
     exit 0
 fi
 exec bash /opt/mrm-manager/main.sh "$@"
@@ -314,6 +314,16 @@ chmod +x /usr/local/bin/mrm
 
 # Installation succeeded — the rollback copy is no longer needed
 rm -rf "${INSTALL_DIR}.previous" 2>/dev/null
+
+# Record the installed release for the in-panel update check
+# (plugin/mrm_admin_subscriptions.py reads $DATA_DIR/mrm/install-state.json).
+# Only where the panel data directory exists — node-only servers have no panel.
+if [ -n "${DATA_DIR:-}" ] && [ -d "$DATA_DIR" ]; then
+    mkdir -p "$DATA_DIR/mrm" 2>/dev/null && \
+    printf '{\n  "version": "%s",\n  "release": "%s",\n  "installed_at": "%s",\n  "source": "install.sh"\n}\n' \
+        "$MRM_VERSION" "$REPO_REF" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$DATA_DIR/mrm/install-state.json" 2>/dev/null || true
+    chmod 600 "$DATA_DIR/mrm/install-state.json" 2>/dev/null || true
+fi
 
 echo ""
 ui_success "${BOLD}MRM Manager v${MRM_VERSION} installed${NC}"
