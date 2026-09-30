@@ -473,33 +473,55 @@ mrm_pick_db_restore() {
 # never comes up. Fix: set the role password to EXACTLY what the
 # restored .env sends, using the local socket (no password needed
 # there). The password itself is never logged.
+#
+# MRM-111 fix: run as the INSTANCE SUPERUSER (-U POSTGRES_USER
+# from the container config). The previous version connected as
+# the container OS user (root), and psql then looked for a role
+# named "root" -> FATAL: role "root" does not exist -> the sync
+# could never succeed. Also creates the role when the restored
+# .env names a user this instance has never seen.
 # ============================================================
+mrm_pg_instance_superuser() {
+    local CONT="$1" SU
+    [ -n "$CONT" ] || { printf 'postgres\n'; return 0; }
+    SU="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$CONT" 2>/dev/null | grep -m1 '^POSTGRES_USER=' | cut -d'=' -f2- | tr -d '"' | tr -d "'")"
+    printf '%s\n' "${SU:-postgres}"
+    return 0
+}
+
 mrm_sync_pg_role_password() {
     local CONT="$1" DB_USER="$2" DB_PASS="$3"
     [ -n "$CONT" ] && [ -n "$DB_USER" ] || return 1
-    log_backup "INFO" "Syncing PostgreSQL role password with restored .env (role: $DB_USER)"
+    [[ "$DB_USER" =~ ^[A-Za-z0-9_]+$ ]] || { log_backup "ERROR" "Refusing to sync: unsafe role name '$DB_USER'"; return 1; }
+    local SU
+    SU="$(mrm_pg_instance_superuser "$CONT")"
+    log_backup "INFO" "Syncing PostgreSQL role password with restored .env (role: $DB_USER, admin: $SU)"
     # IMPORTANT: psql -c does NOT perform :'var' variable substitution
     # (-c must be completely parsable by the server, per psql docs), so the
     # statement MUST go through STDIN for -v interpolation to work.
     # :'usr' / :'pass' are safely quoted by psql itself, which also handles
     # passwords containing quotes/backslashes.
-    if docker exec -i "$CONT" psql -w -v ON_ERROR_STOP=1 -d postgres \
-         -v usr="$DB_USER" -v pass="$DB_PASS" >/dev/null 2>&1 <<'SQL'
+    local EXISTS
+    EXISTS="$(docker exec -i "$CONT" psql -w -U "$SU" -d postgres -tA -c "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER';" 2>/dev/null)"
+    if [ "$EXISTS" = "1" ]; then
+        if ! docker exec -i "$CONT" psql -w -U "$SU" -d postgres -v ON_ERROR_STOP=1 \
+             -v usr="$DB_USER" -v pass="$DB_PASS" >/dev/null 2>&1 <<'SQL'
 ALTER ROLE :"usr" WITH LOGIN PASSWORD :'pass';
 SQL
-    then
-        :
+        then
+            log_backup "ERROR" "Could not ALTER ROLE $DB_USER - panel may fail with 'password authentication failed'"
+            return 1
+        fi
     else
-        # Role may not exist on this server yet (custom user in old .env)
-        if ! docker exec -i "$CONT" psql -w -v ON_ERROR_STOP=1 -d postgres \
+        log_backup "INFO" "Role $DB_USER does not exist on this instance - creating it with the restored .env password"
+        if ! docker exec -i "$CONT" psql -w -U "$SU" -d postgres -v ON_ERROR_STOP=1 \
              -v usr="$DB_USER" -v pass="$DB_PASS" >/dev/null 2>&1 <<'SQL'
 CREATE ROLE :"usr" WITH LOGIN PASSWORD :'pass';
 SQL
         then
-            log_backup "ERROR" "Could not sync PostgreSQL role password - panel may fail with 'password authentication failed'"
+            log_backup "ERROR" "Could not CREATE ROLE $DB_USER - panel may fail to connect"
             return 1
         fi
-        log_backup "INFO" "PostgreSQL role was missing on this server - created with the restored .env password"
     fi
     # Prove the fix over the real auth path (TCP + password). Best-effort:
     # the server may not listen on 127.0.0.1 inside the container.
@@ -532,6 +554,29 @@ mrm_sync_mysql_user_password() {
     if docker exec -e MYSQL_PWD="$DB_PASS" "$CONT" mysql -h127.0.0.1 -u"$DB_USER" -e "SELECT 1;" >/dev/null 2>&1; then
         log_backup "SUCCESS" "Verified: TCP login with the restored .env password works"
     fi
+    return 0
+}
+
+# ============================================================
+# EXTENSION ENSURE (MRM-111 — the missing piece of TimescaleDB restores)
+# pg_dump does NOT dump extension definitions. A database freshly
+# created by restore has NO extensions, so importing a dump from a
+# TimescaleDB install dies mid-way (ON_ERROR_STOP) on the first
+# object referencing timescale internals — leaving the half-restored
+# DB that crash-loops the panel ('type "proxytypes" already exists').
+# Installing the extensions BEFORE the import fixes the import.
+# ============================================================
+mrm_pg_ensure_extensions() {
+    local CONT="$1" ADMIN="$2" DBNAME="$3" DUMP="$4"
+    [ -n "$CONT" ] && [ -n "$ADMIN" ] && [ -n "$DBNAME" ] || return 1
+    if [ -n "$DUMP" ] && [ -f "$DUMP" ] && grep -aqiE "timescaledb|_timescaledb_internal|create_hypertable" "$DUMP" 2>/dev/null; then
+        log_backup "INFO" "Dump references TimescaleDB objects - installing the extension before the import"
+        if ! docker exec -i "$CONT" psql -w -v ON_ERROR_STOP=1 -U "$ADMIN" -d "$DBNAME" -c "CREATE EXTENSION IF NOT EXISTS timescaledb;" >/dev/null 2>&1; then
+            log_backup "WARNING" "CREATE EXTENSION timescaledb failed - the import may fail on timescale-dependent objects (is this a TimescaleDB install?)"
+        fi
+    fi
+    # Common companions: best-effort and harmless when unavailable.
+    docker exec -i "$CONT" psql -w -U "$ADMIN" -d "$DBNAME" -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;" >/dev/null 2>&1 || true
     return 0
 }
 
@@ -572,12 +617,19 @@ mrm_rollback_db_from_safety() {
             fi
         done
     elif mrm_pg_dump_ok "$SDB"; then
-        # PostgreSQL: reset the broken DB and re-import the safety dump
+        # PostgreSQL: reset the broken DB and re-import the safety dump.
+        # MRM-111: admin ops run as the instance superuser; extensions are
+        # installed before the re-import (same reason as the main import).
+        local RB_ADMIN
+        RB_ADMIN="$(mrm_pg_instance_superuser "$DB_CONT")"
+        docker exec -i "$DB_CONT" psql -w -U "$RB_ADMIN" -d postgres -c "SELECT 1;" >/dev/null 2>&1 || RB_ADMIN="$DB_USER"
         if [ -n "$DB_CONT" ] && [[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]]; then
-            docker exec -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c \
+            docker exec -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -w -U "$RB_ADMIN" -d postgres -c \
                 "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$DB_NAME' AND pid <> pg_backend_pid();" >/dev/null 2>&1 || true
-            if docker exec -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c "DROP DATABASE IF EXISTS \"$DB_NAME\" WITH (FORCE);" >/dev/null 2>&1 \
-               && docker exec -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c "CREATE DATABASE \"$DB_NAME\" OWNER \"$DB_USER\";" >/dev/null 2>&1; then
+            if docker exec -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -w -U "$RB_ADMIN" -d postgres -c "DROP DATABASE IF EXISTS \"$DB_NAME\" WITH (FORCE);" >/dev/null 2>&1 \
+               && docker exec -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -w -U "$RB_ADMIN" -d postgres -c "CREATE DATABASE \"$DB_NAME\" OWNER \"$DB_USER\";" >/dev/null 2>&1; then
+                mrm_sync_pg_role_password "$DB_CONT" "$DB_USER" "$DB_PASS" >/dev/null 2>&1 || true
+                mrm_pg_ensure_extensions "$DB_CONT" "$RB_ADMIN" "$DB_NAME" "$SDB"
                 if docker exec -i -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -w -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" < "$SDB" >"$RD/import.log" 2>&1; then
                     local ROWS
                     ROWS="$(docker exec -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -w -tA -U "$DB_USER" -d "$DB_NAME" -c "SELECT count(*) FROM alembic_version;" 2>/dev/null)"

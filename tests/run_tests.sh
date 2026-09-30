@@ -228,7 +228,7 @@ echo "⚙️ Group 8: Medium-Severity Checks"
 echo ""
 
 # Check MRM_BACKUP_VERSION fallback
-if grep -q 'BACKUP_VERSION:-1\.0\.8' "$PROJECT_DIR/manager/backup/init.sh"; then
+if grep -q 'BACKUP_VERSION:-1\.0\.9' "$PROJECT_DIR/manager/backup/init.sh"; then
     pass "MRM_BACKUP_VERSION fallback matches current version"
 else
     fail "MRM_BACKUP_VERSION fallback mismatch"
@@ -1616,15 +1616,20 @@ else
     fail "restore_core.sh reports success without checking the panel answers"
 fi
 
-# 14.9: functional smoke test of the sync logic with a stubbed docker
+# 14.9: FUNCTIONAL — the sync runs as the INSTANCE superuser (MRM-111 fix:
+# without -U psql falls back to the container OS user 'root' and always fails)
 _RESTORE_TMP=$(mktemp -d)
 _RECORD_FILE="$_RESTORE_TMP/record.log"
 : >"$_RECORD_FILE"
 cat >"$_RESTORE_TMP/docker" <<'STUB'
 #!/bin/bash
-# stub docker: record argv, answer like a real container stack
+if [ "$1" = "inspect" ]; then
+    echo "POSTGRES_USER=instance_admin"
+    exit 0
+fi
 printf '%s\n' "$*" >>"${_RECORD_FILE:?}"
 case "$*" in
+    *"SELECT 1 FROM pg_roles"*) echo "1"; exit 0 ;;
     *"ALTER ROLE"*|*"CREATE ROLE"*) exit 0 ;;
     *"SELECT 1"*) echo "1"; exit 0 ;;
 esac
@@ -1641,10 +1646,10 @@ chmod +x "$_RESTORE_TMP/docker"
     source "$PROJECT_DIR/manager/backup/database.sh" >/dev/null 2>&1
     mrm_sync_pg_role_password "fake-db-container" "pasarguard" 'p@ss'"'"'w0rd\X' >/dev/null 2>&1
 )
-if grep -qF "psql -w -v ON_ERROR_STOP=1 -d postgres -v usr=pasarguard -v pass=p@ss'w0rd\\X" "$_RECORD_FILE"; then
-    pass "mrm_sync_pg_role_password passes special-char passwords safely via -v"
+if grep -qF "psql -w -U instance_admin -d postgres -v ON_ERROR_STOP=1 -v usr=pasarguard -v pass=p@ss'w0rd\\X" "$_RECORD_FILE"; then
+    pass "mrm_sync_pg_role_password runs as the instance superuser via -U and passes special-char passwords via -v"
 else
-    fail "mrm_sync_pg_role_password does not pass the password via psql -v (unsafe quoting?)"
+    fail "mrm_sync_pg_role_password does not run as the instance superuser / unsafe password quoting"
 fi
 rm -rf "$_RESTORE_TMP"
 
@@ -1718,10 +1723,15 @@ EOF
 tar -czf "$_ROLL_TMP/safety.tar.gz" -C "$_ROLL_TMP/pkg" tmp
 cat >"$_ROLL_TMP/docker" <<'STUB'
 #!/bin/bash
+if [ "$1" = "inspect" ]; then
+    echo "POSTGRES_USER=postgres"
+    exit 0
+fi
 case "$*" in
     *"CREATE DATABASE"*) exit 0 ;;
     *"DROP DATABASE"*)   exit 0 ;;
     *"pg_terminate_backend"*) exit 0 ;;
+    *"CREATE EXTENSION"*) exit 0 ;;
     *"SELECT count(*) FROM alembic_version"*) echo "1"; exit 0 ;;
 esac
 exit 0
@@ -1747,6 +1757,29 @@ else
     fail "mrm_rollback_db_from_safety failed on a valid safety archive (functional)"
 fi
 rm -rf "$_ROLL_TMP"
+
+# 15.9: extension ensure exists and is wired before the import (MRM-111)
+if grep -q "^mrm_pg_ensure_extensions()" "$PROJECT_DIR/manager/backup/database.sh" && \
+   grep -qF 'mrm_pg_ensure_extensions "$DB_CONT" "$PG_ADMIN" "$DB_NAME" "$SQL_FILE"' "$PROJECT_DIR/manager/backup/restore_core.sh"; then
+    pass "extensions are installed into the fresh DB before the import (timescaledb)"
+else
+    fail "fresh DB has no extensions — TimescaleDB dumps die mid-import"
+fi
+
+# 15.10: the sync runs as the instance superuser (POSTGRES_USER), not root (MRM-111)
+if grep -q "^mrm_pg_instance_superuser()" "$PROJECT_DIR/manager/backup/database.sh" && \
+   grep -A24 "^mrm_sync_pg_role_password()" "$PROJECT_DIR/manager/backup/database.sh" | grep -q 'psql -w -U "\$SU"'; then
+    pass "mrm_sync_pg_role_password connects as the instance superuser (-U POSTGRES_USER)"
+else
+    fail "mrm_sync_pg_role_password still connects without -U (fails as role 'root')"
+fi
+
+# 15.11: import errors are surfaced on screen (not only in a log file)
+if grep -qF "PostgreSQL import failed — last errors:" "$PROJECT_DIR/manager/backup/restore_core.sh"; then
+    pass "import errors are printed on screen for immediate diagnosis"
+else
+    fail "import failures leave no on-screen error text"
+fi
 
 echo ""
 

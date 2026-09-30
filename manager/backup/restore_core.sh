@@ -469,9 +469,22 @@ do_restore() {
                     [ -z "$DB_USER" ] && DB_USER="pasarguard"
                     [ -z "$DB_NAME" ] && DB_NAME="$DB_USER"
 
+                    # ── MRM-111: prepare BEFORE touching the target DB ─────────
+                    # 1) Admin identity = instance superuser (POSTGRES_USER).
+                    #    The restored .env user may not even exist on this instance.
+                    # 2) Ensure the .env role exists (the new DB will be owned by
+                    #    it and the import connects as it).
+                    # 3) Unzip the dump up front so extension detection can scan it.
+                    local PG_ADMIN
+                    PG_ADMIN="$(mrm_pg_instance_superuser "$DB_CONT")"
+                    if ! docker exec -i "$DB_CONT" psql -w -U "$PG_ADMIN" -d postgres -c "SELECT 1;" >/dev/null 2>&1; then
+                        PG_ADMIN="$DB_USER"
+                    fi
+                    mrm_sync_pg_role_password "$DB_CONT" "$DB_USER" "$DB_PASS" >/dev/null 2>&1 || \
+                        log_backup "WARNING" "Could not pre-create/align role $DB_USER - continuing"
+
                     local SQL_FILE="$DB_RESTORE_PATH"
                     local TEMP_SQL=""
-
                     if [ "$DB_IS_GZ" = true ]; then
                         TEMP_SQL="$ROOT/database/db.sql"
                         if gunzip -c "$DB_RESTORE_PATH" > "$TEMP_SQL" 2>/dev/null; then
@@ -520,19 +533,23 @@ do_restore() {
                         if [[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]]; then
                             # Kill lingering connections to the target DB (the panel
                             # is already stopped; pgbouncer may hold pooled links).
-                            docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c \
+                            docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -U "$PG_ADMIN" -d postgres -c \
                                 "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$DB_NAME' AND pid <> pg_backend_pid();" >/dev/null 2>&1 || true
-                            if docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c "DROP DATABASE IF EXISTS \"$DB_NAME\" WITH (FORCE);" >/dev/null 2>&1; then
+                            if docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -U "$PG_ADMIN" -d postgres -c "DROP DATABASE IF EXISTS \"$DB_NAME\" WITH (FORCE);" >/dev/null 2>&1; then
                                 DB_DROPPED=true
-                                if docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c "CREATE DATABASE \"$DB_NAME\" OWNER \"$DB_USER\";" >/dev/null 2>&1 \
-                                   || docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c "CREATE DATABASE \"$DB_NAME\";" >/dev/null 2>&1; then
+                                if docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -U "$PG_ADMIN" -d postgres -c "CREATE DATABASE \"$DB_NAME\" OWNER \"$DB_USER\";" >/dev/null 2>&1 \
+                                   || docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -U "$PG_ADMIN" -d postgres -c "CREATE DATABASE \"$DB_NAME\";" >/dev/null 2>&1; then
                                     DB_RESET_OK=true
                                     log_backup "INFO" "Recreated database $DB_NAME (clean restore)"
                                 fi
                             fi
                         fi
                         if [ "$DB_RESET_OK" = true ]; then
-                            :  # fresh database ready for import
+                            # MRM-111: a freshly created database has NO extensions.
+                            # A dump from a TimescaleDB install references timescale
+                            # internals, so the import dies mid-way on the first
+                            # dependent object — install them BEFORE importing.
+                            mrm_pg_ensure_extensions "$DB_CONT" "$PG_ADMIN" "$DB_NAME" "$SQL_FILE"
                         elif [ "$DB_DROPPED" = true ]; then
                             # Dropped but CREATE DATABASE failed: importing into a
                             # missing database would only produce confusing errors.
@@ -572,12 +589,17 @@ do_restore() {
                                     cp -f "$IMPORT_LOG" "$IMPORT_KEEP" 2>/dev/null || true
                                     log_backup "ERROR" "Import finished but alembic_version='$ALEMBIC_ROWS' (expected 1) - DB incomplete. Full psql output: $IMPORT_KEEP"
                                     ui_error "Import produced an incomplete database (alembic_version=$ALEMBIC_ROWS, expected 1)"
+                                    local ERR_SNIP
+                                    ERR_SNIP="$(grep -aE 'ERROR|FATAL' "$IMPORT_KEEP" 2>/dev/null | tail -n 5)"
+                                    [ -n "$ERR_SNIP" ] && printf '%s\n' "$ERR_SNIP" | while IFS= read -r EL; do ui_text "    $EL"; done
                                     DB_BROKEN=true
                                 fi
                             else
                                 cp -f "$IMPORT_LOG" "$IMPORT_KEEP" 2>/dev/null || true
                                 log_backup "ERROR" "PostgreSQL import failed (ON_ERROR_STOP). Full psql output: $IMPORT_KEEP. Last output lines:"
                                 tail -n 15 "$IMPORT_LOG" 2>/dev/null | while IFS= read -r L; do log_backup "ERROR" "  $L"; done
+                                ui_error "PostgreSQL import failed — last errors:"
+                                grep -aE 'ERROR|FATAL' "$IMPORT_KEEP" 2>/dev/null | tail -n 5 | while IFS= read -r EL; do ui_text "    $EL"; done
                                 DB_BROKEN=true
                             fi
                         fi
@@ -963,22 +985,30 @@ do_repair_db() {
             docker exec -e PGPASSWORD="$DB_PASS_R" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c \
                 "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$DB_NAME' AND pid <> pg_backend_pid();" >/dev/null 2>&1 || true
             local IMPORT_KEEP="/var/log/mrm-pg-import-$(date +%Y%m%d_%H%M%S).log"
+            # MRM-111: ensure the .env role exists and install extensions
+            # (timescaledb) BEFORE importing — a fresh DB has neither.
+            mrm_sync_pg_role_password "$DB_CONT" "$DB_USER" "$DB_PASS_R" >/dev/null 2>&1 || true
             if docker exec -e PGPASSWORD="$DB_PASS_R" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c "DROP DATABASE IF EXISTS \"$DB_NAME\" WITH (FORCE);" >/dev/null 2>&1 \
-               && docker exec -e PGPASSWORD="$DB_PASS_R" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c "CREATE DATABASE \"$DB_NAME\" OWNER \"$DB_USER\";" >/dev/null 2>&1 \
-               && docker exec -i -e PGPASSWORD="$DB_PASS_R" "$DB_CONT" psql -w -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" < "$SQL" > "$IMPORT_KEEP" 2>&1; then
-                local ROWS
-                ROWS="$(docker exec -e PGPASSWORD="$DB_PASS_R" "$DB_CONT" psql -w -tA -U "$DB_USER" -d "$DB_NAME" -c "SELECT count(*) FROM alembic_version;" 2>/dev/null)"
-                if [ "$ROWS" = "1" ]; then
-                    REPAIR_OK=true
-                    ui_success "Database re-imported and verified (alembic_version=1)"
-                    mrm_sync_pg_role_password "$DB_CONT" "$DB_USER" "$DB_PASS_R" || true
+               && docker exec -e PGPASSWORD="$DB_PASS_R" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c "CREATE DATABASE \"$DB_NAME\" OWNER \"$DB_USER\";" >/dev/null 2>&1; then
+                mrm_pg_ensure_extensions "$DB_CONT" "$DB_USER" "$DB_NAME" "$SQL"
+                if docker exec -i -e PGPASSWORD="$DB_PASS_R" "$DB_CONT" psql -w -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" < "$SQL" > "$IMPORT_KEEP" 2>&1; then
+                    local ROWS
+                    ROWS="$(docker exec -e PGPASSWORD="$DB_PASS_R" "$DB_CONT" psql -w -tA -U "$DB_USER" -d "$DB_NAME" -c "SELECT count(*) FROM alembic_version;" 2>/dev/null)"
+                    if [ "$ROWS" = "1" ]; then
+                        REPAIR_OK=true
+                        ui_success "Database re-imported and verified (alembic_version=1)"
+                        mrm_sync_pg_role_password "$DB_CONT" "$DB_USER" "$DB_PASS_R" || true
+                    else
+                        ui_error "Import incomplete (alembic_version=$ROWS) — full log: $IMPORT_KEEP"
+                        log_backup "ERROR" "repair-db import incomplete"
+                    fi
                 else
-                    ui_error "Import incomplete (alembic_version=$ROWS) — full log: $IMPORT_KEEP"
-                    log_backup "ERROR" "repair-db import incomplete"
+                    ui_error "Import failed — full psql output: $IMPORT_KEEP (send this file if you ask for help)"
+                    log_backup "ERROR" "repair-db import failed; log: $IMPORT_KEEP"
                 fi
             else
-                ui_error "Import failed — full psql output: $IMPORT_KEEP (send this file if you ask for help)"
-                log_backup "ERROR" "repair-db import failed; log: $IMPORT_KEEP"
+                ui_error "Could not reset the database — check that the DB user has enough privileges"
+                log_backup "ERROR" "repair-db DROP/CREATE DATABASE failed"
             fi
         fi
         ui_spinner_stop
