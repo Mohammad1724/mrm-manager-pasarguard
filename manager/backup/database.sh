@@ -455,3 +455,77 @@ mrm_pick_db_restore() {
     printf 'none|\n'; return 1
 }
 
+# ============================================================
+# DB ROLE PASSWORD SYNC (MRM-109 — restore on a NEW server)
+# pg_dump / mysqldump NEVER contain role passwords. On a new
+# server the database was initialized with the NEW install's
+# generated password, while the restored .env still sends the
+# OLD one. The import itself succeeds (docker exec psql uses the
+# container's local socket, which is trust-auth), but afterwards
+# the panel connects over TCP/pgbouncer with the OLD password and
+# crash-loops on "password authentication failed" -> the panel
+# never comes up. Fix: set the role password to EXACTLY what the
+# restored .env sends, using the local socket (no password needed
+# there). The password itself is never logged.
+# ============================================================
+mrm_sync_pg_role_password() {
+    local CONT="$1" DB_USER="$2" DB_PASS="$3"
+    [ -n "$CONT" ] && [ -n "$DB_USER" ] || return 1
+    log_backup "INFO" "Syncing PostgreSQL role password with restored .env (role: $DB_USER)"
+    # IMPORTANT: psql -c does NOT perform :'var' variable substitution
+    # (-c must be completely parsable by the server, per psql docs), so the
+    # statement MUST go through STDIN for -v interpolation to work.
+    # :'usr' / :'pass' are safely quoted by psql itself, which also handles
+    # passwords containing quotes/backslashes.
+    if docker exec -i "$CONT" psql -w -v ON_ERROR_STOP=1 -d postgres \
+         -v usr="$DB_USER" -v pass="$DB_PASS" >/dev/null 2>&1 <<'SQL'
+ALTER ROLE :"usr" WITH LOGIN PASSWORD :'pass';
+SQL
+    then
+        :
+    else
+        # Role may not exist on this server yet (custom user in old .env)
+        if ! docker exec -i "$CONT" psql -w -v ON_ERROR_STOP=1 -d postgres \
+             -v usr="$DB_USER" -v pass="$DB_PASS" >/dev/null 2>&1 <<'SQL'
+CREATE ROLE :"usr" WITH LOGIN PASSWORD :'pass';
+SQL
+        then
+            log_backup "ERROR" "Could not sync PostgreSQL role password - panel may fail with 'password authentication failed'"
+            return 1
+        fi
+        log_backup "INFO" "PostgreSQL role was missing on this server - created with the restored .env password"
+    fi
+    # Prove the fix over the real auth path (TCP + password). Best-effort:
+    # the server may not listen on 127.0.0.1 inside the container.
+    if docker exec -e PGPASSWORD="$DB_PASS" "$CONT" psql -w -h 127.0.0.1 -p 5432 -U "$DB_USER" -d postgres -c "SELECT 1;" >/dev/null 2>&1; then
+        log_backup "SUCCESS" "Verified: TCP login with the restored .env password works"
+    else
+        log_backup "INFO" "Role password ALTER applied (TCP verify skipped - server may not listen on 127.0.0.1:5432 inside the container)"
+    fi
+    return 0
+}
+
+# MySQL/MariaDB counterpart of mrm_sync_pg_role_password (MRM-109).
+# ROOT_PASS comes from MYSQL_ROOT_PASSWORD in the restored .env (best effort).
+mrm_sync_mysql_user_password() {
+    local CONT="$1" DB_USER="$2" DB_PASS="$3" ROOT_PASS="$4"
+    [ -n "$CONT" ] && [ -n "$DB_USER" ] || return 1
+    log_backup "INFO" "Syncing MySQL user password with restored .env (user: $DB_USER)"
+    # Escape for a MySQL string literal (backslash first, then single quote)
+    local ESC="${DB_PASS//\\/\\\\}"
+    ESC="${ESC//\'/\\\'}"
+    if docker exec -e MYSQL_PWD="${ROOT_PASS:-}" "$CONT" mysql -uroot -e \
+        "ALTER USER '$DB_USER'@'%' IDENTIFIED BY '$ESC'; FLUSH PRIVILEGES;" >/dev/null 2>&1 \
+       || docker exec -e MYSQL_PWD="${ROOT_PASS:-}" "$CONT" mysql -uroot -e \
+        "SET PASSWORD FOR '$DB_USER'@'%' = PASSWORD('$ESC'); FLUSH PRIVILEGES;" >/dev/null 2>&1; then
+        :
+    else
+        log_backup "ERROR" "Could not sync MySQL user password - panel may fail to authenticate (check MYSQL_ROOT_PASSWORD in .env)"
+        return 1
+    fi
+    if docker exec -e MYSQL_PWD="$DB_PASS" "$CONT" mysql -h127.0.0.1 -u"$DB_USER" -e "SELECT 1;" >/dev/null 2>&1; then
+        log_backup "SUCCESS" "Verified: TCP login with the restored .env password works"
+    fi
+    return 0
+}
+

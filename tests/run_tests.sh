@@ -228,7 +228,7 @@ echo "⚙️ Group 8: Medium-Severity Checks"
 echo ""
 
 # Check MRM_BACKUP_VERSION fallback
-if grep -q 'BACKUP_VERSION:-1\.0\.6' "$PROJECT_DIR/manager/backup/init.sh"; then
+if grep -q 'BACKUP_VERSION:-1\.0\.7' "$PROJECT_DIR/manager/backup/init.sh"; then
     pass "MRM_BACKUP_VERSION fallback matches current version"
 else
     fail "MRM_BACKUP_VERSION fallback mismatch"
@@ -1553,6 +1553,102 @@ if grep -q 'LABEL="\${KEY#JOB_}"' "$PROJECT_DIR/manager/pg_health.sh" && \
 else
     fail "pg_health.sh: JOB_* rows still use the raw 30+ character keys as labels"
 fi
+
+# ─── Test Group 14: New-Server Restore / DB Password Sync (MRM-109) ─────────
+echo "🛢️ Group 14: New-Server Restore — DB credential sync (MRM-109)"
+echo ""
+
+# 14.1: database.sh has the PostgreSQL role password sync function
+if grep -q "^mrm_sync_pg_role_password()" "$PROJECT_DIR/manager/backup/database.sh"; then
+    pass "database.sh defines mrm_sync_pg_role_password"
+else
+    fail "database.sh missing mrm_sync_pg_role_password"
+fi
+
+# 14.2: database.sh has the MySQL user password sync function
+if grep -q "^mrm_sync_mysql_user_password()" "$PROJECT_DIR/manager/backup/database.sh"; then
+    pass "database.sh defines mrm_sync_mysql_user_password"
+else
+    fail "database.sh missing mrm_sync_mysql_user_password"
+fi
+
+# 14.3: the sync uses STDIN here-docs (psql -c does NOT interpolate :'var')
+if grep -A16 "^mrm_sync_pg_role_password()" "$PROJECT_DIR/manager/backup/database.sh" | grep -q "<<'SQL'"; then
+    pass "mrm_sync_pg_role_password interpolates :\"usr\"/:'pass' via STDIN (not -c)"
+else
+    fail "mrm_sync_pg_role_password uses -c (psql does not substitute variables in -c)"
+fi
+
+# 14.4: restore_core.sh calls the sync after the PostgreSQL import
+if grep -qF 'mrm_sync_pg_role_password "$DB_CONT" "$DB_USER" "$DB_PASS"' "$PROJECT_DIR/manager/backup/restore_core.sh"; then
+    pass "restore_core.sh syncs the PG role password after import"
+else
+    fail "restore_core.sh never syncs the PG role password after import"
+fi
+
+# 14.5: restore_core.sh calls the MySQL sync after the MySQL import
+if grep -qF 'mrm_sync_mysql_user_password "$DB_CONT" "$DB_USER" "$DB_PASS"' "$PROJECT_DIR/manager/backup/restore_core.sh"; then
+    pass "restore_core.sh syncs the MySQL user password after import"
+else
+    fail "restore_core.sh never syncs the MySQL user password after import"
+fi
+
+# 14.6: bare new-server compose up includes the timescaledb service name
+if grep -qF "up -d timescaledb postgresql postgres db" "$PROJECT_DIR/manager/backup/restore_core.sh"; then
+    pass "restore_core.sh starts timescaledb/postgresql services on a bare new server"
+else
+    fail "restore_core.sh misses the timescaledb service name on bare new server"
+fi
+
+# 14.7: post_restore subscription update goes through STDIN (fixes silent -c failure)
+if grep -qF "to_jsonb(:'url_prefix'::text)" "$PROJECT_DIR/manager/backup/post_restore.sh" && \
+   grep -qF "<<'SQL'" "$PROJECT_DIR/manager/backup/post_restore.sh"; then
+    pass "post_restore.sh runs the subscription UPDATE via STDIN (variables interpolate)"
+else
+    fail "post_restore.sh still sends :'url_prefix' inside -c (never interpolated)"
+fi
+
+# 14.8: restore ends with a real /health verification (panel actually up)
+if grep -qF "/health" "$PROJECT_DIR/manager/backup/restore_core.sh" && \
+   grep -qF "PANEL_UP" "$PROJECT_DIR/manager/backup/restore_core.sh"; then
+    pass "restore_core.sh verifies panel /health before reporting success"
+else
+    fail "restore_core.sh reports success without checking the panel answers"
+fi
+
+# 14.9: functional smoke test of the sync logic with a stubbed docker
+_RESTORE_TMP=$(mktemp -d)
+_RECORD_FILE="$_RESTORE_TMP/record.log"
+: >"$_RECORD_FILE"
+cat >"$_RESTORE_TMP/docker" <<'STUB'
+#!/bin/bash
+# stub docker: record argv, answer like a real container stack
+printf '%s\n' "$*" >>"${_RECORD_FILE:?}"
+case "$*" in
+    *"ALTER ROLE"*|*"CREATE ROLE"*) exit 0 ;;
+    *"SELECT 1"*) echo "1"; exit 0 ;;
+esac
+exit 0
+STUB
+chmod +x "$_RESTORE_TMP/docker"
+(
+    PATH="$_RESTORE_TMP:$PATH"
+    export _RECORD_FILE
+    export PATH
+    # database.sh is a module: the logging helper normally comes from init.sh
+    log_backup() { :; }
+    # shellcheck source=/dev/null
+    source "$PROJECT_DIR/manager/backup/database.sh" >/dev/null 2>&1
+    mrm_sync_pg_role_password "fake-db-container" "pasarguard" 'p@ss'"'"'w0rd\X' >/dev/null 2>&1
+)
+if grep -qF "psql -w -v ON_ERROR_STOP=1 -d postgres -v usr=pasarguard -v pass=p@ss'w0rd\\X" "$_RECORD_FILE"; then
+    pass "mrm_sync_pg_role_password passes special-char passwords safely via -v"
+else
+    fail "mrm_sync_pg_role_password does not pass the password via psql -v (unsafe quoting?)"
+fi
+rm -rf "$_RESTORE_TMP"
+
+echo ""
 
 # ─── Summary ─────────────────────────────────────────────────────────────────
 echo "═══════════════════════════════════════════════════════════"

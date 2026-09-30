@@ -35,7 +35,7 @@ if [ "$(basename "$SCRIPT_PATH")" = "init.sh" ]; then
     SCRIPT_PATH="$(readlink -f "$(dirname "$SCRIPT_PATH")/../backup.sh")"
 fi
 BACKUP_LOG="/var/log/mrm-backup.log"
-MRM_BACKUP_VERSION="v${BACKUP_VERSION:-1.0.6}"
+MRM_BACKUP_VERSION="v${BACKUP_VERSION:-1.0.7}"
 
 # ==========================================
 # LOGGING

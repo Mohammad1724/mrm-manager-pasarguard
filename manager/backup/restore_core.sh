@@ -445,7 +445,10 @@ do_restore() {
                 # start it from the restored docker-compose to create it
                 if [ -z "$DB_CONT" ] && [ -n "$PANEL_COMPOSE_FILE" ] && [ -f "$PANEL_COMPOSE_FILE" ]; then
                     log_backup "INFO" "No postgres container found - starting from restored compose (new server)"
-                    run_compose_file "$PANEL_COMPOSE_FILE" up -d postgres db postgresql >/dev/null 2>&1 || true
+                    # FIX (MRM-109): official TimescaleDB installs name the service
+                    # `timescaledb` (only raw PostgreSQL uses `postgresql`) — without
+                    # it the DB container was never created on a bare new server.
+                    run_compose_file "$PANEL_COMPOSE_FILE" up -d timescaledb postgresql postgres db >/dev/null 2>&1 || true
                     sleep 3
                     DB_CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(pasarguard-)?(postgresql|timescaledb|postgres|timescale)[-_]?[0-9]*$' | head -1)
                     [ -z "$DB_CONT" ] && DB_CONT=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "postgres|timescale" | head -1)
@@ -557,6 +560,20 @@ do_restore() {
                                 tail -n 15 "$IMPORT_LOG" 2>/dev/null | while IFS= read -r L; do log_backup "ERROR" "  $L"; done
                             fi
                         fi
+
+                        # ── NEW-SERVER FIX (MRM-109): sync the role password ──
+                        # The dump contains NO role passwords. On a new server the
+                        # database keeps the NEW install's password while the
+                        # restored .env sends the OLD one -> the panel crash-loops
+                        # with "password authentication failed" after restore.
+                        # Align the role with the restored .env while the DB
+                        # container is still up and reachable via its socket.
+                        if mrm_sync_pg_role_password "$DB_CONT" "$DB_USER" "$DB_PASS"; then
+                            log_backup "SUCCESS" "DB credentials match the restored .env"
+                        else
+                            ui_warning "DB password could not be synced - if the panel fails with 'password authentication failed', fix it from Backup menu › Smart fix or set the role password manually"
+                        fi
+
                         [ -n "$IMPORT_LOG" ] && [ -f "$IMPORT_LOG" ] && rm -f "$IMPORT_LOG"
                     fi
 
@@ -642,6 +659,12 @@ do_restore() {
                             DB_IMPORTED=true
                         fi
                     fi
+                    # NEW-SERVER FIX (MRM-109): the dump has no role passwords —
+                    # align the MySQL user password with the restored .env.
+                    local MYSQL_ROOT_PASS
+                    MYSQL_ROOT_PASS="$(grep -m1 '^MYSQL_ROOT_PASSWORD' "$PANEL_ENV" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")"
+                    mrm_sync_mysql_user_password "$DB_CONT" "$DB_USER" "$DB_PASS" "$MYSQL_ROOT_PASS" || \
+                        ui_warning "MySQL password could not be synced - the panel may fail to authenticate"
                     [ "$DB_IS_GZ" = true ] && [ -f "$TEMP_SQL" ] && [ "$TEMP_SQL" != "$DB_RESTORE_PATH" ] && rm -f "$TEMP_SQL"
                 fi
                 ui_spinner_stop
@@ -743,6 +766,34 @@ do_restore() {
     rm -rf "$WORK_DIR"
     trap - RETURN
 
+    # ── FINAL VERIFICATION: does the panel actually answer? ──
+    # "Services started" only means containers exist. The restore is only
+    # successful when the panel process responds on its port (MRM-109).
+    local PANEL_UP=false PANEL_HEALTH_PORT
+    PANEL_HEALTH_PORT="$(grep -m1 '^UVICORN_PORT' "$PANEL_ENV" 2>/dev/null | cut -d'=' -f2- | tr -d "\"'" | tr -d '[:space:]')"
+    case "$PANEL_HEALTH_PORT" in ''|*[!0-9]*) PANEL_HEALTH_PORT=8000 ;; esac
+    ui_spinner_start "Waiting for the panel to answer"
+    local HEALTH_TRIES=0
+    while [ "$HEALTH_TRIES" -lt 30 ]; do
+        if curl -sk -o /dev/null -m 3 "https://127.0.0.1:$PANEL_HEALTH_PORT/health" || \
+           curl -s -o /dev/null -m 3 "http://127.0.0.1:$PANEL_HEALTH_PORT/health"; then
+            PANEL_UP=true
+            break
+        fi
+        sleep 2
+        HEALTH_TRIES=$((HEALTH_TRIES + 1))
+    done
+    ui_spinner_stop
+    if [ "$PANEL_UP" = true ]; then
+        ui_success "Panel answers on port $PANEL_HEALTH_PORT (/health OK)"
+        log_backup "SUCCESS" "Panel health OK after restore (port $PANEL_HEALTH_PORT)"
+    else
+        ui_warning "Panel did NOT answer /health on port $PANEL_HEALTH_PORT within 60s"
+        ui_bullet "Logs: docker logs \$(docker ps -q -f name=pasarguard) --tail 50"
+        ui_bullet "Backup log: tail -n 40 $BACKUP_LOG"
+        log_backup "WARNING" "Panel /health not answering after restore (port $PANEL_HEALTH_PORT)"
+    fi
+
     local NEW_SERVER_IP=$(get_server_ip)
     log_backup "SUCCESS" "Restore v${BACKUP_VERSION} completed from: $(basename "$SELECTED")"
 
@@ -750,6 +801,11 @@ do_restore() {
     ui_box_start ok "Restore completed"
     ui_box_line "Archive" "$(basename "$SELECTED")"
     ui_box_line "Server IP" "$NEW_SERVER_IP"
+    if [ "$PANEL_UP" = true ]; then
+        ui_box_line "Panel" "$(ui_state ok "UP (port $PANEL_HEALTH_PORT)")"
+    else
+        ui_box_line "Panel" "$(ui_state bad "NOT RESPONDING — see $BACKUP_LOG")"
+    fi
     [ -n "${SAFETY_BACKUP:-}" ] && ui_box_line "Safety copy" "$(basename "$SAFETY_BACKUP")"
     if [ "$XRAY_WAS_DOWNLOADED" = true ]; then
         ui_box_line "xray-core" "$(ui_state ok "Downloaded") not part of the archive"

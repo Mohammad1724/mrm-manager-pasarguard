@@ -260,7 +260,7 @@ _apply_subscription_url_db() {
     TYPE="${PROBE%%|*}"
     case "$TYPE" in
         postgres)
-            local HOST PORT USER PASS DB PGC SQL
+            local HOST PORT USER PASS DB PGC
             IFS='|' read -r _ HOST PORT USER PASS DB <<< "$PROBE"
             PASS="$(mrm_b64dec "$PASS" 2>/dev/null)"
             # FIX: precise compose-name match first (MRM-064); bare grep could
@@ -268,14 +268,27 @@ _apply_subscription_url_db() {
             PGC="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(pasarguard-)?(postgresql|timescaledb|postgres|timescale)[-_]?[0-9]*$' | head -1)"
             [ -z "$PGC" ] && PGC="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE 'postgres|timescale' | head -1)"
             [ -z "$PGC" ] && return 1
-            SQL="UPDATE settings SET subscription = (jsonb_set(subscription::jsonb, '{url_prefix}', to_jsonb(:'url_prefix'::text), true))::json WHERE id = (SELECT id FROM settings ORDER BY id LIMIT 1);"
+            # FIX (MRM-109): psql -c must be completely parsable by the server and
+            # does NOT interpolate :'var' variables — the old -c query was sent
+            # verbatim and ALWAYS failed with a syntax error. Interpolation only
+            # works on STDIN, so run the UPDATE through a here-document.
             # Attempt 1: exactly where the panel connects (may be a pooler like pgbouncer)
-            if docker exec -e PGPASSWORD="$PASS" "$PGC" psql -w -v ON_ERROR_STOP=1 -h "$HOST" -p "$PORT" -U "$USER" -d "$DB" -v url_prefix="$SUB_URL" -c "$SQL" >/dev/null 2>&1; then
+            if docker exec -i -e PGPASSWORD="$PASS" "$PGC" psql -w -v ON_ERROR_STOP=1 \
+                 -h "$HOST" -p "$PORT" -U "$USER" -d "$DB" -v url_prefix="$SUB_URL" >/dev/null 2>&1 <<'SQL'
+UPDATE settings SET subscription = (jsonb_set(subscription::jsonb, '{url_prefix}', to_jsonb(:'url_prefix'::text), true))::json WHERE id = (SELECT id FROM settings ORDER BY id LIMIT 1);
+SQL
+            then
                 return 0
             fi
             # Attempt 2: direct local postgres inside the container
             if [ "$HOST" != "127.0.0.1" ] || [ "$PORT" != "5432" ]; then
-                docker exec -e PGPASSWORD="$PASS" "$PGC" psql -w -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U "$USER" -d "$DB" -v url_prefix="$SUB_URL" -c "$SQL" >/dev/null 2>&1 && return 0
+                if docker exec -i -e PGPASSWORD="$PASS" "$PGC" psql -w -v ON_ERROR_STOP=1 \
+                     -h 127.0.0.1 -p 5432 -U "$USER" -d "$DB" -v url_prefix="$SUB_URL" >/dev/null 2>&1 <<'SQL'
+UPDATE settings SET subscription = (jsonb_set(subscription::jsonb, '{url_prefix}', to_jsonb(:'url_prefix'::text), true))::json WHERE id = (SELECT id FROM settings ORDER BY id LIMIT 1);
+SQL
+                then
+                    return 0
+                fi
             fi
             return 1
             ;;
