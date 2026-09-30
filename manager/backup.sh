@@ -101,6 +101,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     case "${1:-}" in
         auto)     do_backup "auto" ;;
         fix-node) backup_fix_node_cli "${2:-}"; exit $? ;;
+        repair-db) do_repair_db "${2:-}"; exit $? ;;
         *)        backup_menu ;;
     esac
 fi

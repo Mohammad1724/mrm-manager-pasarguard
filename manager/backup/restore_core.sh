@@ -504,6 +504,18 @@ do_restore() {
                         # CASCADE` is UNSAFE on TimescaleDB: it drops the extension
                         # and leaves a DB where the re-import can fail mid-way,
                         # silently leaving a schema with no data / no alembic_version.
+                        # ── MRM-110: detect a HALF-RESTORED database left by a
+                        # previously failed restore (schema objects exist but
+                        # alembic_version is empty -> panel crash-loops with
+                        # 'type "proxytypes" already exists').
+                        local PREV_HAS_SCHEMA PREV_ALEMBIC
+                        PREV_HAS_SCHEMA="$(docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -tA -U "$DB_USER" -d "$DB_NAME" -c "SELECT to_regclass('public.proxytypes') IS NOT NULL;" 2>/dev/null || true)"
+                        PREV_ALEMBIC="$(docker exec "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -tA -U "$DB_USER" -d "$DB_NAME" -c "SELECT count(*) FROM alembic_version;" 2>/dev/null || true)"
+                        if [ "$PREV_HAS_SCHEMA" = "t" ] && [ "$PREV_ALEMBIC" != "1" ]; then
+                            log_backup "WARNING" "Target DB is HALF-RESTORED (schema without alembic_version=$PREV_ALEMBIC) - a previous restore failed mid-import; it will be fully reset now"
+                            ui_warning "Found a half-restored database from an earlier failed restore - resetting it completely"
+                        fi
+
                         local DB_DROPPED=false DB_RESET_OK=false DB_READY=true
                         if [[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]]; then
                             # Kill lingering connections to the target DB (the panel
@@ -535,6 +547,11 @@ do_restore() {
                         fi
 
                         # ── Import (ON_ERROR_STOP=1 so a mid-file error fails) ─────
+                        # MRM-110: the full psql output is kept in
+                        # /var/log/mrm-pg-import-<ts>.log so a mid-file failure
+                        # can actually be diagnosed afterwards.
+                        local DB_BROKEN=false IMPORT_KEEP
+                        IMPORT_KEEP="/var/log/mrm-pg-import-$(date +%Y%m%d_%H%M%S).log"
                         if [ "$DB_READY" = true ]; then
                             if docker exec -i "${PGPASS_ENV[@]}" "$DB_CONT" psql -w -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" < "$SQL_FILE" >"$IMPORT_LOG" 2>&1; then
                                 # ── VERIFY before declaring success ────────────────
@@ -552,14 +569,34 @@ do_restore() {
                                         log_backup "WARNING" "alembic_version=1 but settings empty/missing (pre-v3 backup?)"
                                     fi
                                 else
-                                    log_backup "ERROR" "Import finished but alembic_version='$ALEMBIC_ROWS' (expected 1) - DB incomplete"
+                                    cp -f "$IMPORT_LOG" "$IMPORT_KEEP" 2>/dev/null || true
+                                    log_backup "ERROR" "Import finished but alembic_version='$ALEMBIC_ROWS' (expected 1) - DB incomplete. Full psql output: $IMPORT_KEEP"
                                     ui_error "Import produced an incomplete database (alembic_version=$ALEMBIC_ROWS, expected 1)"
+                                    DB_BROKEN=true
                                 fi
                             else
-                                log_backup "ERROR" "PostgreSQL import failed (ON_ERROR_STOP). Last output lines:"
+                                cp -f "$IMPORT_LOG" "$IMPORT_KEEP" 2>/dev/null || true
+                                log_backup "ERROR" "PostgreSQL import failed (ON_ERROR_STOP). Full psql output: $IMPORT_KEEP. Last output lines:"
                                 tail -n 15 "$IMPORT_LOG" 2>/dev/null | while IFS= read -r L; do log_backup "ERROR" "  $L"; done
+                                DB_BROKEN=true
                             fi
                         fi
+
+                        # ── MRM-110: NEVER leave a half-restored DB behind ──────
+                        # If the import failed/incomplete, roll the database back
+                        # to the pre-restore safety copy so the server keeps
+                        # working instead of crash-looping on 'type already exists'.
+                        if [ "$DB_BROKEN" = true ] && [ -n "${SAFETY_BACKUP:-}" ] && [ -f "$SAFETY_BACKUP" ]; then
+                            ui_warning "Import failed — rolling back to the pre-restore database…"
+                            if mrm_rollback_db_from_safety "$SAFETY_BACKUP" "$DB_CONT" "$DB_USER" "$DB_PASS" "$DB_NAME"; then
+                                ui_warning "Pre-restore database restored — the panel will run with the OLD data (restore was aborted safely)"
+                                log_backup "WARNING" "Restore aborted safely: DB rolled back to pre-restore state"
+                            else
+                                ui_error "Automatic rollback failed — fix manually with: mrm repair-db (see $IMPORT_KEEP and $BACKUP_LOG)"
+                                log_backup "ERROR" "Automatic rollback to the safety DB failed"
+                            fi
+                        fi
+                        unset DB_BROKEN
 
                         # ── NEW-SERVER FIX (MRM-109): sync the role password ──
                         # The dump contains NO role passwords. On a new server the
@@ -815,6 +852,193 @@ do_restore() {
         ui_box_line "xray-core" "$(ui_state bad "Missing") run: mrm fix-node"
     fi
     ui_box_end
+    ui_pause
+}
+
+# ─── Database-only repair (MRM-110) ──────────────────────────────────────────
+# Rescue tool for a server left crash-looping by an earlier failed restore
+# (panel logs: DuplicateObjectError: type "proxytypes" already exists /
+# "Database migrations failed"). It resets and re-imports ONLY the database
+# from an MRM backup archive — files, .env and certs are NOT touched.
+do_repair_db() {
+    setup_env
+    init_backup_logging
+
+    local ARCHIVE="${1:-}"
+    if [ -z "$ARCHIVE" ]; then
+        ARCHIVE="$(find "$BACKUP_DIR" -maxdepth 1 -name 'MRM-*.tar.gz' ! -name 'pre_restore_*' -printf '%T@ %p\n' 2>/dev/null | sort -rn | cut -d' ' -f2- | head -1)"
+    fi
+    if [ -z "$ARCHIVE" ] || [ ! -f "$ARCHIVE" ]; then
+        ui_error "No backup archive found (put the MRM-*.tar.gz into $BACKUP_DIR or pass its path)"
+        ui_cmd "mrm repair-db /root/mrm-backups/MRM-2026....tar.gz" "repair from a specific archive"
+        ui_pause
+        return 1
+    fi
+
+    ui_header "Database-only repair" "$(basename "$ARCHIVE")"
+    ui_warning "The database will be RESET and re-imported from the archive"
+    ui_note "Files, .env and certificates are NOT touched."
+    if ! ui_confirm "Repair the database now?"; then ui_cancelled; ui_pause; return; fi
+
+    log_backup "INFO" "repair-db started from: $(basename "$ARCHIVE")"
+
+    local WORK
+    WORK="$(mktemp -d /tmp/mrm_repair.XXXXXX)"
+    if ! tar -xzf "$ARCHIVE" -C "$WORK" 2>/dev/null; then
+        ui_error "Cannot extract the archive"
+        rm -rf "$WORK"; ui_pause; return 1
+    fi
+    local ROOT
+    ROOT="$(find "$WORK" -maxdepth 3 -type d -name 'MRM_*' 2>/dev/null | head -1)"
+    [ -z "$ROOT" ] && ROOT="$(find "$WORK" -maxdepth 2 -type f -name 'backup_info.txt' -printf '%h' 2>/dev/null | head -1)"
+    if [ -z "$ROOT" ] || [ ! -d "$ROOT" ]; then
+        ui_error "Invalid archive structure — MRM backup root not found"
+        rm -rf "$WORK"; ui_pause; return 1
+    fi
+
+    local PICK DB_FILE IS_GZ=false
+    PICK="$(mrm_pick_db_restore "$ROOT")"
+    case "$(printf '%s' "$PICK" | cut -d'|' -f1)" in
+        sqlite) DB_FILE="$(printf '%s' "$PICK" | cut -d'|' -f2-)" ;;
+        gz)     DB_FILE="$(printf '%s' "$PICK" | cut -d'|' -f2-)"; IS_GZ=true ;;
+        sql)    DB_FILE="$(printf '%s' "$PICK" | cut -d'|' -f2-)" ;;
+        *)      ui_error "No database file inside this archive"; rm -rf "$WORK"; ui_pause; return 1 ;;
+    esac
+    log_backup "INFO" "repair-db: db file=$DB_FILE gz=$IS_GZ"
+
+    # Stop ONLY the panel service (the DB container must keep running)
+    local PANEL_COMPOSE_FILE
+    PANEL_COMPOSE_FILE="$(get_existing_compose_file panel 2>/dev/null || true)"
+    [ -n "$PANEL_COMPOSE_FILE" ] && run_compose_file "$PANEL_COMPOSE_FILE" stop pasarguard >/dev/null 2>&1 || true
+
+    local REPAIR_OK=false
+    local SQL="$DB_FILE"
+    if [ "$IS_GZ" = true ]; then
+        gunzip -c "$DB_FILE" > "$WORK/db.sql" 2>/dev/null && SQL="$WORK/db.sql"
+    fi
+
+    if mrm_is_sqlite_file "$DB_FILE" && [ "$IS_GZ" = false ]; then
+        # --- SQLite repair: copy the file to the configured location ---
+        ui_spinner_start "Restoring SQLite database"
+        local TARGET_SQLITE ENV_URL
+        ENV_URL="$(grep -m1 '^SQLALCHEMY_DATABASE_URL' "$PANEL_ENV" 2>/dev/null | cut -d'=' -f2- | tr -d "\"'" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        [ -n "$ENV_URL" ] && TARGET_SQLITE="$(mrm_sqlite_path_from_url "$ENV_URL" 2>/dev/null)"
+        if [ -n "$TARGET_SQLITE" ] && [[ "$TARGET_SQLITE" == /* ]]; then
+            mkdir -p "$(dirname "$TARGET_SQLITE")" 2>/dev/null
+            if cp -f "$DB_FILE" "$TARGET_SQLITE" 2>/dev/null; then REPAIR_OK=true; fi
+        else
+            local HOST_CAND
+            for HOST_CAND in "$DATA_DIR/db.sqlite3" "$PANEL_DIR/db.sqlite3"; do
+                if cp -f "$DB_FILE" "$HOST_CAND" 2>/dev/null; then REPAIR_OK=true; break; fi
+            done
+        fi
+        ui_spinner_stop
+    elif mrm_pg_dump_ok "$SQL"; then
+        # --- PostgreSQL/TimescaleDB repair ---
+        ui_spinner_start "Re-importing the PostgreSQL database"
+        local DB_CONT
+        DB_CONT="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(pasarguard-)?(postgresql|timescaledb|postgres|timescale)[-_]?[0-9]*$' | head -1)"
+        [ -z "$DB_CONT" ] && DB_CONT="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "postgres|timescale" | head -1)"
+        if [ -z "$DB_CONT" ] && [ -n "$PANEL_COMPOSE_FILE" ]; then
+            run_compose_file "$PANEL_COMPOSE_FILE" up -d timescaledb postgresql postgres db >/dev/null 2>&1 || true
+            sleep 3
+            DB_CONT="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "timescale|postgres" | head -1)"
+        fi
+        if [ -z "$DB_CONT" ]; then
+            ui_spinner_stop
+            ui_error "No PostgreSQL container found"
+        else
+            local TRIES=0
+            while [ "$TRIES" -lt 30 ]; do
+                docker exec "$DB_CONT" pg_isready -U postgres >/dev/null 2>&1 && break
+                sleep 1; TRIES=$((TRIES+1))
+            done
+            parse_db_credentials "$PANEL_ENV"
+            [ -z "$DB_USER" ] && DB_USER="pasarguard"
+            [ -z "$DB_NAME" ] && DB_NAME="$DB_USER"
+            local DB_PASS_R
+            DB_PASS_R="$(grep -m1 '^DB_PASSWORD' "$PANEL_ENV" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")"
+            [ -z "$DB_PASS_R" ] && DB_PASS_R="$DB_PASS"
+
+            docker exec -e PGPASSWORD="$DB_PASS_R" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c \
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$DB_NAME' AND pid <> pg_backend_pid();" >/dev/null 2>&1 || true
+            local IMPORT_KEEP="/var/log/mrm-pg-import-$(date +%Y%m%d_%H%M%S).log"
+            if docker exec -e PGPASSWORD="$DB_PASS_R" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c "DROP DATABASE IF EXISTS \"$DB_NAME\" WITH (FORCE);" >/dev/null 2>&1 \
+               && docker exec -e PGPASSWORD="$DB_PASS_R" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c "CREATE DATABASE \"$DB_NAME\" OWNER \"$DB_USER\";" >/dev/null 2>&1 \
+               && docker exec -i -e PGPASSWORD="$DB_PASS_R" "$DB_CONT" psql -w -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" < "$SQL" > "$IMPORT_KEEP" 2>&1; then
+                local ROWS
+                ROWS="$(docker exec -e PGPASSWORD="$DB_PASS_R" "$DB_CONT" psql -w -tA -U "$DB_USER" -d "$DB_NAME" -c "SELECT count(*) FROM alembic_version;" 2>/dev/null)"
+                if [ "$ROWS" = "1" ]; then
+                    REPAIR_OK=true
+                    ui_success "Database re-imported and verified (alembic_version=1)"
+                    mrm_sync_pg_role_password "$DB_CONT" "$DB_USER" "$DB_PASS_R" || true
+                else
+                    ui_error "Import incomplete (alembic_version=$ROWS) — full log: $IMPORT_KEEP"
+                    log_backup "ERROR" "repair-db import incomplete"
+                fi
+            else
+                ui_error "Import failed — full psql output: $IMPORT_KEEP (send this file if you ask for help)"
+                log_backup "ERROR" "repair-db import failed; log: $IMPORT_KEEP"
+            fi
+        fi
+        ui_spinner_stop
+    elif mrm_mysql_dump_ok "$SQL"; then
+        # --- MySQL/MariaDB repair ---
+        ui_spinner_start "Re-importing the MySQL database"
+        local DB_CONT
+        DB_CONT="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(pasarguard-)?(mysql|mariadb)[-_]?[0-9]*$' | head -1)"
+        [ -z "$DB_CONT" ] && DB_CONT="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -iE "mysql|mariadb" | head -1)"
+        if [ -n "$DB_CONT" ]; then
+            parse_db_credentials "$PANEL_ENV"
+            [ -z "$DB_USER" ] && DB_USER="pasarguard"
+            [ -z "$DB_NAME" ] && DB_NAME="$DB_USER"
+            local MYSQL_ROOT_PASS
+            MYSQL_ROOT_PASS="$(grep -m1 '^MYSQL_ROOT_PASSWORD' "$PANEL_ENV" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")"
+            if docker exec -e MYSQL_PWD="${MYSQL_ROOT_PASS:-$DB_PASS}" "$DB_CONT" mysql -uroot -e "DROP DATABASE IF EXISTS \`$DB_NAME\`; CREATE DATABASE \`$DB_NAME\`;" 2>/dev/null \
+               && docker exec -i -e MYSQL_PWD="${MYSQL_ROOT_PASS:-$DB_PASS}" "$DB_CONT" mysql -uroot "$DB_NAME" < "$SQL" 2>/dev/null; then
+                REPAIR_OK=true
+                mrm_sync_mysql_user_password "$DB_CONT" "$DB_USER" "$DB_PASS" "$MYSQL_ROOT_PASS" || true
+            fi
+        fi
+        ui_spinner_stop
+    else
+        ui_error "Database file failed validation (missing dump trailer) — archive may be truncated"
+    fi
+
+    rm -rf "$WORK"
+
+    # Start the panel again and wait for /health
+    [ -n "$PANEL_COMPOSE_FILE" ] && run_compose_file "$PANEL_COMPOSE_FILE" up -d >/dev/null 2>&1 || true
+    local PANEL_UP=false HEALTH_PORT TRIES=0
+    HEALTH_PORT="$(grep -m1 '^UVICORN_PORT' "$PANEL_ENV" 2>/dev/null | cut -d'=' -f2- | tr -d "\"'" | tr -d '[:space:]')"
+    case "$HEALTH_PORT" in ''|*[!0-9]*) HEALTH_PORT=8000 ;; esac
+    if [ "$REPAIR_OK" = true ]; then
+        ui_spinner_start "Waiting for the panel to answer"
+        while [ "$TRIES" -lt 30 ]; do
+            if curl -sk -o /dev/null -m 3 "https://127.0.0.1:$HEALTH_PORT/health" || \
+               curl -s -o /dev/null -m 3 "http://127.0.0.1:$HEALTH_PORT/health"; then
+                PANEL_UP=true; break
+            fi
+            sleep 2; TRIES=$((TRIES+1))
+        done
+        ui_spinner_stop
+    fi
+
+    echo ""
+    if [ "$REPAIR_OK" = true ] && [ "$PANEL_UP" = true ]; then
+        ui_box_start ok "Database repaired — panel is UP (port $HEALTH_PORT)"
+        log_backup "SUCCESS" "repair-db completed successfully"
+    elif [ "$REPAIR_OK" = true ]; then
+        ui_box_start bad "Database imported but panel did not answer /health"
+        ui_box_line "Log" "$BACKUP_LOG"
+        ui_box_end
+        log_backup "WARNING" "repair-db imported the DB but the panel did not come up"
+    else
+        ui_box_start bad "Database repair failed"
+        ui_box_line "Log" "$BACKUP_LOG"
+        ui_box_end
+        log_backup "ERROR" "repair-db failed"
+    fi
     ui_pause
 }
 

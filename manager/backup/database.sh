@@ -233,11 +233,17 @@ mrm_export_postgres() {
         [ "$INNER_PORT" = "6432" ] && INNER_PORT=5432
         log_backup "INFO" "pg_dump via container: $CONT ($USER@$DBNAME)"
         ERR_FILE="$(mktemp /tmp/mrm-pgdump.XXXXXX)"
-        if ! ( docker exec -e PGPASSWORD="$PASS" "$CONT" pg_dump -w -U "$USER" -d "$DBNAME" > "$DEST" 2>"$ERR_FILE" \
+        # MRM-110: --no-owner --no-privileges makes the dump PORTABLE — on a new
+        # server roles from the old server (extra owners/grantees) may not exist,
+        # which previously aborted the import mid-way and left a half-restored DB
+        # (schema present, alembic_version empty -> panel crash-loop).
+        # Objects are created by the importing user (= the panel DB user), which
+        # is exactly what the panel needs.
+        if ! ( docker exec -e PGPASSWORD="$PASS" "$CONT" pg_dump -w --no-owner --no-privileges -U "$USER" -d "$DBNAME" > "$DEST" 2>"$ERR_FILE" \
                && mrm_pg_dump_ok "$DEST" ); then
             # Retry over TCP localhost in case the image has no unix socket
             log_backup "WARNING" "unix-socket pg_dump failed, retrying via 127.0.0.1:$INNER_PORT"
-            if ! ( docker exec -e PGPASSWORD="$PASS" "$CONT" pg_dump -w -h 127.0.0.1 -p "$INNER_PORT" -U "$USER" -d "$DBNAME" > "$DEST" 2>"$ERR_FILE" \
+            if ! ( docker exec -e PGPASSWORD="$PASS" "$CONT" pg_dump -w --no-owner --no-privileges -h 127.0.0.1 -p "$INNER_PORT" -U "$USER" -d "$DBNAME" > "$DEST" 2>"$ERR_FILE" \
                    && mrm_pg_dump_ok "$DEST" ); then
                 log_backup "ERROR" "pg_dump via container failed: $(tail -n 3 "$ERR_FILE" 2>/dev/null | tr '\n' ' ')"
                 # FIX (MRM-108): never leave a partial dump behind — it could be
@@ -294,7 +300,7 @@ host=$HOST
 port=$PORT
 MYEOF
         chmod 600 "$MYCNF_FILE"
-        if mysqldump --defaults-file="$MYCNF_FILE" --connect-timeout=5 "$DBNAME" 2>/dev/null > "$DEST" \
+        if mysqldump --defaults-file="$MYCNF_FILE" --single-transaction --connect-timeout=5 "$DBNAME" 2>/dev/null > "$DEST" \
            && mrm_mysql_dump_ok "$DEST"; then
             rm -f "$MYCNF_FILE"
             return 0
@@ -527,5 +533,76 @@ mrm_sync_mysql_user_password() {
         log_backup "SUCCESS" "Verified: TCP login with the restored .env password works"
     fi
     return 0
+}
+
+# ============================================================
+# SAFETY ROLLBACK (MRM-110 — a failed import must never leave a
+# half-restored database behind)
+# A dump import that dies mid-way (ON_ERROR_STOP) leaves the
+# target DB with a schema but NO data / NO alembic_version. The
+# panel then crash-loops on every start with:
+#   DuplicateObjectError: type "proxytypes" already exists
+# This re-imports the PRE-RESTORE database export captured in the
+# safety backup (pre_restore_*.tar.gz -> */current_db_backup), so
+# the server returns to its working pre-restore state.
+# ============================================================
+mrm_rollback_db_from_safety() {
+    local SAFETY_TAR="$1" DB_CONT="$2" DB_USER="$3" DB_PASS="$4" DB_NAME="$5"
+    [ -n "$SAFETY_TAR" ] && [ -f "$SAFETY_TAR" ] || return 1
+    local RD SDB
+    RD="$(mktemp -d /tmp/mrm_rollback.XXXXXX)" || return 1
+    if ! tar -xzf "$SAFETY_TAR" -C "$RD" 2>/dev/null; then
+        rm -rf "$RD"; return 1
+    fi
+    SDB="$(find "$RD" -type f -name 'current_db_backup' 2>/dev/null | head -1)"
+    if [ -z "$SDB" ] || [ ! -s "$SDB" ]; then
+        rm -rf "$RD"; return 1
+    fi
+    log_backup "INFO" "Rolling back the database from safety copy: $(basename "$SAFETY_TAR")"
+
+    local ROLL_OK=false
+    if mrm_is_sqlite_file "$SDB"; then
+        # SQLite: copy the safety file back to the known host locations
+        local TGT
+        for TGT in "$DATA_DIR/db.sqlite3" "$PANEL_DIR/db.sqlite3"; do
+            if [ -n "$TGT" ] && cp -f "$SDB" "$TGT" 2>/dev/null; then
+                ROLL_OK=true
+                log_backup "SUCCESS" "SQLite rolled back to $TGT"
+                break
+            fi
+        done
+    elif mrm_pg_dump_ok "$SDB"; then
+        # PostgreSQL: reset the broken DB and re-import the safety dump
+        if [ -n "$DB_CONT" ] && [[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]]; then
+            docker exec -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c \
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$DB_NAME' AND pid <> pg_backend_pid();" >/dev/null 2>&1 || true
+            if docker exec -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c "DROP DATABASE IF EXISTS \"$DB_NAME\" WITH (FORCE);" >/dev/null 2>&1 \
+               && docker exec -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c "CREATE DATABASE \"$DB_NAME\" OWNER \"$DB_USER\";" >/dev/null 2>&1; then
+                if docker exec -i -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -w -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" < "$SDB" >"$RD/import.log" 2>&1; then
+                    local ROWS
+                    ROWS="$(docker exec -e PGPASSWORD="$DB_PASS" "$DB_CONT" psql -w -tA -U "$DB_USER" -d "$DB_NAME" -c "SELECT count(*) FROM alembic_version;" 2>/dev/null)"
+                    if [ "$ROWS" = "1" ]; then
+                        ROLL_OK=true
+                    else
+                        log_backup "ERROR" "Rollback import incomplete (alembic_version=$ROWS)"
+                    fi
+                else
+                    log_backup "ERROR" "Rollback import failed: $(tail -n 3 "$RD/import.log" 2>/dev/null | tr '\n' ' ')"
+                fi
+            else
+                log_backup "ERROR" "Rollback could not recreate database $DB_NAME"
+            fi
+        fi
+    else
+        log_backup "WARNING" "Safety DB is neither a valid SQLite file nor a complete pg dump - cannot roll back"
+    fi
+
+    rm -rf "$RD"
+    if [ "$ROLL_OK" = true ]; then
+        log_backup "SUCCESS" "Database rolled back to the pre-restore safety copy"
+        return 0
+    fi
+    log_backup "ERROR" "Could not roll back to the safety database"
+    return 1
 }
 

@@ -228,7 +228,7 @@ echo "⚙️ Group 8: Medium-Severity Checks"
 echo ""
 
 # Check MRM_BACKUP_VERSION fallback
-if grep -q 'BACKUP_VERSION:-1\.0\.7' "$PROJECT_DIR/manager/backup/init.sh"; then
+if grep -q 'BACKUP_VERSION:-1\.0\.8' "$PROJECT_DIR/manager/backup/init.sh"; then
     pass "MRM_BACKUP_VERSION fallback matches current version"
 else
     fail "MRM_BACKUP_VERSION fallback mismatch"
@@ -1647,6 +1647,106 @@ else
     fail "mrm_sync_pg_role_password does not pass the password via psql -v (unsafe quoting?)"
 fi
 rm -rf "$_RESTORE_TMP"
+
+echo ""
+
+# ─── Test Group 15: Half-restored DB guard / safety rollback (MRM-110) ──────
+echo "🛟 Group 15: Failed-import safety rollback (MRM-110)"
+echo ""
+
+# 15.1: database.sh defines the rollback function
+if grep -q "^mrm_rollback_db_from_safety()" "$PROJECT_DIR/manager/backup/database.sh"; then
+    pass "database.sh defines mrm_rollback_db_from_safety"
+else
+    fail "database.sh missing mrm_rollback_db_from_safety"
+fi
+
+# 15.2: restore_core.sh triggers the rollback when the import is broken
+if grep -qF 'mrm_rollback_db_from_safety "$SAFETY_BACKUP"' "$PROJECT_DIR/manager/backup/restore_core.sh"; then
+    pass "restore_core.sh rolls back to the safety DB after a failed import"
+else
+    fail "restore_core.sh leaves a half-restored DB behind after a failed import"
+fi
+
+# 15.3: dumps are portable (--no-owner --no-privileges) — container + host paths
+PGDUMP_FLAGS=$(grep -c -- "--no-owner --no-privileges" "$PROJECT_DIR/manager/backup/database.sh" || true)
+if [ "${PGDUMP_FLAGS:-0}" -ge 2 ]; then
+    pass "pg_dump runs with --no-owner --no-privileges (portable across servers)"
+else
+    fail "pg_dump is not portable (missing --no-owner --no-privileges)"
+fi
+
+# 15.4: mysqldump is consistent (--single-transaction)
+if grep -q -- "--single-transaction" "$PROJECT_DIR/manager/backup/database.sh"; then
+    pass "mysqldump runs with --single-transaction"
+else
+    fail "mysqldump lacks --single-transaction (inconsistent live dumps)"
+fi
+
+# 15.5: the full psql import output is persisted for diagnosis
+if grep -qF "mrm-pg-import-" "$PROJECT_DIR/manager/backup/restore_core.sh"; then
+    pass "full psql import output is kept in /var/log/mrm-pg-import-*.log"
+else
+    fail "import log is deleted — mid-file failures cannot be diagnosed"
+fi
+
+# 15.6: pre-flight detection of a half-restored target DB
+if grep -qF "HALF-RESTORED" "$PROJECT_DIR/manager/backup/restore_core.sh"; then
+    pass "restore detects a half-restored target DB before importing"
+else
+    fail "restore does not detect half-restored databases"
+fi
+
+# 15.7: repair-db CLI is wired end-to-end
+if grep -q "^do_repair_db()" "$PROJECT_DIR/manager/backup/restore_core.sh" && \
+   grep -qF "repair-db) do_repair_db" "$PROJECT_DIR/manager/backup.sh" && \
+   grep -qF 'repair-db) exec bash "$MRM_DIR/backup.sh" repair-db' "$PROJECT_DIR/manager/main.sh"; then
+    pass "mrm repair-db is wired (main.sh -> backup.sh -> do_repair_db)"
+else
+    fail "mrm repair-db is not fully wired"
+fi
+
+# 15.8: FUNCTIONAL — rollback actually re-imports the safety dump (stubbed docker)
+_ROLL_TMP=$(mktemp -d)
+mkdir -p "$_ROLL_TMP/pkg/tmp/mrm_workspace.abc/safety_1"
+cat >"$_ROLL_TMP/pkg/tmp/mrm_workspace.abc/safety_1/current_db_backup" <<'EOF'
+--
+-- PostgreSQL database dump
+--
+-- PostgreSQL database dump complete
+EOF
+tar -czf "$_ROLL_TMP/safety.tar.gz" -C "$_ROLL_TMP/pkg" tmp
+cat >"$_ROLL_TMP/docker" <<'STUB'
+#!/bin/bash
+case "$*" in
+    *"CREATE DATABASE"*) exit 0 ;;
+    *"DROP DATABASE"*)   exit 0 ;;
+    *"pg_terminate_backend"*) exit 0 ;;
+    *"SELECT count(*) FROM alembic_version"*) echo "1"; exit 0 ;;
+esac
+exit 0
+STUB
+chmod +x "$_ROLL_TMP/docker"
+(
+    PATH="$_ROLL_TMP:$PATH"
+    export PATH
+    DATA_DIR="/tmp/nonexistent-data"; PANEL_DIR="/tmp/nonexistent-panel"
+    log_backup() { :; }
+    # shellcheck source=/dev/null
+    source "$PROJECT_DIR/manager/backup/database.sh" >/dev/null 2>&1
+    mrm_rollback_db_from_safety "$_ROLL_TMP/safety.tar.gz" "db-container" "pasarguard" "pw" "pasarguard" >/dev/null 2>&1
+)
+if [ $? -eq 0 ]; then
+    _RC=0
+else
+    _RC=1
+fi
+if [ "$_RC" -eq 0 ]; then
+    pass "mrm_rollback_db_from_safety re-imports the safety dump (functional)"
+else
+    fail "mrm_rollback_db_from_safety failed on a valid safety archive (functional)"
+fi
+rm -rf "$_ROLL_TMP"
 
 echo ""
 

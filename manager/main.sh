@@ -42,6 +42,7 @@ mrm_usage() {
     printf '  %b%-12s%b %s\n' "$CYAN" "special"   "$NC" "MRM Special — in-panel settings tab + subscription page"
     printf '  %b%-12s%b %s\n' "$CYAN" "temp-key"  "$NC" "Generate a one-time Owner setup key"
     printf '  %b%-12s%b %s\n' "$CYAN" "fix-node"  "$NC" "Repair the node xray-core binary"
+    printf '  %b%-12s%b %s\n' "$CYAN" "repair-db" "$NC" "Re-import ONLY the database from a backup (rescue)"
     printf '  %b%-12s%b %s\n' "$CYAN" "update"    "$NC" "Update MRM Manager to the latest release"
     printf '  %b%-12s%b %s\n' "$CYAN" "--version" "$NC" "Print the installed version"
     echo ""
@@ -119,6 +120,7 @@ case "${1:-}" in
     doctor)   exec bash "$MRM_DIR/diagnostics.sh" doctor "${@:2}" ;;
     monitor)  exec bash "$MRM_DIR/monitor.sh" ;;
     fix-node) exec bash "$MRM_DIR/backup.sh" fix-node "${@:2}" ;;
+    repair-db) exec bash "$MRM_DIR/backup.sh" repair-db "${@:2}" ;;
     health)   exec bash "$MRM_DIR/pg_health.sh" ;;
     temp-key) exec bash "$MRM_DIR/pg_health.sh" temp-key ;;
     special)  exec bash "$MRM_DIR/special.sh" "${@:2}" ;;
