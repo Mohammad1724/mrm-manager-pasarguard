@@ -2156,6 +2156,98 @@ fi
 
 echo ""
 
+# ─── Test Group 20: installer UX (fail-early, actionable errors, clear end) ──
+# (فاز نصب: نصب‌کننده باید پیش از هر نوشتنی پیش‌بینی کند، خطا را با راه‌حل بگوید،
+#  شمارهٔ قدم‌ها با پایان کار هم‌خوان باشد و پایان نصب راهنمای ادامه بدهد)
+echo "📋 Group 20: installer UX"
+echo ""
+
+INSTALLER="$PROJECT_DIR/install.sh"
+
+# 20.1: سینتکس سالم
+if bash -n "$INSTALLER" 2>/dev/null; then
+    pass "install.sh: syntax is valid"
+else
+    fail "install.sh: syntax error"
+fi
+
+# 20.2: پیش‌بینی ابزارها و فضای دیسک پیش از هر تغییری
+if grep -q 'command -v "\$TOOL"' "$INSTALLER" && \
+   grep -q 'Missing required tools' "$INSTALLER" && \
+   grep -q 'MRM_MIN_FREE_MB' "$INSTALLER" && \
+   grep -q 'Not enough free space' "$INSTALLER"; then
+    pass "installer pre-flight checks tools and free space with fixes"
+else
+    fail "installer has no pre-flight tool/disk checks"
+fi
+
+# 20.3: بررسی اتصال با پیام عملیاتی (به‌جای شکست گنگ در دانلود اول)
+if grep -q 'Contacting the release host' "$INSTALLER" && \
+   grep -q 'cannot reach' "$INSTALLER" && \
+   grep -q 'curl -I' "$INSTALLER"; then
+    pass "connectivity failure names the cause and the exact test command"
+else
+    fail "connectivity failure is not actionable"
+fi
+
+# 20.4: پیام خطای مانیفست تأکید کند که چیزی نصب نشده
+if grep -q 'Nothing was installed — files are only written after their checksum is verified' "$INSTALLER"; then
+    pass "manifest failure states that nothing was installed"
+else
+    fail "manifest failure message is unclear about system state"
+fi
+
+# 20.5: شمارهٔ قدم‌ها با پایان کار هم‌خوان است (۵ قدم، آخرین قدم = ادغام در پنل)
+if grep -q 'ui_step 5 5 "Panel integration and CLI"' "$INSTALLER" && \
+   ! grep -q 'ui_step [0-9] 4 ' "$INSTALLER"; then
+    pass "installer ends its step counter exactly when the work ends (5/5)"
+else
+    fail "installer step counter does not match the work it does"
+fi
+
+# 20.6: راهنمای گام بعدی پس از نصب
+if grep -q 'Next steps' "$INSTALLER" && \
+   grep -q 'Settings → MRM Special' "$INSTALLER" && \
+   grep -q 'pasarguard restart' "$INSTALLER"; then
+    pass "installer ends with actionable next steps for the panel"
+else
+    fail "installer gives no next-step guidance"
+fi
+
+# 20.7: شمارش معکوس پرسش پایانی روی stderr رسم می‌شود (وگرنه در $() گم می‌شود)
+if grep -q 'ask_run_now' "$INSTALLER" && \
+   grep -q 'read -t 1 -r ANS' "$INSTALLER" && \
+   grep -q 'Run MRM Manager now' "$INSTALLER"; then
+    pass "final prompt shows a live countdown instead of a silent default"
+else
+    fail "final prompt has no visible countdown"
+fi
+
+# 20.8: گاردهای قبلی دست‌نخورده مانده‌اند (بازگردانی و مانیفست اجباری)
+if grep -q 'Aborting\|nothing was installed' "$INSTALLER" 2>/dev/null; then
+    : # either wording is fine; the rollback guard below is the real check
+fi
+if grep -q '\.previous' "$INSTALLER" && grep -q 'rm -rf \$INSTALL_DIR && mv' "$INSTALLER"; then
+    pass "rollback copy and its restore command are still documented"
+else
+    fail "rollback guidance was lost"
+fi
+
+# 20.9: manifest بازتولید شده است — هش واقعی install.sh با checksums.txt می‌خواند
+if [ -f "$PROJECT_DIR/checksums.txt" ]; then
+    SUM_LINE=$( (grep '  install.sh$' "$PROJECT_DIR/checksums.txt" || true) | head -1 )
+    REAL_SUM=$(sha256sum "$INSTALLER" | awk '{print $1}')
+    if [ -n "$SUM_LINE" ] && [ "${SUM_LINE%% *}" = "$REAL_SUM" ]; then
+        pass "checksums.txt matches the edited install.sh"
+    else
+        fail "checksums.txt is stale for install.sh (regenerate it)"
+    fi
+else
+    fail "checksums.txt is missing"
+fi
+
+echo ""
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 echo "═══════════════════════════════════════════════════════════"
 echo "  Test Results"

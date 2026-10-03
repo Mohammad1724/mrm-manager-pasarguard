@@ -62,6 +62,22 @@ ui_task_done() {
     TASK_OPEN=0
 }
 ui_repeat() { local OUT="" i; for ((i=0; i<${2:-0}; i++)); do OUT+="$1"; done; printf '%s' "$OUT"; }
+ui_bullet() { _task_break; printf '%s%s•%s %s%s%s\n' "$PAD" "$CYAN" "$NC" "$TEXT" "$1" "$NC"; }
+# ask_run_now <seconds> [default] — live countdown, so the default is never a
+# silent surprise when the operator walks away from the prompt.
+ask_run_now() {
+    local LEFT="${1:-10}" DEFAULT="${2:-n}" ANS=""
+    # The countdown is drawn on stderr: the caller captures stdout for the answer,
+    # so anything printed to stdout would never reach the operator.
+    while [ "$LEFT" -gt 0 ]; do
+        printf '\r%s%s›%s %sRun MRM Manager now?%s %s[y/N]%s %s(%ss)%s ' \
+            "$PAD" "$CYAN" "$NC" "$TEXT" "$NC" "$DIM" "$NC" "$DIM" "$LEFT" "$NC" >&2
+        if read -t 1 -r ANS; then printf '\n' >&2; printf '%s' "$ANS"; return 0; fi
+        LEFT=$((LEFT - 1))
+    done
+    printf '\n' >&2
+    printf '%s' "$DEFAULT"
+}
 ui_header() {
     local TITLE="$1" W LINE
     W="$(tput cols 2>/dev/null || echo 56)"; [[ "$W" =~ ^[0-9]+$ ]] || W=56
@@ -75,6 +91,32 @@ ui_header() {
 # MRM-006: POSIX-safe root check (EUID is undefined under dash)
 [ "$(id -u)" -ne 0 ] && { ui_error "Please run as root"; exit 1; }
 
+ui_header "MRM Manager Installer"
+
+# ─── Pre-flight: fail before touching anything, with a way out ──────────────
+MISSING_TOOLS=""
+for TOOL in curl sha256sum awk grep sed; do
+    command -v "$TOOL" >/dev/null 2>&1 || MISSING_TOOLS="$MISSING_TOOLS $TOOL"
+done
+if [ -n "$MISSING_TOOLS" ]; then
+    ui_error "Missing required tools:${MISSING_TOOLS}"
+    ui_note "Nothing was installed. Install them and re-run:"
+    ui_note "  apt-get update && apt-get install -y${MISSING_TOOLS}"
+    exit 1
+fi
+
+# Free space is measured on the filesystem that will hold $INSTALL_DIR.
+MRM_MIN_FREE_MB="${MRM_MIN_FREE_MB:-50}"
+TARGET_PARENT="$(dirname "$INSTALL_DIR")"
+[ -d "$TARGET_PARENT" ] || TARGET_PARENT="/"
+FREE_KB="$(df -Pk "$TARGET_PARENT" 2>/dev/null | awk 'NR==2 {print $4}')"
+case "$FREE_KB" in ''|*[!0-9]*) FREE_KB=0 ;; esac
+if [ "$FREE_KB" -lt $((MRM_MIN_FREE_MB * 1024)) ]; then
+    ui_error "Not enough free space on $TARGET_PARENT: $((FREE_KB / 1024)) MB free, ${MRM_MIN_FREE_MB} MB needed"
+    ui_note "Nothing was installed. Free some space (or lower MRM_MIN_FREE_MB) and re-run."
+    exit 1
+fi
+
 # MRM-003: keep a rollback copy of the current install before overwriting
 HAD_PREVIOUS=0
 if [ -d "$INSTALL_DIR" ]; then
@@ -84,20 +126,32 @@ else
     mkdir -p "$INSTALL_DIR"
 fi
 
-# MRM-001: version is parsed (never sourced) from the pinned versions.conf
+# MRM-001: the version is parsed (never sourced) from the pinned versions.conf.
+# The same fetch doubles as the connectivity probe: every file comes from this
+# one host, so an unreachable host is reported here — once, with a fix —
+# instead of surfacing as a stream of per-file download failures.
 MRM_VERSION=""
 VERSION_REGISTRY_FILE="$(mktemp)"
+ui_task "Contacting the release host"
 if "${CURL_BASE[@]}" -o "$VERSION_REGISTRY_FILE" "$VERSION_REGISTRY_URL" 2>/dev/null; then
     MRM_VERSION="$(grep -E '^MRM_VERSION=' "$VERSION_REGISTRY_FILE" 2>/dev/null | head -1 | cut -d'"' -f2)"
+    ui_task_done ok "release $REPO_REF reachable"
+else
+    ui_task_done bad "unreachable"
+    ui_error "This server cannot reach $REPO_BASE_URL"
+    ui_note "Nothing was installed. Usual causes: no outbound network, broken DNS,"
+    ui_note "a proxy that drops githubusercontent.com, or the release being unavailable."
+    ui_note "Check with:  curl -I $REPO_BASE_URL/$REPO_REF/versions.conf"
+    exit 1
 fi
 rm -f "$VERSION_REGISTRY_FILE"
 
-# Fallback only if registry fetch failed
+# Fallback only if the registry answered but carried no version
 if [ -z "$MRM_VERSION" ]; then
     MRM_VERSION="1.5.10"
+    ui_warning "versions.conf answered without MRM_VERSION — assuming ${MRM_VERSION}"
 fi
 
-ui_header "MRM Manager Installer  v${MRM_VERSION}"
 ui_note "Release: $REPO_REF  ·  Target: $INSTALL_DIR"
 [ "$HAD_PREVIOUS" -eq 1 ] && ui_note "Rollback copy: ${INSTALL_DIR}.previous"
 
@@ -105,8 +159,12 @@ ui_note "Release: $REPO_REF  ·  Target: $INSTALL_DIR"
 CHECKSUMS_FILE="$(mktemp)"
 trap 'rm -f "$CHECKSUMS_FILE"' EXIT
 if ! "${CURL_BASE[@]}" -o "$CHECKSUMS_FILE" "$CHECKSUMS_URL" 2>/dev/null; then
-    ui_error "Could not download checksums.txt ($CHECKSUMS_URL)"
-    ui_note "Aborting to avoid installing unverified files."
+    ui_error "Could not download the integrity manifest (checksums.txt)"
+    ui_note "Nothing was installed — files are only written after their checksum is verified."
+    ui_note "The release host answered the version check but not this file. Likely causes:"
+    ui_note "  · the pinned release $REPO_REF no longer carries checksums.txt"
+    ui_note "  · a proxy or filter dropped the connection mid-download"
+    ui_note "Check with:  curl -I $CHECKSUMS_URL"
     exit 1
 fi
 
@@ -132,7 +190,7 @@ verify_download() {
     return 1
 }
 
-ui_step 1 4 "Preparing directories"
+ui_step 1 5 "Preparing directories"
 mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/backup" "$INSTALL_DIR/plugin" "$INSTALL_DIR/templates/subscription-classic" "$INSTALL_DIR/templates/subscription-special"
 
 FILES=(
@@ -153,7 +211,7 @@ PLUGIN_MODULES=(
 rm -f "$INSTALL_DIR/site.sh" "$INSTALL_DIR/port_manager.sh" "$INSTALL_DIR/migrator.sh" "$INSTALL_DIR/mirza.sh" 2>/dev/null
 ui_success "$INSTALL_DIR"
 
-ui_step 2 4 "Core files"
+ui_step 2 5 "Core files"
 OK_COUNT=0
 ui_task "Downloading ${#FILES[@]} files"
 for FILE in "${FILES[@]}"; do
@@ -195,7 +253,7 @@ EOF
 done
 if [ "$FAIL_COUNT" -eq 0 ]; then ui_task_done ok "${OK_COUNT} files verified"; else ui_task_done bad "Core files: ${FAIL_COUNT} of ${#FILES[@]} failed"; fi
 
-ui_step 3 4 "Backup and plugin modules"
+ui_step 3 5 "Backup and plugin modules"
 BACKUP_MODULES=(
     "init.sh" "telegram.sh" "smart_fix.sh" "database.sh"
     "backup_core.sh" "restore_core.sh" "xray.sh" "post_restore.sh" "menu.sh"
@@ -247,7 +305,7 @@ if [ "$FAIL_COUNT" -gt 0 ]; then
     exit 1
 fi
 
-ui_step 4 4 "Subscription templates"
+ui_step 4 5 "Subscription templates"
 if [ -z "${DATA_DIR:-}" ]; then
     if [ -d "/var/lib/pasarguard" ]; then
         DATA_DIR="/var/lib/pasarguard"
@@ -288,12 +346,16 @@ else
     ui_warning "MRM Classic template skipped (download failed)"
 fi
 
+ui_step 5 5 "Panel integration and CLI"
+
 # Refresh the template files the panel actually serves ($DATA_DIR/templates),
 # keeping the owner's brand/news values and the active selection. Without this
 # an update only replaced /opt/mrm-manager/index.html and customers kept seeing
 # the old build forever. Skipped where the panel is not installed (node-only servers).
+TEMPLATES_LIVE=0
 if [ -f /opt/pasarguard/.env ] || [ -d "${DATA_DIR:-/nonexistent}/templates" ]; then
     bash "$INSTALL_DIR/theme.sh" --redeploy 2>/dev/null | sed "s/^/${PAD}/" || true
+    TEMPLATES_LIVE=1
 else
     ui_note "Panel is not on this server — templates kept in $INSTALL_DIR for later use"
 fi
@@ -311,6 +373,7 @@ fi
 exec bash /opt/mrm-manager/main.sh "$@"
 EOF
 chmod +x /usr/local/bin/mrm
+ui_success "mrm command ready"
 
 # Installation succeeded — the rollback copy is no longer needed
 rm -rf "${INSTALL_DIR}.previous" 2>/dev/null
@@ -323,17 +386,27 @@ if [ -n "${DATA_DIR:-}" ] && [ -d "$DATA_DIR" ]; then
     printf '{\n  "version": "%s",\n  "release": "%s",\n  "installed_at": "%s",\n  "source": "install.sh"\n}\n' \
         "$MRM_VERSION" "$REPO_REF" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$DATA_DIR/mrm/install-state.json" 2>/dev/null || true
     chmod 600 "$DATA_DIR/mrm/install-state.json" 2>/dev/null || true
+    ui_success "Panel update check will report v${MRM_VERSION}"
 fi
 
 echo ""
 ui_success "${BOLD}MRM Manager v${MRM_VERSION} installed${NC}"
-ui_note "Run it any time with:  mrm"
+
+# What the operator should do next — the install ends here, the experience does not.
+echo ""
+ui_note "Next steps"
+ui_bullet "mrm  —  manager: status, SSL, backup, updates"
+ui_bullet "PasarGuard panel → Settings → MRM Special  —  enable the tab, set the store"
+if [ "$TEMPLATES_LIVE" -eq 1 ]; then
+    ui_note "  Templates are already published. If the panel still serves the old page:  pasarguard restart"
+else
+    ui_note "  No panel on this server yet — templates are waiting in $INSTALL_DIR/templates"
+fi
 echo ""
 
 # Safe read with fallback for non-interactive environments
 if [ -t 0 ]; then
-    printf '%s%s›%s %sRun MRM Manager now?%s %s[y/N]%s ' "$PAD" "$CYAN" "$NC" "$TEXT" "$NC" "$DIM" "$NC"
-    read -t 10 -r RUN_NOW 2>/dev/null || RUN_NOW="n"
+    RUN_NOW="$(ask_run_now 10 n)"
 else
     RUN_NOW="n"
 fi
