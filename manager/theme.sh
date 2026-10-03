@@ -1096,10 +1096,11 @@ theme_menu() {
 }
 
 case "${1:-}" in
-    --set-template)     shift; theme_set_template "$@"; exit $? ;;
-    --redeploy)         theme_redeploy; exit $? ;;
-    --current-template) theme_current_template; exit 0 ;;
-    --clean-brand)      shift; python3 -c 'import re,sys; v=re.sub(r"\{\{.*?\}\}"," ",sys.argv[1]); v=re.sub(r"\s+"," ",v).strip(); print(v.rstrip(" ·|•-–—:"))' "${1:-}"; exit $? ;;
+    switch|--set-template) shift; theme_set_template "$@"; exit $? ;;
+    redeploy|--redeploy)   theme_redeploy; exit $? ;;
+    status|--status)       theme_status_menu; exit 0 ;;
+    current|--current-template) theme_current_template; exit 0 ;;
+    --clean-brand)         shift; python3 -c 'import re,sys; v=re.sub(r"\{\{.*?\}\}"," ",sys.argv[1]); v=re.sub(r"\s+"," ",v).strip(); print(v.rstrip(" ·|•-–—:"))' "${1:-}"; exit $? ;;
 esac
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

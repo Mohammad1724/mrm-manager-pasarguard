@@ -33,18 +33,25 @@ mrm_usage() {
     echo ""
     echo -e "  ${BOLD}MRM Manager${NC} v${MRM_VERSION} — PasarGuard server toolkit"
     echo ""
-    echo -e "  ${DIM}Usage:${NC} mrm [command]"
+    echo -e "  ${DIM}Usage:${NC} mrm [command] [options]"
     echo ""
-    printf '  %b%-12s%b %s\n' "$CYAN" "(none)"    "$NC" "Interactive menu"
-    printf '  %b%-12s%b %s\n' "$CYAN" "health"    "$NC" "PasarGuard health report (nodes / TLS / jobs)"
-    printf '  %b%-12s%b %s\n' "$CYAN" "doctor"    "$NC" "Quick health summary (exit 1 when critical)"
-    printf '  %b%-12s%b %s\n' "$CYAN" "monitor"   "$NC" "Telegram alerts (menu)"
-    printf '  %b%-12s%b %s\n' "$CYAN" "special"   "$NC" "MRM Special — in-panel settings tab + subscription page"
-    printf '  %b%-12s%b %s\n' "$CYAN" "temp-key"  "$NC" "Generate a one-time Owner setup key"
-    printf '  %b%-12s%b %s\n' "$CYAN" "fix-node"  "$NC" "Repair the node xray-core binary"
-    printf '  %b%-12s%b %s\n' "$CYAN" "repair-db" "$NC" "Re-import ONLY the database from a backup (rescue)"
-    printf '  %b%-12s%b %s\n' "$CYAN" "update"    "$NC" "Update MRM Manager to the latest release"
-    printf '  %b%-12s%b %s\n' "$CYAN" "--version" "$NC" "Print the installed version"
+    printf '  %b%-14s%b %s\n' "$CYAN" "(none)"     "$NC" "Interactive main menu"
+    printf '  %b%-14s%b %s\n' "$CYAN" "theme"      "$NC" "Subscription templates (switch, brand, status)"
+    printf '  %b%-14s%b %s\n' "$CYAN" "special"    "$NC" "MRM Special in-panel tab & integration"
+    printf '  %b%-14s%b %s\n' "$CYAN" "backup"     "$NC" "Backup & restore database, xray & telegram"
+    printf '  %b%-14s%b %s\n' "$CYAN" "ssl"        "$NC" "SSL certificate issuance & management"
+    printf '  %b%-14s%b %s\n' "$CYAN" "domain"     "$NC" "Domain separator (panel / subscription)"
+    printf '  %b%-14s%b %s\n' "$CYAN" "restart"    "$NC" "Quickly restart PasarGuard panel"
+    printf '  %b%-14s%b %s\n' "$CYAN" "logs"       "$NC" "Follow live panel logs"
+    printf '  %b%-14s%b %s\n' "$CYAN" "status"     "$NC" "Server & panel diagnostics dashboard"
+    printf '  %b%-14s%b %s\n' "$CYAN" "health"     "$NC" "PasarGuard health report (nodes / TLS / jobs)"
+    printf '  %b%-14s%b %s\n' "$CYAN" "doctor"     "$NC" "Quick health summary (exit 1 when critical)"
+    printf '  %b%-14s%b %s\n' "$CYAN" "monitor"    "$NC" "Telegram monitoring & alerts"
+    printf '  %b%-14s%b %s\n' "$CYAN" "temp-key"   "$NC" "Generate a one-time Owner setup key"
+    printf '  %b%-14s%b %s\n' "$CYAN" "fix-node"   "$NC" "Repair the node xray-core binary"
+    printf '  %b%-14s%b %s\n' "$CYAN" "repair-db"  "$NC" "Re-import ONLY the database from a backup (rescue)"
+    printf '  %b%-14s%b %s\n' "$CYAN" "update"     "$NC" "Update MRM Manager to the latest release"
+    printf '  %b%-14s%b %s\n' "$CYAN" "--version"  "$NC" "Print the installed version"
     echo ""
 }
 
@@ -117,13 +124,35 @@ mrm_self_update() {
 case "${1:-}" in
     --version|-v) echo "MRM Manager ${MRM_VERSION}"; exit 0 ;;
     help|--help|-h) mrm_usage; exit 0 ;;
+    theme)    exec bash "$MRM_DIR/theme.sh" "${@:2}" ;;
+    special)  exec bash "$MRM_DIR/special.sh" "${@:2}" ;;
+    backup)   exec bash "$MRM_DIR/backup.sh" "${@:2}" ;;
+    ssl)      exec bash "$MRM_DIR/ssl.sh" "${@:2}" ;;
+    domain|domains) exec bash "$MRM_DIR/domain_separator.sh" "${@:2}" ;;
     doctor)   exec bash "$MRM_DIR/diagnostics.sh" doctor "${@:2}" ;;
+    status|diagnostics) exec bash "$MRM_DIR/diagnostics.sh" "${@:2}" ;;
     monitor)  exec bash "$MRM_DIR/monitor.sh" ;;
     fix-node) exec bash "$MRM_DIR/backup.sh" fix-node "${@:2}" ;;
     repair-db) exec bash "$MRM_DIR/backup.sh" repair-db "${@:2}" ;;
     health)   exec bash "$MRM_DIR/pg_health.sh" ;;
     temp-key) exec bash "$MRM_DIR/pg_health.sh" temp-key ;;
-    special)  exec bash "$MRM_DIR/special.sh" "${@:2}" ;;
+    restart)
+        detect_active_panel >/dev/null 2>&1 || true
+        if [ -n "$PANEL_DIR" ] && (cd "$PANEL_DIR" && docker compose down && docker compose up -d); then
+            ui_success "Panel restarted successfully"
+        else
+            ui_error "Failed to restart panel at ${PANEL_DIR:-unknown}"
+            exit 1
+        fi
+        exit 0 ;;
+    logs)
+        detect_active_panel >/dev/null 2>&1 || true
+        if [ -n "$PANEL_DIR" ]; then
+            exec docker compose -f "$PANEL_DIR/docker-compose.yml" logs -f
+        else
+            ui_error "Panel directory not detected"
+            exit 1
+        fi ;;
     update)   mrm_self_update; exit $? ;;
     "") ;;
     *) ui_error "Unknown command: $1"; mrm_usage; exit 1 ;;
@@ -236,22 +265,24 @@ panel_menu() {
 tools_menu() {
     local OPT
     while true; do
-        ui_header "Tools"
+        ui_header "Tools & Diagnostics"
         ui_menu_item 1 "Domain Separator" "separate panel and subscription domains"
         ui_menu_item 2 "Theme Manager" "subscription page templates"
-        ui_menu_item 3 "Diagnostics & Doctor"
-        ui_menu_item 4 "Iran / Offline Mode" "mirrors and local installs"
-        ui_menu_item 5 "Monitor & Alerts" "Telegram"
-        ui_menu_item 6 "PasarGuard Health" "nodes, TLS, job intervals"
+        ui_menu_item 3 "MRM Special" "in-panel integration & settings"
+        ui_menu_item 4 "Diagnostics Dashboard" "system and panel status"
+        ui_menu_item 5 "Health Check & Doctor" "PasarGuard health report"
+        ui_menu_item 6 "Iran / Offline Mode" "mirrors and local installs"
+        ui_menu_item 7 "Monitor & Alerts" "Telegram alerts"
         ui_menu_back
         ui_select OPT
         case "$OPT" in
             1) bash "$MRM_DIR/domain_separator.sh" || { ui_error "Domain Separator could not be started"; sleep 1; } ;;
             2) bash "$MRM_DIR/theme.sh" || { ui_error "Theme Manager could not be started"; sleep 1; } ;;
-            3) bash "$MRM_DIR/diagnostics.sh" ;;
-            4) bash "$MRM_DIR/offline.sh" ;;
-            5) bash "$MRM_DIR/monitor.sh" menu ;;
-            6) bash "$MRM_DIR/pg_health.sh" ;;
+            3) bash "$MRM_DIR/special.sh" || { ui_error "MRM Special could not be started"; sleep 1; } ;;
+            4) bash "$MRM_DIR/diagnostics.sh" ;;
+            5) bash "$MRM_DIR/pg_health.sh" ;;
+            6) bash "$MRM_DIR/offline.sh" ;;
+            7) bash "$MRM_DIR/monitor.sh" menu ;;
             0) return ;;
             *) ui_invalid ;;
         esac
@@ -271,23 +302,27 @@ main_menu() {
             mrm_status_panel
         fi
         [ -n "$MISSING" ] && { ui_warning "Missing tools:${MISSING}"; echo ""; }
-        ui_menu_item 1 "SSL Certificates"
-        ui_menu_item 2 "Backup & Restore"
-        ui_menu_item 3 "Panel Control"
-        ui_menu_item 4 "Tools"
-        ui_menu_item 5 "Update MRM Manager"
-        ui_menu_item 6 "Uninstall MRM Manager"
+        ui_menu_item 1 "Subscription Templates" "MRM Special & Classic switcher, branding"
+        ui_menu_item 2 "In-Panel Integration" "MRM Special tab, theme studio, API bridge"
+        ui_menu_item 3 "SSL Certificates" "issue, renew, multi-domain certificates"
+        ui_menu_item 4 "Backup & Restore" "database, xray, auto-backup, Telegram"
+        ui_menu_item 5 "Panel Control" "restart, stop, start, live logs"
+        ui_menu_item 6 "Tools & Diagnostics" "domain separator, monitor, health doctor"
+        ui_menu_item 7 "Update MRM Manager"
+        ui_menu_item 8 "Uninstall MRM Manager"
         ui_menu_back "Exit"
         ui_select OPT
         case "$OPT" in
-            1) bash "$MRM_DIR/ssl.sh" || { ui_error "SSL Manager could not be started"; sleep 1; } ;;
-            2) bash "$MRM_DIR/backup.sh" || { ui_error "Backup Manager could not be started"; sleep 1; } ;;
-            3) panel_menu ;;
-            4) tools_menu ;;
-            5) # single update path — fixes apply in one place (MRM-015)
+            1) bash "$MRM_DIR/theme.sh" || { ui_error "Theme Manager could not be started"; sleep 1; } ;;
+            2) bash "$MRM_DIR/special.sh" || { ui_error "MRM Special could not be started"; sleep 1; } ;;
+            3) bash "$MRM_DIR/ssl.sh" || { ui_error "SSL Manager could not be started"; sleep 1; } ;;
+            4) bash "$MRM_DIR/backup.sh" || { ui_error "Backup Manager could not be started"; sleep 1; } ;;
+            5) panel_menu ;;
+            6) tools_menu ;;
+            7) # single update path — fixes apply in one place (MRM-015)
                 bash "$MRM_DIR/main.sh" update
                 ui_pause ;;
-            6) uninstall_mrm_manager ;;
+            8) uninstall_mrm_manager ;;
             0) ui_clear; echo ""; ui_note "Goodbye."; echo ""; exit 0 ;;
             *) ui_invalid ;;
         esac
