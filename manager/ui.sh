@@ -129,14 +129,29 @@ UI_KV_WIDTH="${UI_KV_WIDTH:-14}"
 
 # Frame width: follows the terminal, clamped to a readable range.
 ui_width() {
+    # Detection chain, most reliable first. `stty size` asks the tty itself and
+    # keeps working when TERM is unknown/empty, where `tput cols` fails and the
+    # old fallback (80 → clamped 72) silently overflowed a 40-column window.
     local cols="${COLUMNS:-}"
+    if [ -z "$cols" ] || ! [[ "$cols" =~ ^[0-9]+$ ]]; then
+        cols="$(stty size 2>/dev/null | awk '{print $2}')"
+    fi
     if [ -z "$cols" ] || ! [[ "$cols" =~ ^[0-9]+$ ]]; then
         cols="$(tput cols 2>/dev/null || echo 80)"
     fi
     [[ "$cols" =~ ^[0-9]+$ ]] || cols=80
-    [ "$cols" -gt "$UI_MAX_WIDTH" ] && cols="$UI_MAX_WIDTH"
-    [ "$cols" -lt "$UI_MIN_WIDTH" ] && cols="$UI_MIN_WIDTH"
-    echo "$cols"
+
+    # The frame is printed after UI_PAD, so it may only be as wide as the
+    # remaining columns. On a window narrower than UI_MIN_WIDTH the readable
+    # floor loses: a wrapped frame is worse than a short one.
+    local frame=$(( cols - ${#UI_PAD} ))
+    [ "$frame" -gt "$UI_MAX_WIDTH" ] && frame="$UI_MAX_WIDTH"
+    if [ "$frame" -lt "$UI_MIN_WIDTH" ]; then
+        frame="$cols"
+        [ "$frame" -gt "$UI_MIN_WIDTH" ] && frame="$UI_MIN_WIDTH"
+    fi
+    [ "$frame" -lt 1 ] && frame=1
+    echo "$frame"
 }
 
 # ui_repeat STR N  — repeat a (possibly multi-byte) string N times
@@ -216,6 +231,56 @@ ui_truncate() {
     printf '%s…' "$OUT"
 }
 
+# _ui_cut CUTVAR RESTVAR STR MAX — پیشوندی با عرض ≤ MAX و باقیِ رشته
+_ui_cut() {
+    local __s="$3" __max="$4" __out="" __i __c __w
+    for ((__i=0; __i<${#__s}; __i++)); do
+        __c="${__s:$__i:1}"
+        _ui_w __w "${__out}${__c}"
+        [ "$__w" -gt "$__max" ] && break
+        __out+="$__c"
+    done
+    printf -v "$1" '%s' "$__out"
+    printf -v "$2" '%s' "${__s:${#__out}}"
+}
+
+# ui_wrap TEXT [MAX_WIDTH] [INDENT] — متن را روی چند خط می‌شکند تا هیچ خطی از
+# عرض قاب/پنجره بیرون نزند. واژهٔ بلند (مسیر فایل، URL) به‌جای سرریز، تکه می‌شود.
+ui_wrap() {
+    local TEXT="$1" MAX="${2:-}" INDENT="${3:-$UI_PAD}" LINE="" WORD PIECE REST W
+    [ -n "$MAX" ] || MAX=$(( $(ui_width) - ${#UI_PAD} ))
+    [ "$MAX" -lt 8 ] && MAX=8
+    for WORD in $TEXT; do
+        _ui_w W "$WORD"
+        if [ "$W" -gt "$MAX" ]; then
+            [ -n "$LINE" ] && { printf '%s%s\n' "$INDENT" "$LINE"; LINE=""; }
+            while [ -n "$WORD" ]; do
+                _ui_cut PIECE REST "$WORD" "$MAX"
+                [ -z "$PIECE" ] && break
+                WORD="$REST"
+                if [ -n "$WORD" ]; then printf '%s%s\n' "$INDENT" "$PIECE"; else LINE="$PIECE"; fi
+            done
+            continue
+        fi
+        if [ -z "$LINE" ]; then
+            LINE="$WORD"
+        else
+            _ui_w W "$LINE $WORD"
+            if [ "$W" -le "$MAX" ]; then LINE="$LINE $WORD"
+            else printf '%s%s\n' "$INDENT" "$LINE"; LINE="$WORD"; fi
+        fi
+    done
+    [ -n "$LINE" ] && printf '%s%s\n' "$INDENT" "$LINE"
+    return 0
+}
+
+# width budget for a key/value line: frame minus padding, key column and " — "
+_ui_kv_budget() {
+    local AVAIL=$(( $(ui_width) - ${#UI_PAD} - UI_KV_WIDTH - 3 ))
+    [ "$AVAIL" -lt 8 ] && AVAIL=8
+    echo "$AVAIL"
+}
+
 # ui_version — MRM version for the header (env → versions.conf → VERSION file)
 ui_version() {
     local V="${MRM_VERSION:-}"
@@ -230,7 +295,14 @@ ui_version() {
 
 # ─── Screen & header ────────────────────────────────────────────────────────
 
-ui_clear() { [ -t 1 ] && clear; return 0; }
+ui_clear() {
+    # `clear` prints "'unknown': unknown terminal type." on stderr when TERM is
+    # unknown/empty — a raw ncurses error in the middle of our own UI.
+    [ -t 1 ] || return 0
+    case "${TERM:-}" in ''|dumb|unknown) return 0 ;; esac
+    clear 2>/dev/null || true
+    return 0
+}
 ui_blank() { echo ""; }
 
 # _ui_box_row TEXT WIDTH [STYLE] — one framed row: │ text···· │
@@ -255,7 +327,11 @@ ui_header() {
     local TITLE="$1" SUBTITLE="${2:-}" WIDTH FILL
     WIDTH="$(ui_width)"
     local BRAND=" ${UI_BRAND} " VER=" v$(ui_version) "
+    # روی پنجرهٔ باریک، اول نسخه و بعد برند از خط بالا کنار می‌روند تا قاب نشکند
     FILL=$(( WIDTH - 4 - ${#BRAND} - ${#VER} ))
+    if [ "$FILL" -lt 1 ]; then VER=""; FILL=$(( WIDTH - 4 - ${#BRAND} )); fi
+    if [ "$FILL" -lt 1 ]; then BRAND=" ${UI_BRAND}"; FILL=$(( WIDTH - 4 - ${#BRAND} )); fi
+    [ "$FILL" -lt 1 ] && { BRAND=""; FILL=$(( WIDTH - 4 )); }
     [ "$FILL" -lt 1 ] && FILL=1
 
     ui_clear
@@ -282,6 +358,7 @@ ui_section() {
     local TITLE="$1" WIDTH LEN FILL
     WIDTH="$(ui_width)"
     _ui_w LEN "$TITLE"
+    [ $(( LEN + 8 )) -gt "$WIDTH" ] && { TITLE="$(ui_truncate "$TITLE" $(( WIDTH - 8 )))"; _ui_w LEN "$TITLE"; }
     FILL=$(( WIDTH - LEN - 6 ))
     [ "$FILL" -lt 2 ] && FILL=2
     printf '%s%b%s%b %b%s%b %b%s%b\n' \
@@ -293,10 +370,29 @@ ui_section() {
 # ui_kv "Key" "Value" ["hint"] — aligned key/value line (value may contain
 # colours); the optional hint is appended in muted colour.
 ui_kv() {
-    if [ -n "${3:-}" ]; then
-        printf '%s%b%-*s%b %b%b%b %b— %s%b\n' "$UI_PAD" "$UI_C_MUTED" "$UI_KV_WIDTH" "$1" "$NC" "$UI_C_TEXT" "$2" "$NC" "$UI_C_MUTED" "$3" "$NC"
+    local KEY="$1" VAL="$2" HINT="${3:-}" BUDGET VW HW VB SPACES
+    BUDGET="$(_ui_kv_budget)"
+    if [ -n "$HINT" ]; then
+        _ui_w HW "— $HINT"
+        if [ "$HW" -gt "$(( BUDGET / 2 ))" ]; then          # راهنما اول قربانی می‌شود
+            HINT="$(ui_truncate "$HINT" "$(( BUDGET / 2 ))")"
+            _ui_w HW "— $HINT"
+        fi
+        _ui_w VW "$VAL"
+        VB=$(( BUDGET - HW - 1 ))
+        [ "$VB" -lt 6 ] && VB=6
+        if [ "$VW" -gt "$VB" ]; then
+            # مقدار بلندتر از قاب (متن طولانی): خط کلید + خطوط ادامهٔ تورفته
+            printf '%s%b%-*s%b %b%b%b\n' "$UI_PAD" "$UI_C_MUTED" "$UI_KV_WIDTH" "$KEY" "$NC" "$UI_C_TEXT" "$(ui_truncate "$VAL" "$VB")" "$NC"
+            SPACES="$(ui_repeat ' ' $(( UI_KV_WIDTH + 1 )))"
+            ui_wrap "$HINT" "$(( BUDGET - 2 ))" "${UI_PAD}${SPACES}— "
+            return 0
+        fi
+        printf '%s%b%-*s%b %b%b%b %b— %s%b\n' "$UI_PAD" "$UI_C_MUTED" "$UI_KV_WIDTH" "$KEY" "$NC" "$UI_C_TEXT" "$VAL" "$NC" "$UI_C_MUTED" "$HINT" "$NC"
     else
-        printf '%s%b%-*s%b %b%b%b\n' "$UI_PAD" "$UI_C_MUTED" "$UI_KV_WIDTH" "$1" "$NC" "$UI_C_TEXT" "$2" "$NC"
+        _ui_w VW "$VAL"
+        [ "$VW" -gt "$BUDGET" ] && VAL="$(ui_truncate "$VAL" "$BUDGET")"
+        printf '%s%b%-*s%b %b%b%b\n' "$UI_PAD" "$UI_C_MUTED" "$UI_KV_WIDTH" "$KEY" "$NC" "$UI_C_TEXT" "$VAL" "$NC"
     fi
 }
 
@@ -313,9 +409,22 @@ ui_state() {
 
 # ui_kv_state "Key" ok|warn|bad|off "text" ["extra dim text"]
 ui_kv_state() {
-    local VAL; VAL="$(ui_state "$2" "$3")"
-    [ -n "${4:-}" ] && VAL+=" $(printf '%b— %s%b' "$UI_C_MUTED" "$4" "$NC")"
-    ui_kv "$1" "$VAL"
+    local KEY="$1" MODE="$2" TEXT="$3" HINT="${4:-}" BUDGET HW TW FULL
+    BUDGET="$(_ui_kv_budget)"
+    # متن و راهنما پیش از رنگ‌آمیزی بریده می‌شوند؛ بریدن بعد از رنگ، کد فرار را
+    # نصف می‌کند و رنگِ باقی خط را خراب می‌کند.
+    if [ -n "$HINT" ]; then
+        _ui_w HW "— $HINT"
+        [ "$HW" -gt "$(( BUDGET / 2 ))" ] && HINT="$(ui_truncate "$HINT" "$(( BUDGET / 2 ))")"
+        _ui_w FULL "$TEXT — $HINT"
+        [ "$FULL" -gt "$BUDGET" ] && TEXT="$(ui_truncate "$TEXT" $(( BUDGET - ${#HINT} - 3 )))"
+    else
+        _ui_w TW "$TEXT"
+        [ "$TW" -gt "$BUDGET" ] && TEXT="$(ui_truncate "$TEXT" "$BUDGET")"
+    fi
+    local VAL; VAL="$(ui_state "$MODE" "$TEXT")"
+    [ -n "$HINT" ] && VAL+=" $(printf '%b— %s%b' "$UI_C_MUTED" "$HINT" "$NC")"
+    printf '%s%b%-*s%b %b%b%b\n' "$UI_PAD" "$UI_C_MUTED" "$UI_KV_WIDTH" "$KEY" "$NC" "$UI_C_TEXT" "$VAL" "$NC"
 }
 
 # ─── Messages ───────────────────────────────────────────────────────────────
@@ -324,9 +433,20 @@ ui_success() { printf '%s%b%s%b %b%b%b\n' "$UI_PAD" "$UI_C_OK"   "$UI_G_OK"   "$
 ui_error()   { printf '%s%b%s%b %b%b%b\n' "$UI_PAD" "$UI_C_ERR"  "$UI_G_ERR"  "$NC" "$UI_C_TEXT" "$1" "$NC" >&2; }
 ui_warning() { printf '%s%b%s%b %b%b%b\n' "$UI_PAD" "$UI_C_WARN" "$UI_G_WARN" "$NC" "$UI_C_TEXT" "$1" "$NC"; }
 ui_info()    { printf '%s%b%s%b %b%b%b\n' "$UI_PAD" "$UI_C_INFO" "$UI_G_INFO" "$NC" "$UI_C_TEXT" "$1" "$NC"; }
-ui_note()    { printf '%s%b%b%b\n'        "$UI_PAD" "$UI_C_MUTED" "$1" "$NC"; }
-ui_text()    { printf '%s%b%b%b\n'        "$UI_PAD" "$UI_C_TEXT" "$1" "$NC"; }
-ui_bullet()  { printf '%s%b%s%b %b%b%b\n' "$UI_PAD" "$UI_C_ACCENT" "$UI_G_BULLET" "$NC" "$UI_C_TEXT" "$1" "$NC"; }
+ui_note()    { ui_wrap "$1" "" "$UI_PAD" | while IFS= read -r _l; do printf '%b%s%b\n' "$UI_C_MUTED" "$_l" "$NC"; done; }
+ui_text()    { ui_wrap "$1" "" "$UI_PAD" | while IFS= read -r _l; do printf '%b%s%b\n' "$UI_C_TEXT" "$_l" "$NC"; done; }
+ui_bullet()  {
+    # ادامهٔ خط با تورفتگی هم‌تراز با متن بولت
+    local IND="${UI_PAD}  " FIRST=1 _l
+    ui_wrap "$1" "$(( $(ui_width) - 4 ))" "$IND" | while IFS= read -r _l; do
+        if [ "$FIRST" = 1 ]; then
+            printf '%s%b%s%b %b%s%b\n' "$UI_PAD" "$UI_C_ACCENT" "$UI_G_BULLET" "$NC" "$UI_C_TEXT" "${_l#"$IND"}" "$NC"
+            FIRST=0
+        else
+            printf '%b%s%b\n' "$UI_C_TEXT" "$_l" "$NC"
+        fi
+    done
+}
 # ui_cmd "command" ["comment"] —   $ command   — comment
 ui_cmd() {
     if [ -n "${2:-}" ]; then
@@ -386,10 +506,20 @@ ui_task_done() {
 
 # ui_menu_item N "Label" ["hint"]
 ui_menu_item() {
-    if [ -n "${3:-}" ]; then
-        printf '%s%b%2s%b  %b%s%b %b— %s%b\n' "$UI_PAD" "$UI_C_ACCENT$BOLD" "$1" "$NC" "$UI_C_TEXT" "$2" "$NC" "$UI_C_MUTED" "$3" "$NC"
+    local NUM="$1" LABEL="$2" HINT="${3:-}" BUDGET VW HW
+    BUDGET=$(( $(ui_width) - ${#UI_PAD} - 5 ))
+    [ "$BUDGET" -lt 10 ] && BUDGET=10
+    _ui_w VW "$LABEL"
+    [ "$VW" -gt "$BUDGET" ] && { LABEL="$(ui_truncate "$LABEL" "$BUDGET")"; _ui_w VW "$LABEL"; }
+    if [ -n "$HINT" ]; then
+        HW=$(( BUDGET - VW - 3 ))
+        [ "$HW" -lt 6 ] && HW=6
+        _ui_w HW "x$HINT"
+        _ui_w HW "— $HINT"
+        [ "$HW" -gt $(( BUDGET - VW - 3 )) ] && HINT="$(ui_truncate "$HINT" $(( BUDGET - VW - 3 )))"
+        printf '%s%b%2s%b  %b%s%b %b— %s%b\n' "$UI_PAD" "$UI_C_ACCENT$BOLD" "$NUM" "$NC" "$UI_C_TEXT" "$LABEL" "$NC" "$UI_C_MUTED" "$HINT" "$NC"
     else
-        printf '%s%b%2s%b  %b%s%b\n' "$UI_PAD" "$UI_C_ACCENT$BOLD" "$1" "$NC" "$UI_C_TEXT" "$2" "$NC"
+        printf '%s%b%2s%b  %b%s%b\n' "$UI_PAD" "$UI_C_ACCENT$BOLD" "$NUM" "$NC" "$UI_C_TEXT" "$LABEL" "$NC"
     fi
 }
 

@@ -2248,6 +2248,106 @@ fi
 
 echo ""
 
+# ─── Test Group 21: terminal rendering (real width, dumb TERM, NO_COLOR) ─────
+# (رابط ترمینال باید با عرض واقعی پنجره بسازد: نه سرریز کند، نه با TERM ناشناخته
+#  خطای خام چاپ کند، و NO_COLOR را محترم بشمارد. سنجش با pty واقعی + stty)
+echo "📋 Group 21: terminal rendering"
+echo ""
+
+UIFILE="$PROJECT_DIR/manager/ui.sh"
+PROBE="$SCRIPT_DIR/term_probe.sh"
+
+# 21.1: سازوکارهای لازم در ui.sh وجود دارند
+if grep -q 'stty size' "$UIFILE" && grep -q '^ui_wrap()' "$UIFILE" && \
+   grep -q '^_ui_cut()' "$UIFILE" && grep -q '_ui_kv_budget' "$UIFILE"; then
+    pass "ui.sh measures the real window width and folds long text"
+else
+    fail "ui.sh lacks width detection or folding helpers"
+fi
+
+# 21.2: پاک‌کردن صفحه با TERM ناشناخته خطای خام نمی‌دهد
+if grep -q 'clear 2>/dev/null' "$UIFILE" && \
+   grep -q "case \"\${TERM:-}\" in ''|dumb|unknown) return 0" "$UIFILE"; then
+    pass "screen clearing is silent on dumb/unknown TERM"
+else
+    fail "clear can emit a raw terminal error"
+fi
+
+render_at() { # $1=cols  $2=TERM  $3=extRA env (optional)
+    local cols="$1" term="$2" extra="${3:-}"
+    command -v script >/dev/null 2>&1 || return 1
+    env -i PATH="$PATH" HOME="$HOME" TERM="$term" MRM_DIR="$PROJECT_DIR/manager" $extra \
+        script -qec "stty cols $cols rows 24 2>/dev/null; MRM_DIR='$PROJECT_DIR/manager' bash '$PROBE'" /dev/null 2>/dev/null \
+        | tr -d '\r'
+}
+
+strip_ansi() { sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g'; }
+
+# شمارش ستون مستقل از لوکیل: بایت منهای بایت‌های ادامهٔ UTF-8
+# (زیر LC_ALL=C هر نویسهٔ قاب ۳ ستون شمرده می‌شد و آزمون را الکی می‌شکست)
+char_count() {
+    local bytes cont
+    bytes=$(printf '%s' "$1" | LC_ALL=C wc -c | tr -d ' ')
+    cont=$(printf '%s' "$1" | LC_ALL=C grep -o $'[\x80-\xBF]' | wc -l | tr -d ' ')
+    echo $(( bytes - cont ))
+}
+max_line_width() { # بیشترین عرض خط (نویسه = ستون برای نویسه‌های این رابط)
+    local max=0 plain n
+    while IFS= read -r line; do
+        plain="$(printf '%s' "$line" | strip_ansi)"
+        n="$(char_count "$plain")"
+        [ "$n" -gt "$max" ] && max=$n
+    done
+    echo "$max"
+}
+
+if ! command -v script >/dev/null 2>&1; then
+    skip "pty tool 'script' not available — terminal width checks skipped"
+else
+    # 21.3: عرض ۴۰ — هیچ خطی نباید سرریز کند
+    OUT40="$(render_at 40 xterm-256color)"
+    W40="$(printf '%s\n' "$OUT40" | max_line_width)"
+    if [ -n "$OUT40" ] && [ "$W40" -le 40 ]; then
+        pass "40-column window: nothing overflows (widest line ${W40})"
+    else
+        fail "40-column window overflows (widest line ${W40:-?})"
+    fi
+
+    # 21.4: عرض ۱۰۰ — قاب به سقف خوانایی (۷۲) محدود می‌ماند
+    OUT100="$(render_at 100 xterm-256color)"
+    W100="$(printf '%s\n' "$OUT100" | max_line_width)"
+    if [ -n "$OUT100" ] && [ "$W100" -le 72 ]; then
+        pass "100-column window: frame stays at the readable cap (widest ${W100})"
+    else
+        fail "wide window exceeds the readability cap (widest ${W100:-?})"
+    fi
+
+    # 21.5: TERM ناشناخته/خالی — بدون خطای خام ncurses و بدون سرریز
+    OUTUNK="$(render_at 40 unknown)"
+    OUTEMP="$(render_at 40 "")"
+    if ! printf '%s\n%s\n' "$OUTUNK" "$OUTEMP" | grep -qE "unknown terminal type|tput:|No value for \\\$TERM"; then
+        pass "unknown/empty TERM: no raw ncurses error leaks into the UI"
+    else
+        fail "unknown/empty TERM prints a raw terminal error"
+    fi
+    WUNK="$(printf '%s\n' "$OUTUNK" | max_line_width)"
+    if [ "$WUNK" -le 40 ]; then
+        pass "unknown TERM still respects the 40-column window (widest ${WUNK})"
+    else
+        fail "unknown TERM overflows the window (widest ${WUNK})"
+    fi
+
+    # 21.6: NO_COLOR — هیچ کد رنگی در خروجی نباشد
+    OUTNC="$(render_at 40 xterm-256color "NO_COLOR=1")"
+    if [ -n "$OUTNC" ] && ! printf '%s' "$OUTNC" | grep -q $'\033\[[0-9;]*m'; then
+        pass "NO_COLOR=1: output carries no colour codes"
+    else
+        fail "NO_COLOR=1 still produces colour codes"
+    fi
+fi
+
+echo ""
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 echo "═══════════════════════════════════════════════════════════"
 echo "  Test Results"
