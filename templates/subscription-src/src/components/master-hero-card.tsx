@@ -201,7 +201,7 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
             onClick={onRefresh}
             disabled={isValidating}
             title={isFa ? 'به‌روزرسانی وضعیت' : 'Refresh info'}
-            className="flex size-8 items-center justify-center rounded-full border border-border/80 bg-background/60 text-muted-foreground transition hover:border-primary hover:text-foreground active:scale-90"
+            className="mrm-tap-44 flex size-11 items-center justify-center rounded-full border border-border/80 bg-background/60 text-muted-foreground transition hover:border-primary hover:text-foreground active:scale-90"
           >
             <RefreshCcw className={cn('size-3.5', isValidating && 'animate-spin text-primary')} />
           </button>

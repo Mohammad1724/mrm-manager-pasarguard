@@ -115,7 +115,7 @@ export const AppsList = React.memo(function AppsList() {
     if (appsList.length === 0) return null
 
     return (
-        <div className="animate-fadeIn">
+        <div data-ui="apps" className="animate-fadeIn">
             <Accordion
                 type="single"
                 collapsible

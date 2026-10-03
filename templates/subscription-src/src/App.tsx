@@ -20,6 +20,16 @@ import { AppsList } from '@/components/AppsList';
 import { QRModal } from '@/components/qr-modal';
 import type { UsageDataPoint } from '@/types/user';
 
+/** نام پیش‌فرض فروشگاه پیش از دریافت تنظیمات از runtime.
+ *
+ *  چرا جانگهدار `__BRAND__`؟ چون `manager/theme.sh` هنگام نصب/بازاستقرار
+ *  (`--redeploy`) همین توکن را در HTML نهایی با نام برند ادمین جانشین می‌کند.
+ *  اگر توکن را حذف کنیم، آن مرحله بی‌هدف می‌شود و برند ایستا از کار می‌افتد.
+ *  runtime هم همین مقدار را زنده جایگزین می‌کند و اگر تنظیمات در دسترس نباشد،
+ *  نگهبان `deTokenizeBrand` تضمین می‌کند توکن خام روی صفحه نماند.
+ *  برای build با نام ثابت: VITE_DEFAULT_BRAND=... */
+const DEFAULT_BRAND = (import.meta.env.VITE_DEFAULT_BRAND as string | undefined)?.trim() || '__BRAND__';
+
 const isUsageDataSeries = (value: unknown): value is UsageDataPoint[] => Array.isArray(value);
 
 const getChartUsageData = (stats: unknown): UsageDataPoint[] => {
@@ -170,15 +180,21 @@ export default function App() {
         <div className="treasury-ambient pointer-events-none" aria-hidden="true" />
 
         {/* Sticky Frosted Header */}
-        <header className="sticky top-0 z-40 w-full border-b border-border/50 bg-background/70 backdrop-blur-xl transition-all">
+        <header
+          data-ui="nav"
+          className="sticky top-0 z-40 w-full border-b border-border/50 bg-background/70 backdrop-blur-xl transition-all"
+        >
           <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5" data-ui="brand-box" aria-label={DEFAULT_BRAND}>
               <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-                <ShieldCheck className="size-5" />
+                <ShieldCheck className="size-5" aria-hidden="true" />
               </div>
               <div>
-                <span className="font-extrabold text-foreground text-sm tracking-tight block">
-                  __BRAND__
+                <span
+                  data-ui="brand"
+                  className="font-extrabold text-foreground text-sm tracking-tight block"
+                >
+                  {DEFAULT_BRAND}
                 </span>
                 <span className="text-[10px] text-muted-foreground -mt-0.5 block">
                   PasarGuard Security
@@ -186,7 +202,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" data-ui="header-actions">
               <LanguageSwitcher />
               <ThemeToggle />
             </div>

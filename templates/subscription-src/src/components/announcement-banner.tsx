@@ -34,6 +34,7 @@ export const AnnouncementBanner = memo(({ message, url }: AnnouncementBannerProp
   return (
     <div
       role="alert"
+      data-ui="announcement"
       className="relative mb-5 flex items-start gap-3 rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-4 shadow-xs backdrop-blur-md animate-fadeIn"
     >
       <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary/20 text-primary">
@@ -61,10 +62,10 @@ export const AnnouncementBanner = memo(({ message, url }: AnnouncementBannerProp
       <button
         type="button"
         onClick={handleDismiss}
-        className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition"
-        title="بستن اعلان"
+        aria-label="بستن اعلان"
+        className="mrm-tap-target -m-1.5 grid size-11 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
       >
-        <X className="size-4" />
+        <X className="size-4" aria-hidden="true" />
       </button>
     </div>
   );

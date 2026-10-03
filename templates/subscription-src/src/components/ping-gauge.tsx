@@ -22,6 +22,7 @@ export function PingGauge({ ms, className }: PingGaugeProps) {
   const angle = needleAngle(ms);
   return (
     <svg
+      data-ui="ping"
       className={cn('treasury-ping-gauge', className)}
       viewBox="0 0 48 30"
       role="img"

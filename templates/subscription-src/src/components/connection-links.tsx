@@ -203,7 +203,10 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
   );
 
   return (
-    <section className="relative w-full rounded-3xl border border-border/70 bg-card/80 p-5 sm:p-7 shadow-lg backdrop-blur-xl animate-fadeIn">
+    <section
+      data-ui="configs"
+      className="relative w-full rounded-3xl border border-border/70 bg-card/80 p-5 sm:p-7 shadow-lg backdrop-blur-xl animate-fadeIn"
+    >
       {/* Header */}
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/50 pb-5 mb-5">
         <div className="flex items-center gap-3">
@@ -212,7 +215,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-bold text-foreground">
+              <h2 data-ui="section-title" className="text-base sm:text-lg font-bold text-foreground">
                 {isFa ? 'لیست سرورها و کانفیگ‌ها' : t('config.title')}
               </h2>
               <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-bold text-primary">
@@ -347,8 +350,9 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
       {/* WireGuard Download Card if available */}
       {hasWireGuard && (
         <a
+          data-ui="wireguard"
           href={wireGuardArchiveUrl}
-          className="mb-4 flex items-center justify-between rounded-2xl border border-border/80 bg-muted/30 px-4 py-3 text-xs sm:text-sm font-semibold text-foreground no-underline shadow-xs transition hover:bg-muted/60"
+          className="mb-4 flex min-h-11 items-center justify-between rounded-2xl border border-border/80 bg-muted/30 px-4 py-3 text-xs sm:text-sm font-semibold text-foreground no-underline shadow-xs transition hover:bg-muted/60"
           download
         >
           <div className="flex items-center gap-2.5">
@@ -387,11 +391,14 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
             return (
               <article
                 key={`${link.raw}-${idx}`}
+                data-ui="config-row"
+                data-protocol={link.protocol.toLowerCase()}
                 className="group relative flex items-center justify-between gap-3 rounded-2xl border border-border/60 bg-background/50 p-3.5 shadow-xs transition hover:border-primary/40 hover:bg-background/90"
               >
                 {/* Left side: Protocol badge + Name */}
                 <div className="flex items-center gap-3 min-w-0 flex-1">
                   <span
+                    data-ui="config-protocol"
                     className={cn(
                       'flex size-9 shrink-0 items-center justify-center rounded-xl border text-[11px] font-extrabold uppercase',
                       meta.bg
@@ -412,7 +419,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
                     </div>
 
                     {/* Ping Indicator */}
-                    <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <div data-ui="ping" className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
                       <span className="inline-flex items-center gap-1">
                         <span
                           className={cn(

@@ -11,6 +11,7 @@ const FooterContent = () => {
     <div className="flex flex-col items-center gap-3">
       {supportUrl && (
         <a
+          data-ui="support"
           href={supportUrl}
           target="_blank"
           rel="noopener noreferrer"
@@ -25,11 +26,11 @@ const FooterContent = () => {
       {supportUrl && (
         <Separator className="w-12 opacity-60" />
       )}
-      <p className="inline-block flex-grow text-center text-xs text-muted-foreground lg:px-4">
+      <p className="inline-block flex-grow text-center text-xs text-foreground/75 lg:px-4">
         Powered by &nbsp;
         <span className="font-semibold text-primary">MRM</span>
         &nbsp;·&nbsp;
-        <span className="font-semibold text-muted-foreground">v1.5.10</span>
+        <span className="font-semibold text-foreground/70">v1.5.10</span>
       </p>
     </div>
   );

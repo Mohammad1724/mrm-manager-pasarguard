@@ -390,7 +390,11 @@
     box-shadow: none;
   }
 
-  .ios-toolbar-button { background: var(--material-strong); }
+  .ios-toolbar-button { background: var(--material-strong); min-width: 44px; min-height: 44px; }
+
+  /* حداقل هدف لمس ۴۴×۴۴ (Apple HIG / WCAG 2.5.8) برای کنترل‌های فشرده.
+     بزرگ‌کردن با padding نامرئی انجام می‌شود، نه با تغییر ظاهر. */
+  .mrm-tap-44 { min-width: 44px; min-height: 44px; }
   [data-slot="dropdown-menu-content"], [data-slot="select-content"] {
     border: 0.5px solid var(--border);
     border-radius: 0.9rem;
@@ -1050,7 +1054,7 @@
 
   .ios-segmented-item {
     min-width: 48px;
-    min-height: 34px;
+    min-height: 44px;
     flex: 1 0 auto;
     cursor: pointer;
     border: 0;
