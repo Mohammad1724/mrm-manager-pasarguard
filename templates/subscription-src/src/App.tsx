@@ -84,10 +84,26 @@ export default function App() {
   const effectiveData = data ?? initialUser;
   const hasData = Boolean(effectiveData);
 
+  // اعلانِ رندرشده در سرور (اگر پنل آن را داده باشد) — از پلهٔ اول در صفحه است
+  const ssrAnnounce = useMemo(() => {
+    try {
+      const el = document.getElementById('mrm-ssr-announce');
+      if (!el?.textContent) return null;
+      const parsed = JSON.parse(el.textContent);
+      const text = typeof parsed?.text === 'string' ? parsed.text.trim() : '';
+      const url = typeof parsed?.url === 'string' ? parsed.url.trim() : '';
+      return { text, url };
+    } catch {
+      return null;
+    }
+  }, []);
+
   // Announcement message
   const rawAnnouncement = headers?.announce;
   const announcementMessage = useMemo(() => {
-    if (!rawAnnouncement || typeof rawAnnouncement !== 'string') return null;
+    if (!rawAnnouncement || typeof rawAnnouncement !== 'string') {
+      return ssrAnnounce?.text || null;
+    }
     if (rawAnnouncement.startsWith('base64:')) {
       try {
         const encoded = rawAnnouncement.slice(7).trim();
@@ -101,12 +117,12 @@ export default function App() {
     } catch {
       return rawAnnouncement;
     }
-  }, [rawAnnouncement]);
+  }, [rawAnnouncement, ssrAnnounce]);
 
   const announceUrl =
     typeof headers?.['announce-url'] === 'string' && headers['announce-url'].trim()
       ? headers['announce-url']
-      : null;
+      : ssrAnnounce?.url || null;
 
   const supportUrl =
     typeof headers?.['support-url'] === 'string' && headers['support-url'].trim()
@@ -225,8 +241,14 @@ export default function App() {
             onOpenQR={() => setMasterQROpen(true)}
           />
 
-          {/* Connection Guide & FAQ */}
-          <FaqGuide />
+          {/* Connection Links & Configs */}
+          <div id="connection-links" className="scroll-mt-24">
+            {hasLinks ? (
+              <ConnectionLinks links={configData!.links} />
+            ) : (
+              <ProminentSubscriptionLink hasChart={hasChart} />
+            )}
+          </div>
 
           {/* Usage Chart Section */}
           {hasChart && (
@@ -240,15 +262,6 @@ export default function App() {
               />
             </div>
           )}
-
-          {/* Connection Links & Configs */}
-          <div id="connection-links" className="scroll-mt-24">
-            {hasLinks ? (
-              <ConnectionLinks links={configData!.links} />
-            ) : (
-              <ProminentSubscriptionLink hasChart={hasChart} />
-            )}
-          </div>
 
           {/* Supported Applications Section */}
           <div className="space-y-3 pt-2">
@@ -270,6 +283,11 @@ export default function App() {
 
             <AppsList />
           </div>
+
+          {/* Connection Guide & Troubleshooting — راهنما بعد از محتوای اصلی می‌آید
+              (پیش‌تر بین کارت وضعیت و لیست کانفیگ‌ها بود و دسترسی به کانفیگ را
+              به ۲.۳ صفحه اسکرول عقب می‌انداخت) */}
+          <FaqGuide />
         </main>
       </div>
 

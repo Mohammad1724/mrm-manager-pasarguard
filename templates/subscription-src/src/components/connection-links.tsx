@@ -208,17 +208,17 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
       className="relative w-full rounded-3xl border border-border/70 bg-card/80 p-5 sm:p-7 shadow-lg backdrop-blur-xl animate-fadeIn"
     >
       {/* Header */}
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/50 pb-5 mb-5">
-        <div className="flex items-center gap-3">
-          <div className="flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+      <header className="flex items-center justify-between gap-3 border-b border-border/50 pb-4 mb-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
             <Radio className="size-6" />
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2 data-ui="section-title" className="text-lead sm:text-title font-bold text-foreground">
                 {isFa ? 'لیست سرورها و کانفیگ‌ها' : t('config.title')}
               </h2>
-              <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-micro font-bold text-primary">
+              <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-micro font-bold text-primary-text">
                 {isFa
                   ? `${parsedLinks.length.toLocaleString('fa-IR')} سرور`
                   : `${parsedLinks.length} servers`}
@@ -236,38 +236,36 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
         <button
           type="button"
           onClick={handleCopyAll}
+          aria-label={isFa ? 'کپی همه کانفیگ‌ها' : 'Copy all configs'}
           className={cn(
-            'inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-2.5 text-micro font-semibold shadow-xs transition active:scale-95',
+            'ui-tap shrink-0 items-center justify-center gap-2 rounded-2xl border text-micro font-semibold shadow-xs transition active:scale-95 px-3 sm:px-4',
             copyAllSuccess
               ? 'border-emerald-500 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
               : 'border-primary/30 bg-primary/10 text-primary hover:bg-primary/20'
           )}
         >
           {copyAllSuccess ? <Check className="size-4" /> : <Files className="size-4" />}
-          <span>{copyAllSuccess ? (isFa ? 'کپی شد!' : 'Copied!') : (isFa ? 'کپی همه کانفیگ‌ها' : 'Copy All')}</span>
+          <span className="hidden sm:inline">{copyAllSuccess ? (isFa ? 'کپی شد!' : 'Copied!') : (isFa ? 'کپی همه کانفیگ‌ها' : 'Copy All')}</span>
         </button>
       </header>
 
       {/* Featured Master Subscription Link */}
-      <div className="mb-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-primary/5 p-4 transition">
-        <div className="flex items-center gap-3">
+      <div className="mb-4 flex items-center justify-between gap-2 rounded-2xl border border-primary/20 bg-primary/5 p-3 transition">
+        <div className="flex min-w-0 items-center gap-2.5">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-white shadow-xs">
             <ShieldCheck className="size-5" />
           </div>
           <div className="min-w-0">
-            <div className="text-micro font-bold uppercase tracking-wider text-primary">
-              Auto-Sync Subscription
-            </div>
-            <div className="text-body font-bold text-foreground">
+            <div className="text-body font-bold text-foreground truncate">
               {isFa ? 'لینک اشتراک خودکار (پیشنهادی)' : t('config.subscriptionLink')}
             </div>
-            <div className="text-micro text-muted-foreground truncate max-w-xs sm:max-w-md" dir="ltr">
+            <div className="text-micro text-muted-foreground truncate" dir="ltr" title={subscriptionUrl}>
               {subscriptionUrl}
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-end sm:self-center">
+        <div className="flex shrink-0 items-center gap-1.5">
           <button
             type="button"
             onClick={handleCopySubscription}
@@ -298,7 +296,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
       </div>
 
       {/* Search Bar & Protocol Filter Pills */}
-      <div className="mb-5 space-y-3">
+      <div className="mb-4 space-y-2.5">
         {/* Search */}
         <div className="relative w-full">
           <Search className="pointer-events-none absolute right-3.5 rtl:right-3.5 rtl:left-auto ltr:left-3.5 ltr:right-auto top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -322,7 +320,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
 
         {/* Filter Pills */}
         {activeProtocols.length > 2 && (
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="ios-scroll-row flex items-center gap-1.5">
             {activeProtocols.map((proto) => {
               const isSelected = selectedProtocol === proto;
               const count = protocolCounts[proto] || 0;
@@ -332,7 +330,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
                   type="button"
                   onClick={() => setSelectedProtocol(proto)}
                   className={cn(
-                    'ui-tap-row rounded-xl border px-3 py-1.5 text-micro font-semibold transition active:scale-95',
+                    'ui-tap-row shrink-0 rounded-xl border px-3 py-1.5 text-micro font-semibold transition active:scale-95',
                     isSelected
                       ? 'border-primary bg-primary text-primary-foreground shadow-xs'
                       : 'border-border/60 bg-background/50 text-muted-foreground hover:bg-muted'
@@ -376,7 +374,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
               setSearchQuery('');
               setSelectedProtocol('all');
             }}
-            className="mt-3 text-micro font-bold text-primary hover:underline"
+            className="mt-3 text-micro font-bold text-primary-text hover:underline"
           >
             {isFa ? 'پاک کردن فیلترها' : 'Reset filters'}
           </button>

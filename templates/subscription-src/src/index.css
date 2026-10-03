@@ -82,6 +82,9 @@
   --text-hero: var(--fs-hero);
   --text-hero--line-height: var(--lh-tight);
 
+  /* متن برند با کنتراست AA → text-primary-text */
+  --color-primary-text: var(--primary-text);
+
   /* هدف لمس: min-h-tap، size-tap، gap-tap، min-h-tap-comfort … */
   --spacing-tap: var(--tap-min);
   --spacing-tap-comfort: var(--tap-comfort);
@@ -143,6 +146,14 @@
   --fs-heading: 1.375rem;   /* 22px — عنوان بخش */
   --fs-display: 1.75rem;    /* 28px — عدد شاخص */
   --fs-hero: 2.25rem;       /* 36px — تنها عدد اصلی صفحه */
+
+  /* ── رنگ برند برای «متن» (نه سطح) ────────────────────────────────────
+     رنگ اصلی برند (#0E8F8A) روی سفید نسبت ۳٫۹۵ دارد و برای متن زیر ۲۴px
+     حد AA (۴٫۵) را رد نمی‌کند. این توکن همان رنگ را در تم روشن ۲۲٪ به سمت
+     متنِ پیش‌فرض می‌برد (روی سفید ۵٫۲۳ و روی بدنه ۴٫۶۶) و در تم تیره هم
+     خودکار روشن‌ترش می‌کند. چون با var() ساخته شده، اگر ادمین رنگ برند را
+     در پنل عوض کند، این هم دنبالش می‌آید. */
+  --primary-text: color-mix(in srgb, var(--primary) 78%, var(--foreground) 22%);
 
   /* ── ارتفاع خط (فارسی بازتر از لاتین خوانده می‌شود) ─────────────────── */
   --lh-tight: 1.15;         /* عددهای نمایشی */
@@ -1456,12 +1467,17 @@
     bottom: -45%;
     width: 32%;
     inset-inline-start: -42%;
-    transform: rotate(14deg);
+    /* مسیر سفر: از -۴۲٪ تا ۱۲۵٪ عرض عنصر → ۵۲۰٪ از عرض خودِ نوار */
+    --scan-travel: 520%;
+    transform: translateX(0) rotate(14deg);
     background: linear-gradient(90deg, transparent, rgba(255,255,255,0.09), transparent);
     content: "";
     animation: treasury-danger-scan 3.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
     pointer-events: none;
   }
+
+  /* در RTL «شروع» سمت راست است، پس نوار باید در جهت منفی سفر کند */
+  [dir="rtl"] .treasury-hero.is-traffic-empty::after { --scan-travel: -520%; }
 
   .treasury-hero.is-traffic-empty .treasury-hero-glow { background: rgba(255, 68, 61, 0.2); }
   .treasury-hero.is-traffic-empty .treasury-shield {
@@ -2169,7 +2185,9 @@
 @keyframes treasury-empty-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--destructive) 30%, transparent); } 70% { box-shadow: 0 0 0 14px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 @keyframes treasury-empty-border { 0%, 100% { box-shadow: var(--shadow); } 50% { box-shadow: var(--shadow), 0 0 0 3px color-mix(in srgb, var(--destructive) 8%, transparent); } }
 @keyframes treasury-hero-danger { 0%, 100% { filter: saturate(1); } 50% { filter: saturate(1.13) brightness(1.025); } }
-@keyframes treasury-danger-scan { 0% { inset-inline-start: -42%; opacity: 0; } 18% { opacity: 1; } 74% { opacity: 0.7; } 100% { inset-inline-start: 125%; opacity: 0; } }
+/* جابه‌جایی با transform (نه inset-inline-start): انیمیشن ویژگی‌های چیدمان
+   در هر فریم یک layout shift ثبت می‌کرد و CLS را به ۰٫۳۹ می‌رساند. */
+@keyframes treasury-danger-scan { 0% { transform: translateX(0) rotate(14deg); opacity: 0; } 18% { opacity: 1; } 74% { opacity: 0.7; } 100% { transform: translateX(var(--scan-travel, 520%)) rotate(14deg); opacity: 0; } }
 @keyframes treasury-danger-icon { 0% { box-shadow: 0 0 0 0 rgba(255, 92, 84, 0.28), inset 0 0 0 3px rgba(255, 133, 124, 0.08); } 75% { box-shadow: 0 0 0 14px transparent, inset 0 0 0 3px rgba(255, 133, 124, 0.08); } 100% { box-shadow: 0 0 0 0 transparent, inset 0 0 0 3px rgba(255, 133, 124, 0.08); } }
 @keyframes treasury-danger-ring { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.025); } }
 
@@ -2643,6 +2661,16 @@
     min-height: var(--tap-min);
   }
 
+  /* ردیف چیپ/فیلتر افقی: در موبایل یک ردیف اسکرولی (بدون شکستن به دو خط) */
+  .ios-scroll-row {
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    scroll-padding-inline: 0.25rem;
+  }
+
+  .ios-scroll-row::-webkit-scrollbar { display: none; }
+
   /* حلقهٔ فوکوس یکدست (فقط برای عناصری که استایل فوکوس اختصاصی ندارند) */
   .ui-focus:focus-visible {
     outline: var(--focus-width) solid var(--ring);
@@ -2650,3 +2678,12 @@
   }
 /* <<< UI_TOKENS_COMPONENTS_END <<< */
 }
+
+/* >>> UI_TOKENS_OVERRIDES_START >>> */
+/* قواعد این بخش عمداً داخل هیچ @layer نیستند: ابزارهای Tailwind در لایهٔ
+   `utilities` قرار می‌گیرند و لایه‌های بعدی بر قبلی‌ها غلبه می‌کنند، پس قاعدهٔ
+   رنگی که داخل @layer components بنویسیم روی `text-primary` اثر نمی‌کند. */
+footer .text-primary {
+  color: var(--primary-text);
+}
+/* <<< UI_TOKENS_OVERRIDES_END <<< */

@@ -85,7 +85,7 @@ export const FaqGuide = memo(() => {
             </p>
           </div>
         </div>
-        <span className="hidden sm:inline-flex items-center gap-1 text-micro font-semibold text-primary bg-primary/10 px-2.5 py-1 rounded-full">
+        <span className="hidden sm:inline-flex items-center gap-1 text-micro font-semibold text-primary-text bg-primary/10 px-2.5 py-1 rounded-full">
           <Sparkles className="size-3" />
           {isFa ? 'اتصال ۳۰ ثانیه‌ای' : '30s Setup'}
         </span>

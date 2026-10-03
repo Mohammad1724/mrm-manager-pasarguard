@@ -347,7 +347,7 @@ if (typeof window !== 'undefined') { window.__UI_CONTRACT__ = UI_CONTRACT; }
       left:-52%;
       pointer-events:none;
       background:linear-gradient(90deg,transparent,rgba(255,255,255,.20),color-mix(in srgb,var(--treasury-gold-bright) 17%,transparent),transparent);
-      transform:rotate(14deg);
+      transform:translateX(0) rotate(14deg);
       animation:mrmAnnSweep 4.8s cubic-bezier(.3,.7,.2,1) infinite;
     }
     .mrm-special-announcement .treasury-notice-icon{
@@ -382,11 +382,13 @@ if (typeof window !== 'undefined') { window.__UI_CONTRACT__ = UI_CONTRACT; }
     #${SUPPORT_ID} .mrm-support-gem{color:var(--treasury-emerald-bright);font-size:.78rem;line-height:1}
     #${SUPPORT_ID} .mrm-support-label{max-width:128px;overflow:hidden;text-overflow:ellipsis}
     @media(max-width:560px){ #${SUPPORT_ID}{padding:.42rem .52rem}#${SUPPORT_ID} .mrm-support-value{display:none}}
+    /* جابه‌جایی با transform، نه left: انیمیشن left در هر فریم یک layout
+       shift ثبت می‌کرد (۰٫۰۸ CLS فقط از همین نوار درخشان). */
     @keyframes mrmAnnSweep{
-      0%,12%{left:-52%;opacity:0}
+      0%,12%{transform:translateX(0) rotate(14deg);opacity:0}
       22%{opacity:1}
-      58%{left:122%;opacity:.8}
-      70%,100%{left:122%;opacity:0}
+      58%{transform:translateX(458%) rotate(14deg);opacity:.8}
+      70%,100%{transform:translateX(458%) rotate(14deg);opacity:0}
     }
     @keyframes mrmAnnBreathe{
       0%,100%{transform:translateY(0);box-shadow:0 12px 38px color-mix(in srgb,var(--treasury-emerald) 12%,transparent),0 0 0 1px color-mix(in srgb,var(--treasury-gold) 8%,transparent)}

@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>__BRAND__ · {{ user.username }}</title>
+    <!-- اعلان ادمین از سرور می‌آید (پنل آن را در همین رندر دارد). اگر از پلهٔ
+         اول رندر شود، بنر بعد از بارگذاری روی صفحه نمی‌پرد؛ پیش‌تر runtime آن را
+         با تأخیر تزریق می‌کرد و کل صفحه ~۳۶۰px جابه‌جا می‌شد (CLS 0.41).
+         tojson مقادیر را برای درج امن داخل JSON اَسکیپ می‌کند. -->
+    <script id="mrm-ssr-announce" type="application/json">{"text":{{ (announce or '')|tojson }},"url":{{ (announce_url or '')|tojson }}}</script>
   </head>
   <body>
     <div id="root"></div>

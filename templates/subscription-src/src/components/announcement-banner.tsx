@@ -42,7 +42,7 @@ export const AnnouncementBanner = memo(({ message, url }: AnnouncementBannerProp
       </div>
 
       <div className="min-w-0 flex-1">
-        <div className="text-micro font-semibold text-primary">اعلان مهم</div>
+        <div className="text-micro font-semibold text-primary-text">اعلان مهم</div>
         <p className="mt-0.5 text-micro sm:text-body font-medium leading-relaxed text-foreground whitespace-pre-line break-words">
           {message}
         </p>
@@ -51,7 +51,7 @@ export const AnnouncementBanner = memo(({ message, url }: AnnouncementBannerProp
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="ui-tap-row mt-2 inline-flex items-center gap-1 text-micro font-bold text-primary hover:underline"
+            className="ui-tap-row mt-2 inline-flex items-center gap-1 text-micro font-bold text-primary-text hover:underline"
           >
             <span>مشاهده اطلاعات تکمیلی</span>
             <ExternalLink className="size-3" />

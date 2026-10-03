@@ -12,6 +12,7 @@
      ROOT        → متغیرهای خام CSS داخل `:root`      (مقادیر مرجع)
      THEME       → همان مقادیر با نام‌های Tailwind v4 داخل `@theme inline`
      COMPONENTS  → کلاس‌های مشترک (هدف لمس / فوکوس) داخل `@layer components`
+     OVERRIDES   → چند قاعدهٔ استثنا، «بدون لایه» تا بر utilities غلبه کند
 
    قاعده: مقدار هر توکن فقط در بخش ROOT تعریف می‌شود؛ THEME فقط ارجاع می‌دهد.
    ════════════════════════════════════════════════════════════════════════════ */
@@ -29,6 +30,14 @@
   --fs-heading: 1.375rem;   /* 22px — عنوان بخش */
   --fs-display: 1.75rem;    /* 28px — عدد شاخص */
   --fs-hero: 2.25rem;       /* 36px — تنها عدد اصلی صفحه */
+
+  /* ── رنگ برند برای «متن» (نه سطح) ────────────────────────────────────
+     رنگ اصلی برند (#0E8F8A) روی سفید نسبت ۳٫۹۵ دارد و برای متن زیر ۲۴px
+     حد AA (۴٫۵) را رد نمی‌کند. این توکن همان رنگ را در تم روشن ۲۲٪ به سمت
+     متنِ پیش‌فرض می‌برد (روی سفید ۵٫۲۳ و روی بدنه ۴٫۶۶) و در تم تیره هم
+     خودکار روشن‌ترش می‌کند. چون با var() ساخته شده، اگر ادمین رنگ برند را
+     در پنل عوض کند، این هم دنبالش می‌آید. */
+  --primary-text: color-mix(in srgb, var(--primary) 78%, var(--foreground) 22%);
 
   /* ── ارتفاع خط (فارسی بازتر از لاتین خوانده می‌شود) ─────────────────── */
   --lh-tight: 1.15;         /* عددهای نمایشی */
@@ -76,6 +85,9 @@
   --text-display--line-height: var(--lh-tight);
   --text-hero: var(--fs-hero);
   --text-hero--line-height: var(--lh-tight);
+
+  /* متن برند با کنتراست AA → text-primary-text */
+  --color-primary-text: var(--primary-text);
 
   /* هدف لمس: min-h-tap، size-tap، gap-tap، min-h-tap-comfort … */
   --spacing-tap: var(--tap-min);
@@ -125,9 +137,28 @@
     min-height: var(--tap-min);
   }
 
+  /* ردیف چیپ/فیلتر افقی: در موبایل یک ردیف اسکرولی (بدون شکستن به دو خط) */
+  .ios-scroll-row {
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    scroll-padding-inline: 0.25rem;
+  }
+
+  .ios-scroll-row::-webkit-scrollbar { display: none; }
+
   /* حلقهٔ فوکوس یکدست (فقط برای عناصری که استایل فوکوس اختصاصی ندارند) */
   .ui-focus:focus-visible {
     outline: var(--focus-width) solid var(--ring);
     outline-offset: var(--focus-offset);
   }
 /* <<< SECTION: COMPONENTS <<< */
+
+/* >>> SECTION: OVERRIDES >>> */
+/* قواعد این بخش عمداً داخل هیچ @layer نیستند: ابزارهای Tailwind در لایهٔ
+   `utilities` قرار می‌گیرند و لایه‌های بعدی بر قبلی‌ها غلبه می‌کنند، پس قاعدهٔ
+   رنگی که داخل @layer components بنویسیم روی `text-primary` اثر نمی‌کند. */
+footer .text-primary {
+  color: var(--primary-text);
+}
+/* <<< SECTION: OVERRIDES <<< */

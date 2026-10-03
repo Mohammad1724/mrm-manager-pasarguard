@@ -5,9 +5,6 @@ import {
   AlertTriangle,
   RefreshCcw,
   CalendarDays,
-  Database,
-  ArrowDownToLine,
-  Clock,
   ChevronDown,
   Copy,
   Check,
@@ -136,8 +133,8 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
   }, [user.expire, isFa, locale, t]);
 
   // SVG Gauge Calculations
-  const radius = 78;
-  const stroke = 12;
+  const radius = 66;
+  const stroke = 11;
   const normalizedRadius = radius - stroke * 2;
   const circumference = normalizedRadius * 2 * Math.PI;
   // Semi-arc or 270 degree arc
@@ -160,34 +157,34 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
       />
 
       {/* Top Bar: Identity & Status Pill & Refresh */}
-      <div className="relative z-10 flex flex-wrap items-center justify-between gap-3 border-b border-border/50 pb-4">
-        <div className="flex items-center gap-3">
-          <div className="flex size-11 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-inner">
+      <div className="relative z-10 flex flex-nowrap items-center justify-between gap-2 border-b border-border/50 pb-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-inner">
             {isDepleted ? (
               <AlertTriangle className="size-6 text-rose-500 animate-bounce" />
             ) : (
               <ShieldCheck className="size-6 text-primary" />
             )}
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-foreground text-lead tracking-tight" dir="ltr">
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate font-bold text-foreground text-lead tracking-tight" dir="ltr">
                 {user.username}
               </span>
               <OnlineBadge lastOnline={user.online_at} />
             </div>
-            <p className="text-micro text-muted-foreground flex items-center gap-1 mt-0.5">
-              <Sparkles className="size-3 text-primary" />
+            <p className="text-micro text-muted-foreground flex items-center gap-1 mt-0.5 truncate">
+              <Sparkles className="size-3 shrink-0 text-primary" />
               {isFa ? 'اشتراک فعال پاسارگارد' : 'PasarGuard Active Service'}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5">
           {/* Status Pill */}
           <div
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-micro font-semibold shadow-xs',
+              'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-micro font-semibold shadow-xs',
               statusConfig.bg
             )}
           >
@@ -209,7 +206,7 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
       </div>
 
       {/* Core Centerpiece: Circular Remaining Gauge + Dynamic Numbers */}
-      <div className="relative z-10 my-6 flex flex-col md:flex-row items-center justify-between gap-6">
+      <div className="relative z-10 my-4 flex flex-row items-center gap-4">
         {/* Left / Center: Circular Progress Widget */}
         <div className="relative flex shrink-0 items-center justify-center">
           <svg
@@ -262,12 +259,12 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
         </div>
 
         {/* Right / Center Stats Highlight */}
-        <div className="flex flex-1 flex-col items-center md:items-start text-center md:text-right gap-2">
+        <div className="flex min-w-0 flex-1 flex-col items-start text-start gap-1.5">
           <div className="text-micro font-semibold uppercase tracking-wider text-muted-foreground">
             {isFa ? 'میزان ترافیک قابل استفاده' : 'Available Traffic'}
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-display sm:text-hero font-extrabold tracking-tight text-foreground" dir="ltr">
+            <span className="text-display font-extrabold tracking-tight text-foreground" dir="ltr">
               {limitBytes ? formatBytes(remainingBytes) : isFa ? 'نامحدود' : 'Unlimited'}
             </span>
             {limitBytes > 0 && (
@@ -278,7 +275,7 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
           </div>
 
           {/* Expiry Pill */}
-          <div className="mt-1 flex flex-wrap items-center justify-center md:justify-start gap-2">
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
             <div
               className={cn(
                 'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-micro font-medium',
@@ -307,51 +304,47 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
         </div>
       </div>
 
-      {/* 4 Bento Metrics Grid */}
-      <div className="relative z-10 grid grid-cols-2 lg:grid-cols-4 gap-2.5 my-5">
-        <div className="rounded-2xl border border-border/60 bg-background/50 p-3 shadow-xs">
-          <div className="flex items-center gap-1.5 text-micro text-muted-foreground">
-            <Database className="size-3.5 text-primary" />
-            <span>{isFa ? 'حجم کل بسته' : t('userInfo.totalLimit', 'Total Limit')}</span>
+      {/* Compact Details Strip: four key numbers on one row (mobile included) */}
+      <div className="relative z-10 grid grid-cols-4 gap-1.5 my-4">
+        <div className="min-w-0 rounded-xl border border-border/60 bg-background/50 px-2 py-1.5 shadow-xs">
+          <div className="truncate text-micro text-muted-foreground">
+            {isFa ? 'حجم کل بسته' : t('userInfo.totalLimit', 'Total Limit')}
           </div>
-          <div className="mt-1.5 text-body sm:text-lead font-bold text-foreground" dir="ltr">
+          <div className="truncate text-body font-bold text-foreground" dir="ltr">
             {limitBytes ? formatBytes(limitBytes) : isFa ? 'نامحدود' : 'Unlimited'}
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border/60 bg-background/50 p-3 shadow-xs">
-          <div className="flex items-center gap-1.5 text-micro text-muted-foreground">
-            <ArrowDownToLine className="size-3.5 text-amber-500" />
-            <span>{isFa ? 'مصرف‌شده' : t('userInfo.usedTraffic', 'Used Traffic')}</span>
+        <div className="min-w-0 rounded-xl border border-border/60 bg-background/50 px-2 py-1.5 shadow-xs">
+          <div className="truncate text-micro text-muted-foreground">
+            {isFa ? 'مصرف‌شده' : t('userInfo.usedTraffic', 'Used Traffic')}
           </div>
-          <div className="mt-1.5 text-body sm:text-lead font-bold text-foreground" dir="ltr">
+          <div className="truncate text-body font-bold text-foreground" dir="ltr">
             {formatBytes(usedBytes)}
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border/60 bg-background/50 p-3 shadow-xs">
-          <div className="flex items-center gap-1.5 text-micro text-muted-foreground">
-            <Clock className="size-3.5 text-sky-500" />
-            <span>{isFa ? 'تاریخ انقضا' : t('userInfo.expiryDate', 'Expires')}</span>
+        <div className="min-w-0 rounded-xl border border-border/60 bg-background/50 px-2 py-1.5 shadow-xs">
+          <div className="truncate text-micro text-muted-foreground">
+            {isFa ? 'تاریخ انقضا' : t('userInfo.expiryDate', 'Expires')}
           </div>
-          <div className="mt-1.5 text-micro sm:text-body font-semibold text-foreground truncate" title={expiryLabel}>
+          <div className="truncate text-caption font-semibold text-foreground" title={expiryLabel}>
             {expiryLabel}
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border/60 bg-background/50 p-3 shadow-xs">
-          <div className="flex items-center gap-1.5 text-micro text-muted-foreground">
-            <Sparkles className="size-3.5 text-violet-500" />
-            <span>{isFa ? 'مصرف کل دوره' : t('userInfo.lifetimeTraffic', 'Lifetime')}</span>
+        <div className="min-w-0 rounded-xl border border-border/60 bg-background/50 px-2 py-1.5 shadow-xs">
+          <div className="truncate text-micro text-muted-foreground">
+            {isFa ? 'مصرف کل دوره' : t('userInfo.lifetimeTraffic', 'Lifetime')}
           </div>
-          <div className="mt-1.5 text-body sm:text-lead font-bold text-foreground" dir="ltr">
+          <div className="truncate text-body font-bold text-foreground" dir="ltr">
             {formatBytes(user.lifetime_used_traffic || usedBytes)}
           </div>
         </div>
       </div>
 
       {/* Action Strip: Quick Connect & Secondary Actions */}
-      <div className="relative z-10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-2 border-t border-border/40">
+      <div className="relative z-10 flex flex-wrap items-center gap-2 pt-3 border-t border-border/40">
         <div className="w-full sm:w-auto sm:flex-1 max-w-sm">
           <QuickConnect variant="hero" />
         </div>

@@ -34,8 +34,8 @@ src_path = Path(sys.argv[1])
 targets = [Path(p) for p in sys.argv[2:4]]
 check = sys.argv[4] == "1"
 
-SECTIONS = ("ROOT", "THEME", "COMPONENTS")
-LABEL = {"ROOT": "متغیرهای پایه", "THEME": "توکن‌های Tailwind", "COMPONENTS": "کلاس‌های مشترک"}
+SECTIONS = ("ROOT", "THEME", "COMPONENTS", "OVERRIDES")
+LABEL = {"ROOT": "متغیرهای پایه", "THEME": "توکن‌های Tailwind", "COMPONENTS": "کلاس‌های مشترک", "OVERRIDES": "استثناهای بدون لایه"}
 
 src = src_path.read_text(encoding="utf-8")
 sections = {}
@@ -94,8 +94,10 @@ def inject(text, name, body):
         out = insert_before_block_close(text, r"^@theme inline \{", block)
     elif name == "ROOT":
         out = insert_before_block_close(text, r"^:root \{", block)
-    else:
+    elif name == "COMPONENTS":
         out = text.rstrip("\n") + f"\n\n@layer components {{\n{block}\n}}\n"
+    else:  # OVERRIDES — بدون لایه، ته فایل
+        out = text.rstrip("\n") + f"\n\n{block}\n"
     if out is None:
         raise SystemExit(f"✘ لنگر تزریق برای بخش {name} پیدا نشد")
     return out
