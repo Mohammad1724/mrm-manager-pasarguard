@@ -1791,6 +1791,93 @@ fi
 
 echo ""
 
+# ─── Test Group 16: UI contract & design core ────────────────────────────────
+# (قرارداد DOM↔runtime و هستهٔ مشترک طراحی — جلوگیری از بازگشت «شکست بی‌صدا»)
+echo "📋 Group 16: UI contract & design core"
+echo ""
+
+# 16.1: فایل‌های هستهٔ مشترک موجودند
+for core in "shared/ui-contract.js" "shared/design-tokens.css" "shared/sync-contract.sh" "shared/sync-tokens.sh"; do
+    if [ -f "$PROJECT_DIR/$core" ]; then
+        pass "shared core present: $core"
+    else
+        fail "shared core missing: $core"
+    fi
+done
+
+# 16.2: قرارداد در runtime تزریق شده و هر دو قالب روی یک نسخه‌اند
+if bash "$PROJECT_DIR/shared/sync-contract.sh" --check >/dev/null 2>&1; then
+    pass "DOM contract injected into runtime (versions in sync)"
+else
+    fail "DOM contract drifted — run: bash shared/sync-contract.sh"
+fi
+
+# 16.3: هستهٔ طراحی در CSS هر دو قالب همگام است
+if bash "$PROJECT_DIR/shared/sync-tokens.sh" --check >/dev/null 2>&1; then
+    pass "design core injected into template CSS (versions in sync)"
+else
+    fail "design core drifted — run: bash shared/sync-tokens.sh"
+fi
+
+# 16.4: هر ۱۴ نام قرارداد واقعاً در HTML منتشرشده وجود دارد
+#       (اگر runtime به نشانگری وصل باشد که در DOM نیست، تنظیم ادمین بی‌صدا بی‌اثر می‌شود)
+SUB_HTML="$PROJECT_DIR/templates/subscription/index.html"
+missing=""
+for name in brand brand-box nav header-actions support announcement configs config-row config-protocol \
+            wireguard quick-connect ping apps section-title; do
+    { grep -qF "data-ui=\"$name\"" "$SUB_HTML" || grep -qF "\"data-ui\":\"$name\"" "$SUB_HTML"; } || missing="$missing $name"
+done
+if [ -z "$missing" ]; then
+    pass "all 14 data-ui markers present in published subscription template"
+else
+    fail "data-ui markers missing from published template:$missing"
+fi
+
+# 16.5: جانگهدار __BRAND__ برای مرحلهٔ theme.sh --redeploy حفظ شده
+if grep -qF '__BRAND__' "$SUB_HTML"; then
+    pass "__BRAND__ deploy placeholder preserved for theme.sh --redeploy"
+else
+    fail "__BRAND__ placeholder lost — theme.sh --redeploy can no longer brand the page"
+fi
+
+# 16.6: و نگهبان runtime که توکن خام را به صفحه نمی‌رساند
+if grep -qF 'deTokenizeBrand' "$PROJECT_DIR/plugin/mrm-runtime.js"; then
+    pass "runtime de-tokenizes raw __XXX__ placeholders (no raw token on screen)"
+else
+    fail "runtime lacks the raw-placeholder guard (deTokenizeBrand)"
+fi
+
+# 16.7: توکن‌های هستهٔ طراحی واقعاً به خروجی نهایی می‌رسند
+if grep -q -- '--tap-min' "$SUB_HTML" && grep -q -- '--fs-micro' "$SUB_HTML"; then
+    pass "design tokens (--tap-min, --fs-micro) present in published bundle"
+else
+    fail "design tokens missing from the built template — CSS layer did not ship"
+fi
+
+# 16.8: کف هدف لمس ۴۴px در خروجی وجود دارد
+if grep -qF 'min-height:var(--tap-min)' "$SUB_HTML" || grep -qF 'min-height: var(--tap-min)' "$SUB_HTML"; then
+    pass "44px touch-target floor present in published CSS"
+else
+    fail "touch-target floor rule missing from published CSS"
+fi
+
+# 16.9: هیچ اندازهٔ متنی زیر ۱۲px در CSS قالب نماند (مقیاس تایپوگرافی)
+SMALL=$(grep -oE 'font-size: 0\.[0-6][0-9]*rem' "$PROJECT_DIR/templates/subscription-src/src/index.css" | head -1 || true)
+if [ -z "$SMALL" ]; then
+    pass "no sub-12px font size left in template CSS (type scale floor)"
+else
+    fail "sub-12px font size found in template CSS: $SMALL"
+fi
+
+# 16.10: کلاس‌های UI مشترک (حداقل هدف لمس) در خروجی هستند
+if grep -qF '.ui-tap{' "$SUB_HTML" || grep -qF '.ui-tap {' "$SUB_HTML"; then
+    pass "shared touch-target utility (.ui-tap) shipped"
+else
+    fail "shared .ui-tap utility missing from published bundle"
+fi
+
+echo ""
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 echo "═══════════════════════════════════════════════════════════"
 echo "  Test Results"

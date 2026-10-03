@@ -61,7 +61,38 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-}
+
+/* >>> UI_TOKENS_THEME_START >>> */
+  /* نوع: text-micro … text-hero (ارتفاع خط همراه، تا هرجا از آن استفاده شد
+     خودکار اعمال شود) */
+  --text-micro: var(--fs-micro);
+  --text-micro--line-height: var(--lh-relaxed);
+  --text-caption: var(--fs-caption);
+  --text-caption--line-height: var(--lh-relaxed);
+  --text-body: var(--fs-body);
+  --text-body--line-height: var(--lh-loose);
+  --text-lead: var(--fs-lead);
+  --text-lead--line-height: var(--lh-loose);
+  --text-title: var(--fs-title);
+  --text-title--line-height: var(--lh-normal);
+  --text-heading: var(--fs-heading);
+  --text-heading--line-height: var(--lh-snug);
+  --text-display: var(--fs-display);
+  --text-display--line-height: var(--lh-tight);
+  --text-hero: var(--fs-hero);
+  --text-hero--line-height: var(--lh-tight);
+
+  /* هدف لمس: min-h-tap، size-tap، gap-tap، min-h-tap-comfort … */
+  --spacing-tap: var(--tap-min);
+  --spacing-tap-comfort: var(--tap-comfort);
+  --spacing-icon-sm: var(--icon-sm);
+  --spacing-icon: var(--icon);
+  --spacing-icon-lg: var(--icon-lg);
+
+  /* حرکت: ease-standard / ease-emphasized */
+  --ease-standard: var(--motion-ease-standard);
+  --ease-emphasized: var(--motion-ease-emphasized);
+/* <<< UI_TOKENS_THEME_END <<< */}
 
 :root {
   color-scheme: light;
@@ -98,7 +129,47 @@
   --chart-3: #59E0D8;
   --chart-4: #0B6E6A;
   --chart-5: #8FC7C4;
-}
+
+/* >>> UI_TOKENS_ROOT_START >>> */
+  /* ── مقیاس تایپوگرافی: ۸ پله، کف ۱۲px ─────────────────────────────────
+     پیش از این هر قالب تا ۳۰ اندازهٔ متفاوت داشت (۰٫۶rem تا ۲rem) که هم
+     ناهماهنگ بود و هم ۲۵ عنصر زیر ۱۲px داشت. هر اندازهٔ متنی باید یکی از
+     این ۸ پله باشد؛ مقدار خارج از مقیاس = بدهی طراحی. */
+  --fs-micro: 0.75rem;      /* 12px — ریزترین متن مجاز: برچسب، چیپ، نشان */
+  --fs-caption: 0.8125rem;  /* 13px — توضیح، فراداده، زمان */
+  --fs-body: 0.875rem;      /* 14px — متن پیش‌فرض بدنه */
+  --fs-lead: 1rem;          /* 16px — متن تأکیدی، مقدار ورودی */
+  --fs-title: 1.125rem;     /* 18px — عنوان کارت */
+  --fs-heading: 1.375rem;   /* 22px — عنوان بخش */
+  --fs-display: 1.75rem;    /* 28px — عدد شاخص */
+  --fs-hero: 2.25rem;       /* 36px — تنها عدد اصلی صفحه */
+
+  /* ── ارتفاع خط (فارسی بازتر از لاتین خوانده می‌شود) ─────────────────── */
+  --lh-tight: 1.15;         /* عددهای نمایشی */
+  --lh-snug: 1.3;           /* عنوان بخش */
+  --lh-normal: 1.45;        /* عنوان کارت */
+  --lh-relaxed: 1.55;       /* ریز متن / فراداده */
+  --lh-loose: 1.65;         /* متن بدنه — فارسي بازتر خوانده می‌شود */
+
+  /* ── هدف لمس (WCAG 2.5.8 AA) ─────────────────────────────────────────
+     ۴۴px کف مطلق برای هر عنصر تعاملی است؛ استثنا فقط پیوندهای درون‌متنی. */
+  --tap-min: 2.75rem;       /* 44px — کف مطلق */
+  --tap-comfort: 3rem;      /* 48px — کنش اصلی */
+  --icon-sm: 1.125rem;      /* 18px — اندازهٔ خودِ آیکون، نه هدف لمس */
+  --icon: 1.25rem;          /* 20px */
+  --icon-lg: 1.5rem;        /* 24px */
+
+  /* ── حرکت ──────────────────────────────────────────────────────────── */
+  --motion-dur-fast: 120ms;
+  --motion-dur-base: 200ms;
+  --motion-dur-slow: 320ms;
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* ── فوکوس (یکدست در هر دو قالب) ───────────────────────────────────── */
+  --focus-width: 2px;
+  --focus-offset: 2px;
+/* <<< UI_TOKENS_ROOT_END <<< */}
 
 .dark {
   color-scheme: dark;
@@ -181,7 +252,7 @@
   }
   .ios-large-title {
     margin-top: 0.05rem;
-    font-size: clamp(1.65rem, 5vw, 2.15rem);
+    font-size: clamp(var(--fs-display), 5vw, var(--fs-hero));
     font-weight: 720;
     line-height: 1.08;
     letter-spacing: -0.035em;
@@ -189,7 +260,7 @@
   html[lang="fa"] .ios-large-title { letter-spacing: -0.02em; }
   .ios-eyebrow {
     color: var(--primary);
-    font-size: 0.68rem;
+    font-size: var(--fs-micro);
     font-weight: 700;
     line-height: 1.25;
     letter-spacing: 0.08em;
@@ -260,7 +331,7 @@
     min-height: 32px;
     align-items: center;
     color: var(--primary);
-    font-size: 0.875rem;
+    font-size: var(--fs-body);
     font-weight: 650;
     text-decoration: none;
   }
@@ -280,7 +351,7 @@
   .ios-hero-card.status-info::before { background: var(--info); }
   .ios-hero-card.status-neutral::before { background: var(--muted-foreground); }
   .ios-hero-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding-inline-start: 0.25rem; }
-  .ios-status-pill { display: inline-flex; min-height: 30px; align-items: center; gap: 0.45rem; margin-top: 0.3rem; font-size: 0.9rem; font-weight: 680; }
+  .ios-status-pill { display: inline-flex; min-height: 30px; align-items: center; gap: 0.45rem; margin-top: 0.3rem; font-size: var(--fs-body); font-weight: 680; }
   .ios-usage-layout {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
@@ -309,8 +380,8 @@
     content: "";
   }
   .ios-progress-center { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; }
-  .ios-progress-center strong { font-size: clamp(1.45rem, 5vw, 2rem); line-height: 1.05; letter-spacing: -0.04em; }
-  .ios-progress-center span { margin-top: 0.2rem; color: var(--muted-foreground); font-size: 0.72rem; font-weight: 580; }
+  .ios-progress-center strong { font-size: clamp(var(--fs-heading), 5vw, var(--fs-display)); line-height: 1.05; letter-spacing: -0.04em; }
+  .ios-progress-center span { margin-top: 0.2rem; color: var(--muted-foreground); font-size: var(--fs-micro); font-weight: 580; }
   .ios-metrics-list { min-width: 0; border-radius: 0.8rem; background: color-mix(in srgb, var(--muted) 58%, transparent); padding-inline: 0.85rem; }
   .ios-metric-row {
     display: flex;
@@ -319,7 +390,7 @@
     justify-content: space-between;
     gap: 1rem;
     border-bottom: 0.5px solid var(--separator);
-    font-size: 0.875rem;
+    font-size: var(--fs-body);
   }
   .ios-metric-row:last-child { border-bottom: 0; }
   .ios-metric-row span { color: var(--muted-foreground); }
@@ -332,20 +403,20 @@
     overflow: hidden;
     margin-top: 0.25rem;
     color: var(--foreground);
-    font-size: clamp(0.9rem, 2.8vw, 1.08rem);
+    font-size: clamp(var(--fs-body), 2.8vw, var(--fs-lead));
     font-weight: 680;
     line-height: 1.25;
     letter-spacing: -0.015em;
     text-overflow: ellipsis;
   }
   .ios-section-heading { padding: 0.4rem 0.25rem 0; }
-  .ios-section-heading h2, .page-section-title { color: var(--foreground); font-size: 1.2rem; font-weight: 710; line-height: 1.25; letter-spacing: -0.025em; }
-  .page-label { color: var(--muted-foreground); font-size: 0.78rem; font-weight: 540; line-height: 1.4; }
-  .page-value { color: var(--foreground); font-size: 0.98rem; font-weight: 650; }
-  .page-metric-value { color: var(--foreground); font-size: 1.2rem; font-weight: 700; letter-spacing: -0.025em; }
-  .page-item-title { color: var(--foreground); font-size: 0.9rem; font-weight: 590; line-height: 1.35; }
-  .page-meta { color: var(--muted-foreground); font-size: 0.82rem; line-height: 1.55; }
-  .page-badge { font-size: 0.66rem; font-weight: 720; letter-spacing: 0.04em; text-transform: uppercase; }
+  .ios-section-heading h2, .page-section-title { color: var(--foreground); font-size: var(--fs-title); font-weight: 710; line-height: 1.25; letter-spacing: -0.025em; }
+  .page-label { color: var(--muted-foreground); font-size: var(--fs-micro); font-weight: 540; line-height: 1.4; }
+  .page-value { color: var(--foreground); font-size: var(--fs-lead); font-weight: 650; }
+  .page-metric-value { color: var(--foreground); font-size: var(--fs-title); font-weight: 700; letter-spacing: -0.025em; }
+  .page-item-title { color: var(--foreground); font-size: var(--fs-body); font-weight: 590; line-height: 1.35; }
+  .page-meta { color: var(--muted-foreground); font-size: var(--fs-caption); line-height: 1.55; }
+  .page-badge { font-size: var(--fs-micro); font-weight: 720; letter-spacing: 0.04em; text-transform: uppercase; }
   .ios-primary-button {
     display: inline-flex;
     min-height: 44px;
@@ -358,7 +429,7 @@
     padding: 0.65rem 1rem;
     color: var(--primary-foreground);
     background: var(--primary);
-    font-size: 0.9rem;
+    font-size: var(--fs-body);
     font-weight: 650;
     transition: transform 140ms ease, filter 140ms ease;
   }
@@ -377,7 +448,7 @@
   }
   .ios-loading-card { width: auto; flex-direction: row; padding: 0.8rem 1rem; }
   .ios-spinner { width: 18px; height: 18px; border: 2px solid var(--muted); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.75s linear infinite; }
-  .ios-error-symbol { display: grid; width: 48px; height: 48px; place-items: center; border-radius: 50%; color: white; background: var(--destructive); font-size: 1.45rem; font-weight: 720; }
+  .ios-error-symbol { display: grid; width: 48px; height: 48px; place-items: center; border-radius: 50%; color: white; background: var(--destructive); font-size: var(--fs-heading); font-weight: 720; }
 
   [data-slot="card"] { gap: 1rem; overflow: hidden; border-radius: 1.15rem; padding-block: 1rem; }
   [data-slot="card-header"] { padding-inline: 1rem; }
@@ -974,7 +1045,7 @@
     padding: 0.45rem 0.85rem;
     color: var(--primary-foreground);
     background: var(--primary);
-    font-size: 0.78rem;
+    font-size: var(--fs-micro);
     font-weight: 650;
     transition: transform 140ms ease, filter 140ms ease;
   }
@@ -1014,7 +1085,7 @@
     padding-inline: 0.35rem;
     color: var(--primary-foreground);
     background: var(--primary);
-    font-size: 0.62rem;
+    font-size: var(--fs-micro);
     font-weight: 760;
     letter-spacing: 0.035em;
     text-transform: uppercase;
@@ -1022,8 +1093,8 @@
 
   .ios-row-action {
     display: inline-flex;
-    width: 38px;
-    height: 38px;
+    width: var(--tap-min);
+    height: var(--tap-min);
     cursor: pointer;
     align-items: center;
     justify-content: center;
@@ -1062,7 +1133,7 @@
     padding-inline: 0.65rem;
     color: var(--muted-foreground);
     background: transparent;
-    font-size: 0.75rem;
+    font-size: var(--fs-micro);
     font-weight: 610;
     transition: color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
   }
@@ -1105,7 +1176,7 @@
     padding-inline: 0.45rem;
     color: var(--primary);
     background: var(--primary-soft);
-    font-size: 0.62rem;
+    font-size: var(--fs-micro);
     font-weight: 680;
   }
 
@@ -1138,7 +1209,7 @@
     padding-inline: 0.65rem;
     color: var(--foreground);
     background: var(--material-strong);
-    font-size: 0.76rem;
+    font-size: var(--fs-micro);
     font-weight: 600;
     text-decoration: none;
   }
@@ -1229,7 +1300,7 @@
     align-items: center;
     gap: 0.55rem;
     color: var(--treasury-emerald);
-    font-size: 1rem;
+    font-size: var(--fs-lead);
     font-weight: 780;
     letter-spacing: 0.02em;
   }
@@ -1269,7 +1340,7 @@
   .treasury-titlebar h1 {
     margin-top: 0.25rem;
     color: var(--foreground);
-    font-size: clamp(2rem, 8vw, 3.35rem);
+    font-size: clamp(var(--fs-display), 8vw, var(--fs-hero));
     font-weight: 780;
     line-height: 1.05;
     letter-spacing: -0.055em;
@@ -1282,7 +1353,7 @@
     align-items: center;
     gap: 0.35rem;
     color: var(--primary);
-    font-size: 0.73rem;
+    font-size: var(--fs-micro);
     font-weight: 730;
   }
 
@@ -1293,7 +1364,7 @@
     gap: 0.4rem;
     margin-top: 0.55rem;
     color: var(--muted-foreground);
-    font-size: 0.78rem;
+    font-size: var(--fs-micro);
     font-weight: 580;
   }
 
@@ -1447,7 +1518,7 @@
     display: flex;
     align-items: center;
     gap: 0.55rem;
-    font-size: clamp(1.4rem, 5vw, 2rem);
+    font-size: clamp(var(--fs-heading), 5vw, var(--fs-display));
     font-weight: 760;
     line-height: 1.1;
   }
@@ -1455,7 +1526,7 @@
   .treasury-hero-copy > p {
     margin-top: 0.55rem;
     color: color-mix(in srgb, var(--treasury-emerald-foreground) 70%, transparent);
-    font-size: 0.82rem;
+    font-size: var(--fs-caption);
     line-height: 1.55;
   }
 
@@ -1473,7 +1544,7 @@
     color: var(--treasury-gold-foreground);
     background: linear-gradient(135deg, var(--treasury-gold-bright), var(--treasury-gold) 64%, color-mix(in srgb, var(--treasury-gold) 78%, #000));
     box-shadow: 0 12px 30px color-mix(in srgb, var(--treasury-gold) 30%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.65);
-    font-size: 0.9rem;
+    font-size: var(--fs-body);
     font-weight: 760;
     transition: transform 160ms ease, filter 160ms ease;
   }
@@ -1538,7 +1609,7 @@
 
   .treasury-orbit-center strong {
     color: var(--treasury-gold-bright);
-    font-size: clamp(2rem, 7vw, 3.2rem);
+    font-size: clamp(var(--fs-display), 7vw, var(--fs-hero));
     font-weight: 790;
     letter-spacing: -0.06em;
     line-height: 1;
@@ -1546,7 +1617,7 @@
   }
 
   .treasury-orbit-center small { margin-inline-start: 0.12rem; font-size: 0.42em; }
-  .treasury-orbit-center span { margin-top: 0.35rem; color: color-mix(in srgb, var(--treasury-emerald-foreground) 68%, transparent); font-size: 0.72rem; }
+  .treasury-orbit-center span { margin-top: 0.35rem; color: color-mix(in srgb, var(--treasury-emerald-foreground) 68%, transparent); font-size: var(--fs-micro); }
 
   .treasury-expiry {
     display: flex;
@@ -1554,7 +1625,7 @@
     gap: 0.4rem;
     margin-top: 1.4rem;
     color: var(--treasury-gold-bright);
-    font-size: 0.82rem;
+    font-size: var(--fs-caption);
     font-weight: 650;
   }
 
@@ -1606,8 +1677,8 @@
     text-align: center;
   }
 
-  .treasury-metric span { color: var(--muted-foreground); font-size: 0.72rem; font-weight: 570; }
-  .treasury-metric strong { margin-top: 0.45rem; color: var(--foreground); font-size: clamp(0.95rem, 3vw, 1.35rem); font-weight: 760; letter-spacing: -0.025em; }
+  .treasury-metric span { color: var(--muted-foreground); font-size: var(--fs-micro); font-weight: 570; }
+  .treasury-metric strong { margin-top: 0.45rem; color: var(--foreground); font-size: clamp(var(--fs-lead), 3vw, var(--fs-heading)); font-weight: 760; letter-spacing: -0.025em; }
   .treasury-metric.is-success strong { color: var(--success); }
 
   .treasury-filament { position: relative; height: 2px; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--treasury-gold) 72%, transparent), transparent); }
@@ -1658,8 +1729,8 @@
     background: color-mix(in srgb, var(--liquid-color) 12%, var(--card-solid));
   }
 
-  .treasury-reservoir-copy h2 { color: var(--foreground); font-size: 1rem; font-weight: 740; }
-  .treasury-reservoir-copy > strong { color: var(--liquid-color); font-size: clamp(1.35rem, 4vw, 2rem); font-weight: 790; letter-spacing: -0.04em; }
+  .treasury-reservoir-copy h2 { color: var(--foreground); font-size: var(--fs-lead); font-weight: 740; }
+  .treasury-reservoir-copy > strong { color: var(--liquid-color); font-size: clamp(var(--fs-heading), 4vw, var(--fs-display)); font-weight: 790; letter-spacing: -0.04em; }
 
   .treasury-reservoir.is-empty {
     --liquid-color: #c9342f !important;
@@ -1746,9 +1817,9 @@
     text-shadow: 0 1px 14px color-mix(in srgb, var(--card-solid) 80%, transparent);
   }
 
-  .treasury-liquid-readout strong { font-size: clamp(1.75rem, 5vw, 2.5rem); font-weight: 800; line-height: 1; letter-spacing: -0.055em; }
+  .treasury-liquid-readout strong { font-size: clamp(var(--fs-display), 5vw, var(--fs-hero)); font-weight: 800; line-height: 1; letter-spacing: -0.055em; }
   .treasury-liquid-readout small { margin-inline-start: 0.12rem; font-size: 0.45em; }
-  .treasury-liquid-readout span { margin-top: 0.3rem; font-size: 0.67rem; font-weight: 650; }
+  .treasury-liquid-readout span { margin-top: 0.3rem; font-size: var(--fs-micro); font-weight: 650; }
 
   .treasury-empty-state {
     display: flex;
@@ -1772,7 +1843,7 @@
 
   .treasury-empty-state > strong {
     color: var(--destructive);
-    font-size: 1rem;
+    font-size: var(--fs-lead);
     font-weight: 790;
     letter-spacing: 0;
   }
@@ -1797,7 +1868,7 @@
     align-items: center;
     gap: 0.55rem;
     color: var(--muted-foreground);
-    font-size: 0.62rem;
+    font-size: var(--fs-micro);
   }
 
   .treasury-reservoir-legend i {
@@ -1831,8 +1902,8 @@
     background: var(--primary-soft);
   }
 
-  .treasury-notice h2 { color: var(--foreground); font-size: 0.84rem; font-weight: 710; }
-  .treasury-notice p { margin-top: 0.12rem; color: var(--muted-foreground); font-size: 0.76rem; line-height: 1.5; }
+  .treasury-notice h2 { color: var(--foreground); font-size: var(--fs-caption); font-weight: 710; }
+  .treasury-notice p { margin-top: 0.12rem; color: var(--muted-foreground); font-size: var(--fs-micro); line-height: 1.5; }
 
   .treasury-detail-strip {
     display: grid;
@@ -1854,8 +1925,8 @@
 
   .treasury-detail-strip > div + div { border-inline-start: 0.5px solid var(--separator); }
   .treasury-detail-strip svg { grid-row: 1 / 3; color: var(--primary); }
-  .treasury-detail-strip span { color: var(--muted-foreground); font-size: 0.66rem; }
-  .treasury-detail-strip strong { overflow: hidden; color: var(--foreground); font-size: 0.76rem; font-weight: 680; text-overflow: ellipsis; white-space: nowrap; }
+  .treasury-detail-strip span { color: var(--muted-foreground); font-size: var(--fs-micro); }
+  .treasury-detail-strip strong { overflow: hidden; color: var(--foreground); font-size: var(--fs-micro); font-weight: 680; text-overflow: ellipsis; white-space: nowrap; }
 
   .treasury-content-stack { display: flex; flex-direction: column; gap: 1.4rem; margin-top: 0.6rem; }
   .treasury-content-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.25rem; }
@@ -1864,8 +1935,8 @@
   .treasury-section-title { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; padding-inline: 0.25rem; }
   .treasury-section-title > div { display: flex; align-items: center; gap: 0.55rem; }
   .treasury-section-title > div > span { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; color: var(--treasury-gold); background: var(--primary-soft); }
-  .treasury-section-title h2 { color: var(--foreground); font-size: 1.25rem; font-weight: 750; letter-spacing: -0.025em; }
-  .treasury-section-title p { color: var(--muted-foreground); font-size: 0.72rem; }
+  .treasury-section-title h2 { color: var(--foreground); font-size: var(--fs-heading); font-weight: 750; letter-spacing: -0.025em; }
+  .treasury-section-title p { color: var(--muted-foreground); font-size: var(--fs-micro); }
 
   .treasury-shell [data-slot="card"],
   .treasury-shell .ios-grouped-list,
@@ -1877,7 +1948,7 @@
 
   .treasury-shell [data-slot="card-header"] { border-color: var(--separator); }
   .treasury-shell .ios-panel-header { padding-inline: 0.25rem; }
-  .treasury-shell .page-section-title { font-size: 1.12rem; font-weight: 740; }
+  .treasury-shell .page-section-title { font-size: var(--fs-title); font-weight: 740; }
   .treasury-shell .ios-compact-button { color: var(--treasury-gold-foreground); background: linear-gradient(135deg, var(--treasury-gold-bright), var(--treasury-gold)); box-shadow: 0 8px 20px color-mix(in srgb, var(--treasury-gold) 18%, transparent); }
   .treasury-shell .ios-list-row { min-height: 64px; padding: 0.65rem 0.7rem; }
   .treasury-shell .ios-list-row-featured { background: linear-gradient(90deg, var(--primary-soft), transparent); }
@@ -1885,7 +1956,7 @@
   .treasury-shell .ios-row-action { border: 0.5px solid var(--border); color: var(--treasury-emerald); background: var(--material-strong); }
   .dark .treasury-shell .ios-row-action { color: var(--treasury-gold-bright); }
   .treasury-shell .ios-segmented-control { border-radius: 999px; padding: 4px; }
-  .treasury-shell .ios-segmented-item { min-height: 38px; border-radius: 999px; }
+  .treasury-shell .ios-segmented-item { min-height: var(--tap-min); border-radius: 999px; }
   .treasury-shell .ios-segmented-item.is-selected { color: var(--treasury-emerald-foreground); background: linear-gradient(135deg, var(--treasury-emerald-bright), var(--treasury-emerald)); box-shadow: 0 5px 16px color-mix(in srgb, var(--treasury-emerald) 20%, transparent); }
   .treasury-shell .ios-platform-icon { border-radius: 13px; }
   .treasury-shell .ios-accordion-item.is-current { border-color: color-mix(in srgb, var(--treasury-gold) 58%, var(--border)); box-shadow: 0 8px 30px color-mix(in srgb, var(--treasury-gold) 10%, transparent); }
@@ -1904,7 +1975,7 @@
 
   .treasury-chart-total span {
     color: var(--primary);
-    font-size: 0.85rem;
+    font-size: var(--fs-caption);
     font-weight: 750;
   }
 
@@ -1916,7 +1987,7 @@
     padding-inline: 0.45rem;
     color: var(--muted-foreground);
     background: var(--muted);
-    font-size: 0.58rem;
+    font-size: var(--fs-micro);
     font-weight: 720;
   }
 
@@ -1933,8 +2004,8 @@
 
   .treasury-links-heading { display: flex; min-width: 0; align-items: center; gap: 0.65rem; }
   .treasury-links-heading > span { display: grid; width: 40px; height: 40px; flex: none; place-items: center; border-radius: 14px; color: var(--treasury-gold); background: var(--primary-soft); }
-  .treasury-links-heading h2 { color: var(--foreground); font-size: 1.15rem; font-weight: 760; letter-spacing: -0.025em; }
-  .treasury-links-heading p { margin-top: 0.08rem; color: var(--muted-foreground); font-size: 0.68rem; }
+  .treasury-links-heading h2 { color: var(--foreground); font-size: var(--fs-title); font-weight: 760; letter-spacing: -0.025em; }
+  .treasury-links-heading p { margin-top: 0.08rem; color: var(--muted-foreground); font-size: var(--fs-micro); }
 
   .treasury-copy-all {
     display: inline-flex;
@@ -1949,7 +2020,7 @@
     color: var(--treasury-gold-foreground);
     background: linear-gradient(135deg, var(--treasury-gold-bright), var(--treasury-gold));
     box-shadow: 0 10px 26px color-mix(in srgb, var(--treasury-gold) 28%, transparent), 0 0 0 4px color-mix(in srgb, var(--treasury-gold) 8%, transparent), inset 0 1px 0 rgba(255,255,255,0.58);
-    font-size: 0.78rem;
+    font-size: var(--fs-micro);
     font-weight: 790;
     transition: transform 150ms ease, filter 150ms ease;
   }
@@ -1998,9 +2069,9 @@
   }
 
   .treasury-subscription-copy { min-width: 0; }
-  .treasury-subscription-copy > span { color: var(--treasury-gold-bright); font-size: 0.55rem; font-weight: 780; letter-spacing: 0.12em; }
-  .treasury-subscription-copy strong { display: block; overflow: hidden; margin-top: 0.18rem; color: var(--treasury-emerald-foreground); font-size: 0.96rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
-  .treasury-subscription-copy small { display: block; overflow: hidden; margin-top: 0.2rem; color: color-mix(in srgb, var(--treasury-emerald-foreground) 62%, transparent); font-size: 0.64rem; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+  .treasury-subscription-copy > span { color: var(--treasury-gold-bright); font-size: var(--fs-micro); font-weight: 780; letter-spacing: 0.12em; }
+  .treasury-subscription-copy strong { display: block; overflow: hidden; margin-top: 0.18rem; color: var(--treasury-emerald-foreground); font-size: var(--fs-lead); font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+  .treasury-subscription-copy small { display: block; overflow: hidden; margin-top: 0.2rem; color: color-mix(in srgb, var(--treasury-emerald-foreground) 62%, transparent); font-size: var(--fs-micro); line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
 
   .treasury-link-actions { display: flex; flex: none; gap: 0.35rem; }
   .treasury-link-action {
@@ -2048,7 +2119,7 @@
   }
 
   .treasury-config-rail { position: absolute; inset-inline-start: 0; top: 20%; bottom: 20%; width: 3px; border-radius: 999px; background: linear-gradient(180deg, var(--treasury-gold-bright), var(--treasury-emerald-bright)); }
-  .treasury-config-number { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 12px; color: var(--treasury-gold); background: var(--primary-soft); font-size: 0.66rem; font-weight: 780; font-variant-numeric: tabular-nums; }
+  .treasury-config-number { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 12px; color: var(--treasury-gold); background: var(--primary-soft); font-size: var(--fs-micro); font-weight: 780; font-variant-numeric: tabular-nums; }
   .treasury-server-icon {
     display: grid;
     width: 42px;
@@ -2075,13 +2146,13 @@
     background: color-mix(in srgb, var(--success) 8%, var(--card-solid));
   }
 
-  .treasury-server-ping b { font-size: 0.65rem; font-weight: 760; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .treasury-server-ping b { font-size: var(--fs-micro); font-weight: 760; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .treasury-config-copy { min-width: 0; }
   .treasury-config-copy > div { display: flex; align-items: center; gap: 0.35rem; }
-  .treasury-config-protocol { display: inline-flex; min-height: 20px; align-items: center; border-radius: 999px; padding-inline: 0.45rem; color: var(--treasury-emerald-foreground); background: linear-gradient(135deg, var(--treasury-emerald-bright), var(--treasury-emerald)); font-size: 0.53rem; font-weight: 780; text-transform: uppercase; }
-  .treasury-config-emoji { font-size: 0.76rem; }
-  .treasury-config-copy strong { display: block; overflow: hidden; margin-top: 0.28rem; color: var(--foreground); font-size: 0.82rem; font-weight: 720; text-overflow: ellipsis; white-space: nowrap; }
-  .treasury-config-copy small { display: block; margin-top: 0.1rem; color: var(--muted-foreground); font-size: 0.6rem; }
+  .treasury-config-protocol { display: inline-flex; min-height: 20px; align-items: center; border-radius: 999px; padding-inline: 0.45rem; color: var(--treasury-emerald-foreground); background: linear-gradient(135deg, var(--treasury-emerald-bright), var(--treasury-emerald)); font-size: var(--fs-micro); font-weight: 780; text-transform: uppercase; }
+  .treasury-config-emoji { font-size: var(--fs-micro); }
+  .treasury-config-copy strong { display: block; overflow: hidden; margin-top: 0.28rem; color: var(--foreground); font-size: var(--fs-caption); font-weight: 720; text-overflow: ellipsis; white-space: nowrap; }
+  .treasury-config-copy small { display: block; margin-top: 0.1rem; color: var(--muted-foreground); font-size: var(--fs-micro); }
   .treasury-support-button {
     min-width: 148px;
     border-radius: 999px;
@@ -2120,7 +2191,7 @@
   .treasury-content-grid.has-two-columns { grid-template-columns: 1fr; }
   .treasury-hero { min-height: 350px; grid-template-columns: minmax(0, 1fr) minmax(130px, 0.88fr); border-radius: 2rem 4rem 2.2rem 3.4rem / 3rem 2rem 3.2rem 2.35rem; padding: 1.15rem; }
   .treasury-shield { width: 48px; height: 54px; }
-  .treasury-status { font-size: clamp(1.2rem, 5.4vw, 1.55rem); }
+  .treasury-status { font-size: clamp(var(--fs-title), 5.4vw, var(--fs-heading)); }
   .treasury-orbit { width: min(38vw, 170px); }
   .treasury-metrics { min-height: 96px; padding-inline: 0.5rem; }
   .treasury-detail-strip { grid-template-columns: 1fr; }
@@ -2131,29 +2202,29 @@
   .treasury-detail-strip > div { grid-template-columns: 24px minmax(0, 1fr) auto; min-height: 56px; }
   .treasury-config-grid { grid-template-columns: 1fr; }
   .treasury-detail-strip svg { grid-row: auto; }
-  .treasury-detail-strip span { font-size: 0.72rem; }
-  .treasury-detail-strip strong { font-size: 0.78rem; text-align: end; }
+  .treasury-detail-strip span { font-size: var(--fs-micro); }
+  .treasury-detail-strip strong { font-size: var(--fs-micro); text-align: end; }
 }
 
 @media (max-width: 460px) {
   .treasury-navigation .ios-container,
   .treasury-page { padding-inline: max(0.9rem, env(safe-area-inset-left)); }
-  .treasury-titlebar h1 { font-size: 2.25rem; }
+  .treasury-titlebar h1 { font-size: var(--fs-hero); }
   .treasury-refresh { width: 44px; height: 44px; border-radius: 14px; }
   .treasury-hero { min-height: 410px; grid-template-columns: 1fr 0.92fr; align-items: start; padding: 1.05rem; }
   .treasury-hero-copy { padding-top: 0.45rem; }
   .treasury-hero-copy > p { max-width: 160px; }
-  .treasury-quick-action { min-height: 44px; margin-top: 1rem; padding-inline: 0.95rem; font-size: 0.82rem; }
+  .treasury-quick-action { min-height: 44px; margin-top: 1rem; padding-inline: 0.95rem; font-size: var(--fs-caption); }
   .treasury-orbit-wrap { align-self: center; padding-top: 2.25rem; }
   .treasury-orbit { width: min(39vw, 154px); }
-  .treasury-orbit-center strong { font-size: 2rem; }
-  .treasury-expiry { margin-top: 1.2rem; font-size: 0.72rem; }
+  .treasury-orbit-center strong { font-size: var(--fs-display); }
+  .treasury-expiry { margin-top: 1.2rem; font-size: var(--fs-micro); }
   .treasury-wave { height: 39%; }
   .treasury-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; min-height: 100px; }
   .treasury-filament { display: none; }
   .treasury-metric + .treasury-metric { border-inline-start: 0.5px solid var(--separator); }
-  .treasury-metric span { font-size: 0.66rem; }
-  .treasury-metric strong { font-size: 0.82rem; }
+  .treasury-metric span { font-size: var(--fs-micro); }
+  .treasury-metric strong { font-size: var(--fs-caption); }
   .treasury-notice { min-height: 68px; }
   .treasury-reservoir { padding: 0.8rem; }
   .treasury-reservoir-copy { align-items: flex-start; flex-direction: column; gap: 0.7rem; }
@@ -2212,7 +2283,7 @@
 .treasury-quick-main {
   min-height: 48px;
   padding-inline: 1.35rem;
-  font-size: 0.92rem;
+  font-size: var(--fs-body);
 }
 .treasury-quick-more {
   min-width: 44px;
@@ -2234,13 +2305,13 @@
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  min-height: 36px;
+  min-height: var(--tap-min);
   padding: 0.4rem 0.85rem;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--treasury-emerald-bright) 24%, transparent);
   background: color-mix(in srgb, var(--treasury-emerald-bright) 8%, transparent);
   color: inherit;
-  font-size: 0.78rem;
+  font-size: var(--fs-micro);
   font-weight: 750;
   text-decoration: none;
   cursor: pointer;
@@ -2311,7 +2382,7 @@
 .mrm-auto-step.is-fail { opacity: 1; }
 .mrm-auto-dot { display: inline-flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem; border-radius: 999px; background: rgba(45, 183, 178, 0.14); color: #14ADA6; flex: none; }
 .mrm-auto-step.is-fail .mrm-auto-dot { background: rgba(214, 68, 68, 0.12); color: #d64444; }
-.mrm-auto-sub { font-size: 0.78rem; opacity: 0.75; line-height: 1.7; }
+.mrm-auto-sub { font-size: var(--fs-micro); opacity: 0.75; line-height: 1.7; }
 .mrm-auto-stores { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.55rem; }
 .mrm-auto-done { display: flex; align-items: center; justify-content: center; gap: 0.5rem; color: #14ADA6; font-weight: 700; padding: 0.8rem 0; }
 .mrm-auto-fail { display: grid; gap: 0.2rem; padding: 0.2rem 0; }
@@ -2347,9 +2418,9 @@
   color: var(--treasury-emerald-bright);
   background: color-mix(in srgb, var(--treasury-emerald-bright) 10%, transparent);
 }
-.mrm-app-name { font-weight: 800; font-size: 0.86rem; }
+.mrm-app-name { font-weight: 800; font-size: var(--fs-caption); }
 .mrm-app-badge {
-  font-size: 0.6rem;
+  font-size: var(--fs-micro);
   font-weight: 850;
   padding: 0.18rem 0.42rem;
   border-radius: 999px;
@@ -2368,7 +2439,7 @@
   align-items: flex-start;
   gap: 0.4rem;
   margin-top: 0.8rem;
-  font-size: 0.82rem;
+  font-size: var(--fs-caption);
   line-height: 1.75;
   color: hsl(var(--muted-foreground));
 }
@@ -2391,21 +2462,21 @@
     color-mix(in srgb, var(--treasury-emerald-bright) 8%, transparent),
     color-mix(in srgb, var(--treasury-gold) 10%, transparent));
 }
-.mrm-guide-icon { font-size: 1.05rem; flex-shrink: 0; }
-.mrm-guide-text { flex: 1; font-size: 0.78rem; font-weight: 650; line-height: 1.75; }
+.mrm-guide-icon { font-size: var(--fs-lead); flex-shrink: 0; }
+.mrm-guide-text { flex: 1; font-size: var(--fs-micro); font-weight: 650; line-height: 1.75; }
 .mrm-guide-close {
   flex-shrink: 0;
   border: 0;
   background: transparent;
   color: hsl(var(--muted-foreground));
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: var(--fs-caption);
   padding: 0.25rem 0.4rem;
 }
 
 @media (max-width: 560px) {
   .treasury-quick-split { margin-top: 1rem; }
-  .treasury-quick-main { min-height: 44px; font-size: 0.82rem; padding-inline: 1rem; }
+  .treasury-quick-main { min-height: 44px; font-size: var(--fs-caption); padding-inline: 1rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   .treasury-cta-chip.is-urgent { animation: none; }
@@ -2533,4 +2604,49 @@
 
 @keyframes mrm-needle-in {
   from { transform: rotate(-88deg); }
+}
+
+@layer components {
+/* >>> UI_TOKENS_COMPONENTS_START >>> */
+  /* حداقل هدف لمس روی عناصر تعاملیِ آیکونی:  class="ui-tap" */
+  .ui-tap {
+    min-width: var(--tap-min);
+    min-height: var(--tap-min);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* کنترل‌های ردیفی/تمام‌عرض — کف ۴۴×۴۴ (عرض فقط روی برچسب‌های کوتاه اثر دارد) */
+  .ui-tap-row {
+    min-width: var(--tap-min);
+    min-height: var(--tap-min);
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* چیپ/برچسب تعاملی */
+  .ui-chip {
+    min-height: var(--tap-min);
+    display: inline-flex;
+    align-items: center;
+    padding-inline: 0.75rem;
+    border-radius: 9999px;
+  }
+
+  /* کنترل‌های استاندارد قالب — کف هدف لمس (WCAG 2.5.8).
+     این کلاس‌ها در هر دو قالب به کار می‌روند و از نسل مشترک به ارث رسیده‌اند. */
+  .ios-segmented-control button,
+  .treasury-links-header button,
+  .treasury-config-card button,
+  .treasury-cta-chip {
+    min-height: var(--tap-min);
+  }
+
+  /* حلقهٔ فوکوس یکدست (فقط برای عناصری که استایل فوکوس اختصاصی ندارند) */
+  .ui-focus:focus-visible {
+    outline: var(--focus-width) solid var(--ring);
+    outline-offset: var(--focus-offset);
+  }
+/* <<< UI_TOKENS_COMPONENTS_END <<< */
 }

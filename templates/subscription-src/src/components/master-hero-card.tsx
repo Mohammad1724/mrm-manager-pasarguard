@@ -171,12 +171,12 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-foreground text-base tracking-tight" dir="ltr">
+              <span className="font-bold text-foreground text-lead tracking-tight" dir="ltr">
                 {user.username}
               </span>
               <OnlineBadge lastOnline={user.online_at} />
             </div>
-            <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+            <p className="text-micro text-muted-foreground flex items-center gap-1 mt-0.5">
               <Sparkles className="size-3 text-primary" />
               {isFa ? 'اشتراک فعال پاسارگارد' : 'PasarGuard Active Service'}
             </p>
@@ -187,7 +187,7 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
           {/* Status Pill */}
           <div
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold shadow-xs',
+              'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-micro font-semibold shadow-xs',
               statusConfig.bg
             )}
           >
@@ -252,10 +252,10 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
 
           {/* Center text inside Circle */}
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-            <span className="text-2xl font-black tracking-tight text-foreground" dir="ltr">
+            <span className="text-heading font-black tracking-tight text-foreground" dir="ltr">
               {limitBytes ? Math.round(remainingPercent) : 100}%
             </span>
-            <span className="text-[11px] font-medium text-muted-foreground">
+            <span className="text-micro font-medium text-muted-foreground">
               {isFa ? 'باقی‌مانده' : t('remaining', 'Remaining')}
             </span>
           </div>
@@ -263,15 +263,15 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
 
         {/* Right / Center Stats Highlight */}
         <div className="flex flex-1 flex-col items-center md:items-start text-center md:text-right gap-2">
-          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="text-micro font-semibold uppercase tracking-wider text-muted-foreground">
             {isFa ? 'میزان ترافیک قابل استفاده' : 'Available Traffic'}
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-3xl sm:text-4xl font-extrabold tracking-tight text-foreground" dir="ltr">
+            <span className="text-display sm:text-hero font-extrabold tracking-tight text-foreground" dir="ltr">
               {limitBytes ? formatBytes(remainingBytes) : isFa ? 'نامحدود' : 'Unlimited'}
             </span>
             {limitBytes > 0 && (
-              <span className="text-sm font-medium text-muted-foreground" dir="ltr">
+              <span className="text-body font-medium text-muted-foreground" dir="ltr">
                 / {formatBytes(limitBytes)}
               </span>
             )}
@@ -281,7 +281,7 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
           <div className="mt-1 flex flex-wrap items-center justify-center md:justify-start gap-2">
             <div
               className={cn(
-                'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium',
+                'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-micro font-medium',
                 daysLeft !== null && daysLeft <= 4
                   ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30'
                   : 'bg-muted/70 text-muted-foreground border border-border/50'
@@ -299,7 +299,7 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
               </span>
             </div>
             {isUrgent && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/15 px-2.5 py-0.5 text-[11px] font-bold text-rose-600 dark:text-rose-400 border border-rose-500/20 animate-pulse">
+              <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/15 px-2.5 py-0.5 text-micro font-bold text-rose-600 dark:text-rose-400 border border-rose-500/20 animate-pulse">
                 {isFa ? '⚠️ نیاز به تمدید' : '⚠️ Renew Soon'}
               </span>
             )}
@@ -310,41 +310,41 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
       {/* 4 Bento Metrics Grid */}
       <div className="relative z-10 grid grid-cols-2 lg:grid-cols-4 gap-2.5 my-5">
         <div className="rounded-2xl border border-border/60 bg-background/50 p-3 shadow-xs">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5 text-micro text-muted-foreground">
             <Database className="size-3.5 text-primary" />
             <span>{isFa ? 'حجم کل بسته' : t('userInfo.totalLimit', 'Total Limit')}</span>
           </div>
-          <div className="mt-1.5 text-sm sm:text-base font-bold text-foreground" dir="ltr">
+          <div className="mt-1.5 text-body sm:text-lead font-bold text-foreground" dir="ltr">
             {limitBytes ? formatBytes(limitBytes) : isFa ? 'نامحدود' : 'Unlimited'}
           </div>
         </div>
 
         <div className="rounded-2xl border border-border/60 bg-background/50 p-3 shadow-xs">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5 text-micro text-muted-foreground">
             <ArrowDownToLine className="size-3.5 text-amber-500" />
             <span>{isFa ? 'مصرف‌شده' : t('userInfo.usedTraffic', 'Used Traffic')}</span>
           </div>
-          <div className="mt-1.5 text-sm sm:text-base font-bold text-foreground" dir="ltr">
+          <div className="mt-1.5 text-body sm:text-lead font-bold text-foreground" dir="ltr">
             {formatBytes(usedBytes)}
           </div>
         </div>
 
         <div className="rounded-2xl border border-border/60 bg-background/50 p-3 shadow-xs">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5 text-micro text-muted-foreground">
             <Clock className="size-3.5 text-sky-500" />
             <span>{isFa ? 'تاریخ انقضا' : t('userInfo.expiryDate', 'Expires')}</span>
           </div>
-          <div className="mt-1.5 text-xs sm:text-sm font-semibold text-foreground truncate" title={expiryLabel}>
+          <div className="mt-1.5 text-micro sm:text-body font-semibold text-foreground truncate" title={expiryLabel}>
             {expiryLabel}
           </div>
         </div>
 
         <div className="rounded-2xl border border-border/60 bg-background/50 p-3 shadow-xs">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5 text-micro text-muted-foreground">
             <Sparkles className="size-3.5 text-violet-500" />
             <span>{isFa ? 'مصرف کل دوره' : t('userInfo.lifetimeTraffic', 'Lifetime')}</span>
           </div>
-          <div className="mt-1.5 text-sm sm:text-base font-bold text-foreground" dir="ltr">
+          <div className="mt-1.5 text-body sm:text-lead font-bold text-foreground" dir="ltr">
             {formatBytes(user.lifetime_used_traffic || usedBytes)}
           </div>
         </div>
@@ -362,7 +362,7 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
             type="button"
             onClick={handleCopySub}
             className={cn(
-              'inline-flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-xl border border-border bg-background/80 px-3.5 py-2.5 text-xs font-semibold text-foreground shadow-xs transition hover:bg-muted active:scale-95',
+              'inline-flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-xl border border-border bg-background/80 px-3.5 py-2.5 text-micro font-semibold text-foreground shadow-xs transition hover:bg-muted active:scale-95',
               isCopied(subUrl) && 'border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10'
             )}
             title={isFa ? 'کپی لینک سابسکریپشن' : 'Copy subscription URL'}
@@ -375,7 +375,7 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
           <button
             type="button"
             onClick={onOpenQR}
-            className="inline-flex items-center justify-center rounded-xl border border-border bg-background/80 p-2.5 text-foreground shadow-xs transition hover:bg-muted active:scale-95"
+            className="ui-tap inline-flex items-center justify-center rounded-xl border border-border bg-background/80 p-0 text-foreground shadow-xs transition hover:bg-muted active:scale-95"
             title={isFa ? 'نمایش بارکد QR' : 'Show QR Code'}
           >
             <QrCode className="size-4" />
@@ -385,7 +385,7 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
           <button
             type="button"
             onClick={scrollToConfigs}
-            className="inline-flex items-center justify-center gap-1 rounded-xl border border-border bg-background/80 px-3 py-2.5 text-xs font-medium text-foreground shadow-xs transition hover:bg-muted active:scale-95"
+            className="ui-tap-row inline-flex items-center justify-center gap-1 rounded-xl border border-border bg-background/80 px-3 py-2.5 text-micro font-medium text-foreground shadow-xs transition hover:bg-muted active:scale-95"
           >
             <span>{isFa ? 'کانفیگ‌ها' : 'Configs'}</span>
             <ChevronDown className="size-3.5 text-muted-foreground" />

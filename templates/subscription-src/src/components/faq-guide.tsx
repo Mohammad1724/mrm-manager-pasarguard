@@ -77,15 +77,15 @@ export const FaqGuide = memo(() => {
             <HelpCircle className="size-5" />
           </div>
           <div>
-            <h3 className="text-sm sm:text-base font-bold text-foreground">
+            <h3 className="text-body sm:text-lead font-bold text-foreground">
               {isFa ? 'راهنمای اتصال و رفع مشکل' : 'Quick Setup & FAQ'}
             </h3>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-micro text-muted-foreground">
               {isFa ? 'آموزش گام‌به‌گام اتصال در ۳ مرحله ساده' : 'Connect in 3 simple steps'}
             </p>
           </div>
         </div>
-        <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-primary bg-primary/10 px-2.5 py-1 rounded-full">
+        <span className="hidden sm:inline-flex items-center gap-1 text-micro font-semibold text-primary bg-primary/10 px-2.5 py-1 rounded-full">
           <Sparkles className="size-3" />
           {isFa ? 'اتصال ۳۰ ثانیه‌ای' : '30s Setup'}
         </span>
@@ -104,8 +104,8 @@ export const FaqGuide = memo(() => {
                 <Icon className="size-4" />
               </div>
               <div className="min-w-0 flex-1">
-                <h4 className="text-xs sm:text-sm font-bold text-foreground">{st.title}</h4>
-                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{st.desc}</p>
+                <h4 className="text-micro sm:text-body font-bold text-foreground">{st.title}</h4>
+                <p className="mt-1 text-micro leading-relaxed text-muted-foreground">{st.desc}</p>
               </div>
             </div>
           );
@@ -124,7 +124,7 @@ export const FaqGuide = memo(() => {
               <button
                 type="button"
                 onClick={() => toggle(idx)}
-                className="flex w-full items-center justify-between p-3.5 text-right font-medium text-xs sm:text-sm text-foreground"
+                className="flex w-full items-center justify-between p-3.5 text-right font-medium text-micro sm:text-body text-foreground"
               >
                 <span className="flex items-center gap-2">
                   <AlertCircle className="size-3.5 text-primary shrink-0" />
@@ -138,7 +138,7 @@ export const FaqGuide = memo(() => {
                 />
               </button>
               {isOpen && (
-                <div className="border-t border-border/40 px-4 py-3 text-xs leading-relaxed text-muted-foreground whitespace-pre-line bg-muted/20">
+                <div className="border-t border-border/40 px-4 py-3 text-micro leading-relaxed text-muted-foreground whitespace-pre-line bg-muted/20">
                   {faq.a}
                 </div>
               )}

@@ -408,7 +408,7 @@ export function QuickConnect({ variant = 'hero', className }: QuickConnectProps)
   return (
     <>
       {variant === 'hero' ? (
-        <div className={cn('treasury-quick-split', className)}>
+        <div data-ui="quick-connect" className={cn('treasury-quick-split', className)}>
           <button type="button" className="treasury-quick-main" onClick={handleMainClick}>
             <Zap className="size-[18px] fill-current" />
             {t('quickConnect.title')}

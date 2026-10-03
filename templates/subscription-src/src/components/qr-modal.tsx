@@ -87,7 +87,7 @@ export const QRModal = memo(({ link, open, onOpenChange }: QRModalProps) => {
           <DialogTitle>
             <div className="flex items-center gap-2">
               <ScanQrCode className="size-5" aria-hidden="true" />
-              <span className="text-base">{t('qr.title')}</span>
+              <span className="text-lead">{t('qr.title')}</span>
             </div>
           </DialogTitle>
         </DialogHeader>
@@ -137,32 +137,32 @@ export const QRModal = memo(({ link, open, onOpenChange }: QRModalProps) => {
           ) : (
             <div className="flex w-full flex-col items-center justify-center rounded-2xl bg-muted/30 p-6 sm:p-8">
               <AlertCircle className="mb-3 size-11 text-yellow-500" aria-hidden="true" />
-              <p className="mb-1 text-center text-sm font-medium text-muted-foreground">{t('qr.tooLong')}</p>
-              <p className="text-center text-sm text-muted-foreground">{t('qr.useCopy')}</p>
+              <p className="mb-1 text-center text-body font-medium text-muted-foreground">{t('qr.tooLong')}</p>
+              <p className="text-center text-body text-muted-foreground">{t('qr.useCopy')}</p>
             </div>
           )}
 
-          <div className="flex min-h-12 w-full items-center gap-2 rounded-xl bg-muted/60 px-3 text-sm">
+          <div className="flex min-h-12 w-full items-center gap-2 rounded-xl bg-muted/60 px-3 text-body">
             <div className="ios-protocol-badge">{protocolBadge}</div>
-            {link.emoji && <span className="text-base">{link.emoji}</span>}
+            {link.emoji && <span className="text-lead">{link.emoji}</span>}
             <span dir="ltr" className={cn('page-item-title min-w-0 flex-1 truncate', dir === 'rtl' ? 'text-right' : 'text-left')}>
               {link.name}
             </span>
           </div>
 
           <div className={`grid w-full grid-cols-1 gap-2 ${isWireGuard ? 'sm:grid-cols-2' : ''}`}>
-            <Button onClick={handleCopy} size="sm" className="h-10 w-full gap-2 text-sm">
+            <Button onClick={handleCopy} size="sm" className="h-10 w-full gap-2 text-body">
               {copiedConfig ? <><Check className="size-4" />{t('qr.copied')}</> : <><Copy className="size-4" />{link.protocol === 'unknown' ? t('qr.copy') : t('configActions.copyConfig')}</>}
             </Button>
 
             {supportsBase64Copy && (
-              <Button onClick={handleCopyBase64} size="sm" variant={copiedBase64 ? 'default' : 'outline'} className="h-10 w-full gap-2 text-sm">
+              <Button onClick={handleCopyBase64} size="sm" variant={copiedBase64 ? 'default' : 'outline'} className="h-10 w-full gap-2 text-body">
                 {copiedBase64 ? <><Check className="size-4" />{t('qr.copied')}</> : <><Copy className="size-4" />{t('configActions.copyBase64')}</>}
               </Button>
             )}
 
             {wireGuardDownload && (
-              <Button onClick={handleDownloadWireGuard} size="sm" variant="outline" className="h-10 w-full gap-2 text-sm sm:col-span-2">
+              <Button onClick={handleDownloadWireGuard} size="sm" variant="outline" className="h-10 w-full gap-2 text-body sm:col-span-2">
                 <Download className="size-4" />
                 {t('configActions.downloadWireGuard')}
               </Button>

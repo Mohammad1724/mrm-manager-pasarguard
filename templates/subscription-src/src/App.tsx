@@ -127,10 +127,10 @@ export default function App() {
               <RefreshCcw className="size-7 animate-spin" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-foreground">
+              <h3 className="text-lead font-bold text-foreground">
                 {isFa ? 'در حال بارگذاری اطلاعات…' : t('common.loading')}
               </h3>
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-micro text-muted-foreground mt-1">
                 {isFa ? 'برقراری ارتباط با سرور پاسارگارد' : 'Connecting to PasarGuard...'}
               </p>
             </div>
@@ -147,15 +147,15 @@ export default function App() {
         <div className="flex min-h-[85vh] items-center justify-center px-6">
           <div className="flex flex-col items-center gap-4 rounded-3xl border border-destructive/30 bg-card/90 p-8 shadow-2xl backdrop-blur-xl text-center max-w-sm w-full">
             <div className="flex size-14 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
-              <span className="text-2xl font-black">!</span>
+              <span className="text-heading font-black">!</span>
             </div>
             <div>
-              <h3 className="text-base font-bold text-foreground">{t('dashboard.error')}</h3>
-              <p className="text-xs text-muted-foreground mt-1">{error.message}</p>
+              <h3 className="text-lead font-bold text-foreground">{t('dashboard.error')}</h3>
+              <p className="text-micro text-muted-foreground mt-1">{error.message}</p>
             </div>
             <button
               type="button"
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground shadow-sm transition hover:opacity-90 active:scale-95"
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-micro font-bold text-primary-foreground shadow-sm transition hover:opacity-90 active:scale-95"
               onClick={() => refresh()}
             >
               <RefreshCcw className="size-3.5" />
@@ -192,11 +192,11 @@ export default function App() {
               <div>
                 <span
                   data-ui="brand"
-                  className="font-extrabold text-foreground text-sm tracking-tight block"
+                  className="font-extrabold text-foreground text-body tracking-tight block"
                 >
                   {DEFAULT_BRAND}
                 </span>
-                <span className="text-[10px] text-muted-foreground -mt-0.5 block">
+                <span className="text-micro text-muted-foreground -mt-0.5 block">
                   PasarGuard Security
                 </span>
               </div>
@@ -258,10 +258,10 @@ export default function App() {
                   <Sparkles className="size-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm sm:text-base font-bold text-foreground">
+                  <h3 className="text-body sm:text-lead font-bold text-foreground">
                     {isFa ? 'نرم‌افزارهای پیشنهادی' : t('apps.title')}
                   </h3>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-micro text-muted-foreground">
                     {isFa ? 'بهترین برنامه‌ها متناسب با دیوایس شما' : 'Best tools for your platform'}
                   </p>
                 </div>

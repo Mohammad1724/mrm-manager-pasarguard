@@ -98,7 +98,7 @@ export const AppsList = React.memo(function AppsList() {
 
     if (appsLoading) {
         return (
-            <div className="w-full rounded-2xl border bg-card p-4 sm:p-6 text-sm text-muted-foreground">
+            <div className="w-full rounded-2xl border bg-card p-4 sm:p-6 text-body text-muted-foreground">
                 {t('common.loading')}
             </div>
         )
@@ -106,7 +106,7 @@ export const AppsList = React.memo(function AppsList() {
 
     if (appsError) {
         return (
-            <div className="w-full rounded-2xl border bg-card p-4 sm:p-6 text-sm text-destructive">
+            <div className="w-full rounded-2xl border bg-card p-4 sm:p-6 text-body text-destructive">
                 {t('common.error')}
             </div>
         )

@@ -1,0 +1,133 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   MRM Special  ·  زمرد  —  هستهٔ مشترک طراحی  (منبع یگانه)
+   نسخه: 1.0.0
+
+   این فایل «تنها منبع حقیقت» مقیاس طراحی هر دو قالب است. با
+   `shared/sync-tokens.sh` داخل هر دو `index.css` تزریق می‌شود و
+   `--check` در CI از واگرایی جلوگیری می‌کند — دقیقاً همان الگویی که
+   `shared/ui-contract.js` برای DOM دارد.
+
+   سه بخش، با نشانگر مشخص (محتوای بین نشانگرها دستی ویرایش نشود):
+
+     ROOT        → متغیرهای خام CSS داخل `:root`      (مقادیر مرجع)
+     THEME       → همان مقادیر با نام‌های Tailwind v4 داخل `@theme inline`
+     COMPONENTS  → کلاس‌های مشترک (هدف لمس / فوکوس) داخل `@layer components`
+
+   قاعده: مقدار هر توکن فقط در بخش ROOT تعریف می‌شود؛ THEME فقط ارجاع می‌دهد.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* >>> SECTION: ROOT >>> */
+  /* ── مقیاس تایپوگرافی: ۸ پله، کف ۱۲px ─────────────────────────────────
+     پیش از این هر قالب تا ۳۰ اندازهٔ متفاوت داشت (۰٫۶rem تا ۲rem) که هم
+     ناهماهنگ بود و هم ۲۵ عنصر زیر ۱۲px داشت. هر اندازهٔ متنی باید یکی از
+     این ۸ پله باشد؛ مقدار خارج از مقیاس = بدهی طراحی. */
+  --fs-micro: 0.75rem;      /* 12px — ریزترین متن مجاز: برچسب، چیپ، نشان */
+  --fs-caption: 0.8125rem;  /* 13px — توضیح، فراداده، زمان */
+  --fs-body: 0.875rem;      /* 14px — متن پیش‌فرض بدنه */
+  --fs-lead: 1rem;          /* 16px — متن تأکیدی، مقدار ورودی */
+  --fs-title: 1.125rem;     /* 18px — عنوان کارت */
+  --fs-heading: 1.375rem;   /* 22px — عنوان بخش */
+  --fs-display: 1.75rem;    /* 28px — عدد شاخص */
+  --fs-hero: 2.25rem;       /* 36px — تنها عدد اصلی صفحه */
+
+  /* ── ارتفاع خط (فارسی بازتر از لاتین خوانده می‌شود) ─────────────────── */
+  --lh-tight: 1.15;         /* عددهای نمایشی */
+  --lh-snug: 1.3;           /* عنوان بخش */
+  --lh-normal: 1.45;        /* عنوان کارت */
+  --lh-relaxed: 1.55;       /* ریز متن / فراداده */
+  --lh-loose: 1.65;         /* متن بدنه — فارسي بازتر خوانده می‌شود */
+
+  /* ── هدف لمس (WCAG 2.5.8 AA) ─────────────────────────────────────────
+     ۴۴px کف مطلق برای هر عنصر تعاملی است؛ استثنا فقط پیوندهای درون‌متنی. */
+  --tap-min: 2.75rem;       /* 44px — کف مطلق */
+  --tap-comfort: 3rem;      /* 48px — کنش اصلی */
+  --icon-sm: 1.125rem;      /* 18px — اندازهٔ خودِ آیکون، نه هدف لمس */
+  --icon: 1.25rem;          /* 20px */
+  --icon-lg: 1.5rem;        /* 24px */
+
+  /* ── حرکت ──────────────────────────────────────────────────────────── */
+  --motion-dur-fast: 120ms;
+  --motion-dur-base: 200ms;
+  --motion-dur-slow: 320ms;
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* ── فوکوس (یکدست در هر دو قالب) ───────────────────────────────────── */
+  --focus-width: 2px;
+  --focus-offset: 2px;
+/* <<< SECTION: ROOT <<< */
+
+/* >>> SECTION: THEME >>> */
+  /* نوع: text-micro … text-hero (ارتفاع خط همراه، تا هرجا از آن استفاده شد
+     خودکار اعمال شود) */
+  --text-micro: var(--fs-micro);
+  --text-micro--line-height: var(--lh-relaxed);
+  --text-caption: var(--fs-caption);
+  --text-caption--line-height: var(--lh-relaxed);
+  --text-body: var(--fs-body);
+  --text-body--line-height: var(--lh-loose);
+  --text-lead: var(--fs-lead);
+  --text-lead--line-height: var(--lh-loose);
+  --text-title: var(--fs-title);
+  --text-title--line-height: var(--lh-normal);
+  --text-heading: var(--fs-heading);
+  --text-heading--line-height: var(--lh-snug);
+  --text-display: var(--fs-display);
+  --text-display--line-height: var(--lh-tight);
+  --text-hero: var(--fs-hero);
+  --text-hero--line-height: var(--lh-tight);
+
+  /* هدف لمس: min-h-tap، size-tap، gap-tap، min-h-tap-comfort … */
+  --spacing-tap: var(--tap-min);
+  --spacing-tap-comfort: var(--tap-comfort);
+  --spacing-icon-sm: var(--icon-sm);
+  --spacing-icon: var(--icon);
+  --spacing-icon-lg: var(--icon-lg);
+
+  /* حرکت: ease-standard / ease-emphasized */
+  --ease-standard: var(--motion-ease-standard);
+  --ease-emphasized: var(--motion-ease-emphasized);
+/* <<< SECTION: THEME <<< */
+
+/* >>> SECTION: COMPONENTS >>> */
+  /* حداقل هدف لمس روی عناصر تعاملیِ آیکونی:  class="ui-tap" */
+  .ui-tap {
+    min-width: var(--tap-min);
+    min-height: var(--tap-min);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* کنترل‌های ردیفی/تمام‌عرض — کف ۴۴×۴۴ (عرض فقط روی برچسب‌های کوتاه اثر دارد) */
+  .ui-tap-row {
+    min-width: var(--tap-min);
+    min-height: var(--tap-min);
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* چیپ/برچسب تعاملی */
+  .ui-chip {
+    min-height: var(--tap-min);
+    display: inline-flex;
+    align-items: center;
+    padding-inline: 0.75rem;
+    border-radius: 9999px;
+  }
+
+  /* کنترل‌های استاندارد قالب — کف هدف لمس (WCAG 2.5.8).
+     این کلاس‌ها در هر دو قالب به کار می‌روند و از نسل مشترک به ارث رسیده‌اند. */
+  .ios-segmented-control button,
+  .treasury-links-header button,
+  .treasury-config-card button,
+  .treasury-cta-chip {
+    min-height: var(--tap-min);
+  }
+
+  /* حلقهٔ فوکوس یکدست (فقط برای عناصری که استایل فوکوس اختصاصی ندارند) */
+  .ui-focus:focus-visible {
+    outline: var(--focus-width) solid var(--ring);
+    outline-offset: var(--focus-offset);
+  }
+/* <<< SECTION: COMPONENTS <<< */

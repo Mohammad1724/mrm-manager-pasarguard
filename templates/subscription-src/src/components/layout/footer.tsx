@@ -26,7 +26,7 @@ const FooterContent = () => {
       {supportUrl && (
         <Separator className="w-12 opacity-60" />
       )}
-      <p className="inline-block flex-grow text-center text-xs text-foreground/75 lg:px-4">
+      <p className="inline-block flex-grow text-center text-micro text-foreground/75 lg:px-4">
         Powered by &nbsp;
         <span className="font-semibold text-primary">MRM</span>
         &nbsp;·&nbsp;

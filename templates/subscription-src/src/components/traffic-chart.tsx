@@ -118,15 +118,15 @@ const CustomTrafficTooltip = React.memo(function CustomTrafficTooltip({
 
   return (
     <div
-      className={`min-w-[150px] rounded-xl border border-border bg-popover/95 p-3 text-sm shadow-xl backdrop-blur-xl ${isRTL ? 'text-right' : 'text-left'}`}
+      className={`min-w-[150px] rounded-xl border border-border bg-popover/95 p-3 text-body shadow-xl backdrop-blur-xl ${isRTL ? 'text-right' : 'text-left'}`}
       dir={isRTL ? 'rtl' : 'ltr'}
     >
-      <div className={`mb-2 text-sm font-semibold text-muted-foreground ${isRTL ? 'text-right' : 'text-left'}`}>
+      <div className={`mb-2 text-body font-semibold text-muted-foreground ${isRTL ? 'text-right' : 'text-left'}`}>
         <span dir="ltr" className="inline-block">
           {formattedDate}
         </span>
       </div>
-      <div className={`text-base font-bold text-foreground ${isRTL ? 'text-right' : 'text-left'}`}>
+      <div className={`text-lead font-bold text-foreground ${isRTL ? 'text-right' : 'text-left'}`}>
         <span>{t('usage.totalUsage')}: </span>
         <span dir="ltr" className="inline-block font-mono">
           {formatBytes(data._bytes)}
@@ -205,7 +205,7 @@ export const TrafficChart = React.memo(function TrafficChart({
       </CardHeader>
       <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6 overflow-x-hidden">
         {error ? (
-          <div className="h-[250px] w-full flex items-center justify-center text-destructive text-sm">
+          <div className="h-[250px] w-full flex items-center justify-center text-destructive text-body">
             {error.message || t('common.error')}
           </div>
         ) : (
@@ -242,7 +242,7 @@ export const TrafficChart = React.memo(function TrafficChart({
                     tickLine={false}
                     axisLine={false}
                     domain={[0, 'auto']}
-                    tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }}
+                    tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
                     tickFormatter={(value) => Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   />
                   <XAxis
@@ -253,7 +253,7 @@ export const TrafficChart = React.memo(function TrafficChart({
                     minTickGap={16}
                     tick={{
                       fill: 'var(--muted-foreground)',
-                      fontSize: 11
+                      fontSize: 12
                     }}
                     tickFormatter={(value) => {
                       const d = dateUtils.toDayjs(value)
@@ -299,9 +299,9 @@ export const TrafficChart = React.memo(function TrafficChart({
                   />
                 </AreaChart>
               ) : !isLoading ? (
-                <div className="h-full w-full flex flex-col items-center justify-center gap-2 text-muted-foreground text-sm">
+                <div className="h-full w-full flex flex-col items-center justify-center gap-2 text-muted-foreground text-body">
                   <div className="w-10 h-10 rounded-full border border-dashed border-muted-foreground/40 flex items-center justify-center">
-                    <span className="text-xs">—</span>
+                    <span className="text-micro">—</span>
                   </div>
                   <span>
                     {t('usage.noDataInRange')}

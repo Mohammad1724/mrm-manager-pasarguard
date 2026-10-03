@@ -215,16 +215,16 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 data-ui="section-title" className="text-base sm:text-lg font-bold text-foreground">
+              <h2 data-ui="section-title" className="text-lead sm:text-title font-bold text-foreground">
                 {isFa ? 'لیست سرورها و کانفیگ‌ها' : t('config.title')}
               </h2>
-              <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-bold text-primary">
+              <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-micro font-bold text-primary">
                 {isFa
                   ? `${parsedLinks.length.toLocaleString('fa-IR')} سرور`
                   : `${parsedLinks.length} servers`}
               </span>
             </div>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <p className="text-micro text-muted-foreground mt-0.5">
               {isFa
                 ? 'پروتکل‌های پرسرعت و بهینه‌سازی‌شده برای ایران'
                 : 'Optimized high-speed connection profiles'}
@@ -237,7 +237,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
           type="button"
           onClick={handleCopyAll}
           className={cn(
-            'inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-2.5 text-xs font-semibold shadow-xs transition active:scale-95',
+            'inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-2.5 text-micro font-semibold shadow-xs transition active:scale-95',
             copyAllSuccess
               ? 'border-emerald-500 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
               : 'border-primary/30 bg-primary/10 text-primary hover:bg-primary/20'
@@ -255,13 +255,13 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
             <ShieldCheck className="size-5" />
           </div>
           <div className="min-w-0">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-primary">
+            <div className="text-micro font-bold uppercase tracking-wider text-primary">
               Auto-Sync Subscription
             </div>
-            <div className="text-sm font-bold text-foreground">
+            <div className="text-body font-bold text-foreground">
               {isFa ? 'لینک اشتراک خودکار (پیشنهادی)' : t('config.subscriptionLink')}
             </div>
-            <div className="text-xs text-muted-foreground truncate max-w-xs sm:max-w-md" dir="ltr">
+            <div className="text-micro text-muted-foreground truncate max-w-xs sm:max-w-md" dir="ltr">
               {subscriptionUrl}
             </div>
           </div>
@@ -272,7 +272,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
             type="button"
             onClick={handleCopySubscription}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold shadow-xs transition hover:bg-muted active:scale-95',
+              'ui-tap-row inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-micro font-semibold shadow-xs transition hover:bg-muted active:scale-95',
               isCopied(subscriptionUrl) && 'border-emerald-500 text-emerald-600'
             )}
           >
@@ -289,7 +289,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
                 raw: subscriptionUrl,
               })
             }
-            className="rounded-xl border border-border bg-background p-2 text-foreground shadow-xs transition hover:bg-muted active:scale-95"
+            className="ui-tap rounded-xl border border-border bg-background p-0 text-foreground shadow-xs transition hover:bg-muted active:scale-95"
             title="QR Code"
           >
             <ScanQrCode className="size-4" />
@@ -307,7 +307,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={isFa ? 'جستجوی نام یا لوکیشن سرور (مثلاً آلمان، Reality...)' : 'Search server name or location...'}
-            className="w-full rounded-2xl border border-border/80 bg-background/60 py-2.5 rtl:pr-10 rtl:pl-10 ltr:pl-10 ltr:pr-10 text-xs sm:text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary shadow-inner"
+            className="ui-tap-row w-full rounded-2xl border border-border/80 bg-background/60 py-2.5 rtl:pr-10 rtl:pl-10 ltr:pl-10 ltr:pr-10 text-micro sm:text-body text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary shadow-inner"
           />
           {searchQuery && (
             <button
@@ -332,7 +332,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
                   type="button"
                   onClick={() => setSelectedProtocol(proto)}
                   className={cn(
-                    'rounded-xl border px-3 py-1.5 text-xs font-semibold transition active:scale-95',
+                    'ui-tap-row rounded-xl border px-3 py-1.5 text-micro font-semibold transition active:scale-95',
                     isSelected
                       ? 'border-primary bg-primary text-primary-foreground shadow-xs'
                       : 'border-border/60 bg-background/50 text-muted-foreground hover:bg-muted'
@@ -352,14 +352,14 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
         <a
           data-ui="wireguard"
           href={wireGuardArchiveUrl}
-          className="mb-4 flex min-h-11 items-center justify-between rounded-2xl border border-border/80 bg-muted/30 px-4 py-3 text-xs sm:text-sm font-semibold text-foreground no-underline shadow-xs transition hover:bg-muted/60"
+          className="mb-4 flex min-h-11 items-center justify-between rounded-2xl border border-border/80 bg-muted/30 px-4 py-3 text-micro sm:text-body font-semibold text-foreground no-underline shadow-xs transition hover:bg-muted/60"
           download
         >
           <div className="flex items-center gap-2.5">
             <Download className="size-4 text-primary" />
             <span>{isFa ? 'دانلود پکیج تنظیمات وایرگارد (WireGuard Zip)' : 'Download WireGuard Package (.zip)'}</span>
           </div>
-          <span className="rounded-lg bg-rose-500/15 px-2 py-0.5 text-[11px] font-bold text-rose-500 border border-rose-500/20">
+          <span className="rounded-lg bg-rose-500/15 px-2 py-0.5 text-micro font-bold text-rose-500 border border-rose-500/20">
             WG ZIP
           </span>
         </a>
@@ -369,14 +369,14 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
       {filteredLinks.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground">
           <Radio className="size-8 opacity-40 mb-2" />
-          <p className="text-sm font-medium">{isFa ? 'سروری با این مشخصات یافت نشد' : 'No servers found'}</p>
+          <p className="text-body font-medium">{isFa ? 'سروری با این مشخصات یافت نشد' : 'No servers found'}</p>
           <button
             type="button"
             onClick={() => {
               setSearchQuery('');
               setSelectedProtocol('all');
             }}
-            className="mt-3 text-xs font-bold text-primary hover:underline"
+            className="mt-3 text-micro font-bold text-primary hover:underline"
           >
             {isFa ? 'پاک کردن فیلترها' : 'Reset filters'}
           </button>
@@ -400,7 +400,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
                   <span
                     data-ui="config-protocol"
                     className={cn(
-                      'flex size-9 shrink-0 items-center justify-center rounded-xl border text-[11px] font-extrabold uppercase',
+                      'flex size-9 shrink-0 items-center justify-center rounded-xl border text-micro font-extrabold uppercase',
                       meta.bg
                     )}
                   >
@@ -409,9 +409,9 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
 
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 truncate">
-                      {link.emoji && <span className="text-base">{link.emoji}</span>}
+                      {link.emoji && <span className="text-lead">{link.emoji}</span>}
                       <strong
-                        className="truncate text-xs sm:text-sm font-bold text-foreground"
+                        className="truncate text-micro sm:text-body font-bold text-foreground"
                         dir="ltr"
                       >
                         {link.name}
@@ -419,7 +419,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
                     </div>
 
                     {/* Ping Indicator */}
-                    <div data-ui="ping" className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <div data-ui="ping" className="mt-1 flex items-center gap-2 text-micro text-muted-foreground">
                       <span className="inline-flex items-center gap-1">
                         <span
                           className={cn(
@@ -441,7 +441,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
                     <button
                       type="button"
                       onClick={() => handleDownloadWireGuard(link)}
-                      className="rounded-xl border border-border/80 bg-background p-2 text-foreground transition hover:bg-muted active:scale-95"
+                      className="ui-tap rounded-xl border border-border/80 bg-background p-0 text-foreground transition hover:bg-muted active:scale-95"
                       title={t('configActions.downloadWireGuard')}
                     >
                       <Download className="size-4" />
@@ -453,7 +453,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
                     type="button"
                     onClick={() => handleCopy(link)}
                     className={cn(
-                      'inline-flex items-center justify-center rounded-xl border px-3 py-2 text-xs font-semibold shadow-xs transition active:scale-95',
+                      'ui-tap-row inline-flex items-center justify-center rounded-xl border px-3 py-2 text-micro font-semibold shadow-xs transition active:scale-95',
                       copied
                         ? 'border-emerald-500 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
                         : 'border-border/80 bg-background text-foreground hover:bg-muted'
@@ -470,7 +470,7 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
                   <button
                     type="button"
                     onClick={() => handleShowQR(link)}
-                    className="rounded-xl border border-border/80 bg-background p-2 text-foreground transition hover:bg-muted active:scale-95"
+                    className="ui-tap rounded-xl border border-border/80 bg-background p-0 text-foreground transition hover:bg-muted active:scale-95"
                     title={isFa ? 'نمایش QR کد' : 'Show QR'}
                   >
                     <ScanQrCode className="size-4" />
