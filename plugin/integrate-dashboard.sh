@@ -225,8 +225,15 @@ block=f'''# {marker}-start
 try:
     from . import mrm_admin_subscriptions
     if getattr(mrm_admin_subscriptions, 'router', None) is not None:
-        if mrm_admin_subscriptions.router not in routers:
-            routers.append(mrm_admin_subscriptions.router)
+        try:
+            from . import subscription
+            if getattr(subscription, 'router', None) in routers:
+                routers[routers.index(subscription.router)] = mrm_admin_subscriptions.router
+            elif mrm_admin_subscriptions.router not in routers:
+                routers.insert(0, mrm_admin_subscriptions.router)
+        except Exception:
+            if mrm_admin_subscriptions.router not in routers:
+                routers.insert(0, mrm_admin_subscriptions.router)
 except Exception:
     pass
 # {marker}-end'''
@@ -268,8 +275,15 @@ block=f'''# {marker}-start
 try:
     from . import mrm_admin_subscriptions
     if getattr(mrm_admin_subscriptions, 'router', None) is not None:
-        if mrm_admin_subscriptions.router not in routers:
-            routers.append(mrm_admin_subscriptions.router)
+        try:
+            from . import subscription
+            if getattr(subscription, 'router', None) in routers:
+                routers[routers.index(subscription.router)] = mrm_admin_subscriptions.router
+            elif mrm_admin_subscriptions.router not in routers:
+                routers.insert(0, mrm_admin_subscriptions.router)
+        except Exception:
+            if mrm_admin_subscriptions.router not in routers:
+                routers.insert(0, mrm_admin_subscriptions.router)
 except Exception:
     pass
 # {marker}-end'''

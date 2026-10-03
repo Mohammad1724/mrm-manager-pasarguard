@@ -104,7 +104,21 @@ class MRMSlugConvertor(Convertor[str]):
         return value.lower()
 
 
+class ClientFormatConvertor(Convertor[str]):
+    regex = r"links|links_base64|xray|wireguard|sing_box|clash|clash_meta|outline|block"
+
+    def convert(self, value: str) -> str:
+        return value
+
+    def to_string(self, value: str) -> str:
+        return value
+
+
 register_url_convertor("zslug", MRMSlugConvertor())
+try:
+    register_url_convertor("client_fmt", ClientFormatConvertor())
+except Exception:
+    pass
 
 router = APIRouter(tags=["MRM"])
 subscription_operator = SubscriptionOperation(operator_type=OperatorType.API)
@@ -1004,12 +1018,14 @@ async def _validate_namespace(db: AsyncSession, admin_slug: str, token: str) -> 
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
 
     db_user = await subscription_operator.get_validated_sub(db, token, load_admin_role=True)
-    if int(getattr(db_user, "admin_id", 0) or 0) != int(mapping.get("admin_id", 0) or 0):
+    user_admin_id = int(getattr(db_user, "admin_id", 0) or 0)
+    mapping_admin_id = int(mapping.get("admin_id", 0) or 0)
+    if mapping_admin_id > 0 and user_admin_id > 0 and user_admin_id != mapping_admin_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
 
     db_admin = getattr(db_user, "admin", None)
     if db_admin is None:
-        db_admin = await _get_db_admin(db, int(mapping["admin_id"]))
+        db_admin = await _get_db_admin(db, int(mapping.get("admin_id", 0) or getattr(db_user, "admin_id", 0) or 0))
     return db_admin, str(getattr(db_user, "username", "") or "")
 
 
@@ -1017,49 +1033,81 @@ SUB_PREFIX = f"/{subscription_env_settings.path}"
 SCOPE = "{admin_slug:zslug}"
 
 
-@router.get(f"{SUB_PREFIX}/{SCOPE}/{{token}}/")
-@router.get(f"{SUB_PREFIX}/{SCOPE}/{{token}}", include_in_schema=False)
-async def namespaced_subscription(
-    request: Request,
-    admin_slug: str,
+# Standard PasarGuard subscription links are scoped by the user owner too.
+# MRM is registered in place of the native subscription router, so these routes
+# preserve native behavior and only overlay MRM values for the owning admin.
+async def _admin_for_token(db: AsyncSession, token: str) -> tuple[Admin, str]:
+    db_user = await subscription_operator.get_validated_sub(db, token, load_admin_role=True)
+    db_admin = getattr(db_user, "admin", None)
+    if db_admin is None:
+        admin_ref = getattr(db_user, "admin_id", None)
+        db_admin = await _get_db_admin(db, admin_ref)
+    return db_admin, str(getattr(db_user, "username", "") or "")
+
+
+# 1. Standard fixed endpoints
+@router.get(f"{SUB_PREFIX}/{{token}}/info", include_in_schema=False)
+async def scoped_standard_subscription_info(
+    request: Request, token: str, db: AsyncSession = Depends(get_db)
+):
+    db_admin, sub_username = await _admin_for_token(db, token)
+    user_data, response_headers = await subscription_operator.user_subscription_info(
+        db, token=token, ip=request.client.host if request.client else None
+    )
+    return JSONResponse(
+        content=user_data.model_dump(mode="json"),
+        headers=_overlay_headers(response_headers, db_admin, sub_username),
+    )
+
+
+@router.get(f"{SUB_PREFIX}/{{token}}/raw", include_in_schema=False)
+async def scoped_standard_subscription_raw(
+    request: Request, token: str, db: AsyncSession = Depends(get_db)
+):
+    db_admin, sub_username = await _admin_for_token(db, token)
+    payload = await subscription_operator.user_subscription_raw(
+        db, token=token, request_url=str(request.url)
+    )
+    if isinstance(payload, dict):
+        payload["headers"] = _overlay_headers(payload.get("headers", {}), db_admin, sub_username)
+    return payload
+
+
+@router.get(f"{SUB_PREFIX}/{{token}}/apps", response_model=list[Application], include_in_schema=False)
+async def scoped_standard_subscription_apps(token: str, db: AsyncSession = Depends(get_db)):
+    return await subscription_operator.user_subscription_apps(db, token)
+
+
+@router.get(f"{SUB_PREFIX}/{{token}}/usage", response_model=UserUsageStatsList, include_in_schema=False)
+async def scoped_standard_subscription_usage(
     token: str,
+    query=Depends(get_subscription_usage_query),
     db: AsyncSession = Depends(get_db),
-    user_agent: str = Header(default=""),
+):
+    return await subscription_operator.get_user_usage(db, token=token, query=query)
+
+
+# 2. Standard client formats (e.g. Clash, V2Ray)
+@router.get(f"{SUB_PREFIX}/{{token}}/{{client_type:client_fmt}}", include_in_schema=False)
+async def scoped_standard_subscription_client(
+    request: Request,
+    token: str,
+    client_type: ConfigFormat,
+    db: AsyncSession = Depends(get_db),
     headers=Depends(get_subscription_headers),
 ):
-    db_admin, sub_username = await _validate_namespace(db, admin_slug, token)
-    response = await subscription_operator.user_subscription(
+    db_admin, sub_username = await _admin_for_token(db, token)
+    response = await subscription_operator.user_subscription_with_client_type(
         db,
         token=token,
-        accept_header=request.headers.get("Accept", ""),
-        user_agent=user_agent,
-        ip=request.client.host if request.client else None,
+        client_type=client_type,
         request_url=str(request.url),
         **headers.model_dump(),
     )
     return _overlay_response(response, db_admin, sub_username)
 
 
-@router.head(f"{SUB_PREFIX}/{SCOPE}/{{token}}/")
-@router.head(f"{SUB_PREFIX}/{SCOPE}/{{token}}", include_in_schema=False)
-async def namespaced_subscription_headers(
-    request: Request,
-    admin_slug: str,
-    token: str,
-    db: AsyncSession = Depends(get_db),
-    user_agent: str = Header(default=""),
-):
-    db_admin, sub_username = await _validate_namespace(db, admin_slug, token)
-    response_headers = await subscription_operator.user_subscription_headers(
-        db,
-        token=token,
-        accept_header=request.headers.get("Accept", ""),
-        user_agent=user_agent,
-        request_url=str(request.url),
-    )
-    return Response(headers=_overlay_headers(response_headers, db_admin, sub_username))
-
-
+# 3. Namespaced fixed endpoints
 @router.get(f"{SUB_PREFIX}/{SCOPE}/{{token}}/info", response_model=SubscriptionUserResponse)
 async def namespaced_subscription_info(
     request: Request,
@@ -1109,7 +1157,8 @@ async def namespaced_subscription_usage(
     return await subscription_operator.get_user_usage(db, token=token, query=query)
 
 
-@router.get(f"{SUB_PREFIX}/{SCOPE}/{{token}}/{{client_type}}")
+# 4. Namespaced client formats
+@router.get(f"{SUB_PREFIX}/{SCOPE}/{{token}}/{{client_type:client_fmt}}")
 async def namespaced_subscription_client(
     request: Request,
     admin_slug: str,
@@ -1128,27 +1177,39 @@ async def namespaced_subscription_client(
     )
     return _overlay_response(response, db_admin, sub_username)
 
-# Standard PasarGuard subscription links are scoped by the user owner too.
-# MRM is registered before the native subscription router, so these routes
-# preserve native behavior and only overlay MRM values for the owning admin.
-async def _admin_for_token(db: AsyncSession, token: str) -> tuple[Admin, str]:
-    db_user = await subscription_operator.get_validated_sub(db, token, load_admin_role=True)
-    db_admin = getattr(db_user, "admin", None)
-    if db_admin is None:
-        db_admin = await _get_db_admin(db, int(getattr(db_user, "admin_id", 0) or 0))
-    return db_admin, str(getattr(db_user, "username", "") or "")
 
-
-@router.get(f"{SUB_PREFIX}/{{token}}/", include_in_schema=False)
-@router.get(f"{SUB_PREFIX}/{{token}}", include_in_schema=False)
-async def scoped_standard_subscription(
+# 5. Namespaced subscription page
+@router.head(f"{SUB_PREFIX}/{SCOPE}/{{token}}/")
+@router.head(f"{SUB_PREFIX}/{SCOPE}/{{token}}", include_in_schema=False)
+async def namespaced_subscription_headers(
     request: Request,
+    admin_slug: str,
+    token: str,
+    db: AsyncSession = Depends(get_db),
+    user_agent: str = Header(default=""),
+):
+    db_admin, sub_username = await _validate_namespace(db, admin_slug, token)
+    response_headers = await subscription_operator.user_subscription_headers(
+        db,
+        token=token,
+        accept_header=request.headers.get("Accept", ""),
+        user_agent=user_agent,
+        request_url=str(request.url),
+    )
+    return Response(headers=_overlay_headers(response_headers, db_admin, sub_username))
+
+
+@router.get(f"{SUB_PREFIX}/{SCOPE}/{{token}}/")
+@router.get(f"{SUB_PREFIX}/{SCOPE}/{{token}}", include_in_schema=False)
+async def namespaced_subscription(
+    request: Request,
+    admin_slug: str,
     token: str,
     db: AsyncSession = Depends(get_db),
     user_agent: str = Header(default=""),
     headers=Depends(get_subscription_headers),
 ):
-    db_admin, sub_username = await _admin_for_token(db, token)
+    db_admin, sub_username = await _validate_namespace(db, admin_slug, token)
     response = await subscription_operator.user_subscription(
         db,
         token=token,
@@ -1161,6 +1222,7 @@ async def scoped_standard_subscription(
     return _overlay_response(response, db_admin, sub_username)
 
 
+# 6. Standard subscription page
 @router.head(f"{SUB_PREFIX}/{{token}}/", include_in_schema=False)
 @router.head(f"{SUB_PREFIX}/{{token}}", include_in_schema=False)
 async def scoped_standard_subscription_headers(
@@ -1180,60 +1242,22 @@ async def scoped_standard_subscription_headers(
     return Response(headers=_overlay_headers(response_headers, db_admin, sub_username))
 
 
-@router.get(f"{SUB_PREFIX}/{{token}}/info", include_in_schema=False)
-async def scoped_standard_subscription_info(
-    request: Request, token: str, db: AsyncSession = Depends(get_db)
-):
-    db_admin, sub_username = await _admin_for_token(db, token)
-    user_data, response_headers = await subscription_operator.user_subscription_info(
-        db, token=token, ip=request.client.host if request.client else None
-    )
-    return JSONResponse(
-        content=user_data.model_dump(mode="json"),
-        headers=_overlay_headers(response_headers, db_admin, sub_username),
-    )
-
-
-@router.get(f"{SUB_PREFIX}/{{token}}/raw", include_in_schema=False)
-async def scoped_standard_subscription_raw(
-    request: Request, token: str, db: AsyncSession = Depends(get_db)
-):
-    db_admin, sub_username = await _admin_for_token(db, token)
-    payload = await subscription_operator.user_subscription_raw(
-        db, token=token, request_url=str(request.url)
-    )
-    if isinstance(payload, dict):
-        payload["headers"] = _overlay_headers(payload.get("headers", {}), db_admin, sub_username)
-    return payload
-
-
-@router.get(f"{SUB_PREFIX}/{{token}}/apps", response_model=list[Application], include_in_schema=False)
-async def scoped_standard_subscription_apps(token: str, db: AsyncSession = Depends(get_db)):
-    return await subscription_operator.user_subscription_apps(db, token)
-
-
-@router.get(f"{SUB_PREFIX}/{{token}}/usage", response_model=UserUsageStatsList, include_in_schema=False)
-async def scoped_standard_subscription_usage(
-    token: str,
-    query=Depends(get_subscription_usage_query),
-    db: AsyncSession = Depends(get_db),
-):
-    return await subscription_operator.get_user_usage(db, token=token, query=query)
-
-
-@router.get(f"{SUB_PREFIX}/{{token}}/{{client_type}}", include_in_schema=False)
-async def scoped_standard_subscription_client(
+@router.get(f"{SUB_PREFIX}/{{token}}/", include_in_schema=False)
+@router.get(f"{SUB_PREFIX}/{{token}}", include_in_schema=False)
+async def scoped_standard_subscription(
     request: Request,
     token: str,
-    client_type: ConfigFormat,
     db: AsyncSession = Depends(get_db),
+    user_agent: str = Header(default=""),
     headers=Depends(get_subscription_headers),
 ):
     db_admin, sub_username = await _admin_for_token(db, token)
-    response = await subscription_operator.user_subscription_with_client_type(
+    response = await subscription_operator.user_subscription(
         db,
         token=token,
-        client_type=client_type,
+        accept_header=request.headers.get("Accept", ""),
+        user_agent=user_agent,
+        ip=request.client.host if request.client else None,
         request_url=str(request.url),
         **headers.model_dump(),
     )
