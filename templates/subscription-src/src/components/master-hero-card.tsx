@@ -9,7 +9,6 @@ import {
   Copy,
   Check,
   QrCode,
-  Sparkles,
 } from 'lucide-react';
 import { OnlineBadge } from '@/components/online-badge';
 import { QuickConnect, RenewButton } from '@/components/quick-connect';
@@ -142,7 +141,7 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
   const strokeDashoffset = arcLength - (remainingPercent / 100) * arcLength;
 
   return (
-    <section className="relative w-full rounded-3xl border border-white/20 dark:border-white/10 bg-gradient-to-b from-card/90 via-card/75 to-card/95 p-5 sm:p-7 shadow-xl shadow-black/5 backdrop-blur-2xl transition-all">
+    <section className="relative w-full rounded-3xl border border-white/20 dark:border-white/10 bg-gradient-to-b from-card/90 via-card/75 to-card/95 p-4 sm:p-7 shadow-xl shadow-black/5 backdrop-blur-2xl transition-all">
       {/* Ambient background glow */}
       <div
         className={cn(
@@ -158,7 +157,7 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
 
       {/* Top Bar: Identity & Status Pill & Refresh */}
       <div className="relative z-10 flex flex-nowrap items-center justify-between gap-2 border-b border-border/50 pb-3">
-        <div className="flex min-w-0 items-center gap-2.5">
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-inner">
             {isDepleted ? (
               <AlertTriangle className="size-6 text-rose-500 animate-bounce" />
@@ -168,30 +167,33 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
           </div>
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-2">
-              <span className="truncate font-bold text-foreground text-lead tracking-tight" dir="ltr">
+              <span className="truncate font-bold text-foreground text-body sm:text-lead tracking-tight" dir="ltr">
                 {user.username}
               </span>
               <OnlineBadge lastOnline={user.online_at} />
             </div>
-            <p className="text-micro text-muted-foreground flex items-center gap-1 mt-0.5 truncate">
-              <Sparkles className="size-3 shrink-0 text-primary" />
-              {isFa ? 'اشتراک فعال پاسارگارد' : 'PasarGuard Active Service'}
-            </p>
+            <div className="mt-1 flex min-w-0 items-center gap-2">
+              {/* وضعیت زنده اینجا می‌نشیند تا نام کاربری همیشه جا شود و وضعیت
+                  هم از تزئینات جدا و برجسته‌تر باشد. */}
+              <div
+                className={cn(
+                  'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-micro font-semibold shadow-xs',
+                  statusConfig.bg
+                )}
+              >
+                <span className={cn('size-2 rounded-full', statusConfig.dot)} aria-hidden="true" />
+                <span>{statusConfig.label}</span>
+              </div>
+              {/* در موبایل پیلِ وضعیت همین را می‌رساند؛ این زیرنویس فقط در
+                  صفحه‌های بزرگ‌تر که جا هست نمایش داده می‌شود. */}
+              <p className="hidden truncate text-micro text-muted-foreground sm:block">
+                {isFa ? 'اشتراک فعال پاسارگارد' : 'PasarGuard Active Service'}
+              </p>
+            </div>
           </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          {/* Status Pill */}
-          <div
-            className={cn(
-              'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-micro font-semibold shadow-xs',
-              statusConfig.bg
-            )}
-          >
-            <span className={cn('size-2 rounded-full', statusConfig.dot)} aria-hidden="true" />
-            <span>{statusConfig.label}</span>
-          </div>
-
           {/* Refresh Button */}
           <button
             type="button"
@@ -212,7 +214,7 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
           <svg
             height={radius * 2}
             width={radius * 2}
-            className="rotate-135 transition-all duration-700"
+            className="size-[112px] shrink-0 rotate-135 transition-all duration-700 sm:size-[132px]"
           >
             {/* Background Track */}
             <circle
@@ -263,12 +265,12 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
           <div className="text-micro font-semibold uppercase tracking-wider text-muted-foreground">
             {isFa ? 'میزان ترافیک قابل استفاده' : 'Available Traffic'}
           </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-display font-extrabold tracking-tight text-foreground" dir="ltr">
+          <div className="flex items-baseline gap-1.5 whitespace-nowrap">
+            <span className="text-heading sm:text-display font-extrabold tracking-tight text-foreground" dir="ltr">
               {limitBytes ? formatBytes(remainingBytes) : isFa ? 'نامحدود' : 'Unlimited'}
             </span>
             {limitBytes > 0 && (
-              <span className="text-body font-medium text-muted-foreground" dir="ltr">
+              <span className="text-caption font-medium text-muted-foreground" dir="ltr">
                 / {formatBytes(limitBytes)}
               </span>
             )}
@@ -305,7 +307,7 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
       </div>
 
       {/* Compact Details Strip: four key numbers on one row (mobile included) */}
-      <div className="relative z-10 grid grid-cols-4 gap-1.5 my-4">
+      <div className="relative z-10 grid grid-cols-2 sm:grid-cols-4 gap-1.5 my-4">
         <div className="min-w-0 rounded-xl border border-border/60 bg-background/50 px-2 py-1.5 shadow-xs">
           <div className="truncate text-micro text-muted-foreground">
             {isFa ? 'حجم کل بسته' : t('userInfo.totalLimit', 'Total Limit')}
@@ -349,13 +351,13 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
           <QuickConnect variant="hero" />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="ios-scroll-row flex w-full items-center gap-2 sm:w-auto">
           {/* Copy Sub Link Button */}
           <button
             type="button"
             onClick={handleCopySub}
             className={cn(
-              'inline-flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-xl border border-border bg-background/80 px-3.5 py-2.5 text-micro font-semibold text-foreground shadow-xs transition hover:bg-muted active:scale-95',
+              'ui-tap-row shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-border bg-background/80 px-3.5 text-micro font-semibold text-foreground shadow-xs transition hover:bg-muted active:scale-95',
               isCopied(subUrl) && 'border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10'
             )}
             title={isFa ? 'کپی لینک سابسکریپشن' : 'Copy subscription URL'}

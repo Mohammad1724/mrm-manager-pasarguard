@@ -252,12 +252,12 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
       {/* Featured Master Subscription Link */}
       <div className="mb-4 flex items-center justify-between gap-2 rounded-2xl border border-primary/20 bg-primary/5 p-3 transition">
         <div className="flex min-w-0 items-center gap-2.5">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-white shadow-xs">
+          <div className="hidden size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-white shadow-xs sm:flex">
             <ShieldCheck className="size-5" />
           </div>
           <div className="min-w-0">
             <div className="text-body font-bold text-foreground truncate">
-              {isFa ? 'لینک اشتراک خودکار (پیشنهادی)' : t('config.subscriptionLink')}
+              {isFa ? 'لینک اشتراک خودکار' : t('config.subscriptionLink')}
             </div>
             <div className="text-micro text-muted-foreground truncate" dir="ltr" title={subscriptionUrl}>
               {subscriptionUrl}
