@@ -1878,6 +1878,77 @@ fi
 
 echo ""
 
+# ─── Test Group 17: accessibility structure guards ───────────────────────────
+# (ساختار لندمارک/عنوان/برچسب — جلوگیری از بازگشت ایرادهای ممیزی ساختاری)
+echo "📋 Group 17: accessibility structure guards"
+echo ""
+
+SRC_DIR="$PROJECT_DIR/templates/subscription-src/src"
+
+# 17.1: صفحه دقیقاً یک لندمارک اصلی دارد و همان مال Layout است
+MAIN_COUNT=$(grep -rn "<main" "$SRC_DIR" --include="*.tsx" | wc -l | tr -d ' ')
+if [ "$MAIN_COUNT" = "1" ] && grep -q "<main" "$SRC_DIR/components/layout/layout.tsx"; then
+    pass "exactly one <main> landmark, owned by layout.tsx"
+else
+    fail "expected a single <main> in layout.tsx, found $MAIN_COUNT occurrence(s)"
+fi
+
+# 17.2: ظرف صفحه لندمارک تودرتو نمی‌سازد
+if grep -q "<main" "$SRC_DIR/App.tsx"; then
+    fail "App.tsx renders a nested <main> (invalid landmark nesting)"
+else
+    pass "no nested <main> in page container"
+fi
+
+# 17.3: صفحه سرتیتر سطح‌بالا دارد (گیرندهٔ خوانندهٔ صفحه)
+H1_COUNT=$(grep -c "<h1" "$SRC_DIR/App.tsx" || true)
+if [ "${H1_COUNT:-0}" -ge 1 ]; then
+    pass "page declares an <h1> (visually hidden where the design has no title)"
+else
+    fail "page has no <h1>"
+fi
+
+# 17.4: داخل تریگرهای آکاردئون سرتیتر تکراری نیست
+#       (AccordionTrigger رادیکس خودش سرتیتر سطح سه می‌سازد)
+if grep -q "<h3" "$SRC_DIR/components/AppsList.tsx"; then
+    fail "AppsList renders its own <h3> inside Radix AccordionTrigger (duplicate heading)"
+else
+    pass "no duplicate <h3> inside accordion triggers"
+fi
+
+# 17.5: بخش اپلیکیشن‌ها در سطح بخش اعلام می‌شود
+if grep -q "<h2" "$SRC_DIR/App.tsx"; then
+    pass "apps section announced at section level"
+else
+    fail "apps section title level inconsistent"
+fi
+
+# 17.6: هر <input> برچسب دسترس‌پذیر دارد
+INPUTS=$(grep -rn "<input" "$SRC_DIR" --include="*.tsx" | wc -l | tr -d ' ')
+LABELLED=$(grep -rn "aria-label\|aria-labelledby" "$SRC_DIR" --include="*.tsx" | wc -l | tr -d ' ')
+if [ "$INPUTS" = "0" ] || [ "$LABELLED" -ge "$INPUTS" ]; then
+    pass "every <input> carries an accessible label"
+else
+    fail "unlabelled <input> present ($INPUTS inputs vs $LABELLED labels)"
+fi
+
+# 17.7: صفحهٔ اصلی فقط سرتیتر صفحه‌سطح/بخشی دارد، نه سطح عمیق‌تر
+if grep -q "<h3" "$SRC_DIR/App.tsx"; then
+    fail "App.tsx uses a level-3 heading for a page-level state"
+else
+    pass "page-level states use page-level headings"
+fi
+
+# 17.8: دکمه‌های فقط-آیکونی نام دسترس‌پذیر دارند
+if grep -q "sr-only" "$SRC_DIR/components/language-switcher.tsx" && \
+   grep -q "sr-only" "$SRC_DIR/components/theme-toggle.tsx"; then
+    pass "icon-only toolbar buttons expose accessible names"
+else
+    fail "icon-only toolbar button without accessible name"
+fi
+
+echo ""
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 echo "═══════════════════════════════════════════════════════════"
 echo "  Test Results"
