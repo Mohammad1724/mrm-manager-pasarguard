@@ -526,6 +526,37 @@ special_backup() {
     special_pause
 }
 
+special_install_auto() {
+    detect_active_panel >/dev/null 2>&1 || true
+    mkdir -p "$DATA_NS" "$PROFILES_DIR" "$LOG_DIR" "$BACKEND_PY" 2>/dev/null || true
+
+    # 1) data namespace + default profiles map
+    if [ ! -s "$PROFILES_DIR/profiles.json" ]; then
+        cat > "$PROFILES_DIR/profiles.json" <<'JSONEOF'
+{
+  "version": 1,
+  "admins": {}
+}
+JSONEOF
+    fi
+    chmod 644 "$PROFILES_DIR/profiles.json" 2>/dev/null || true
+    chown -R nobody:nogroup "$DATA_NS" 2>/dev/null || true
+
+    # 2) backend bridge
+    if [ -f "$BACKEND_PY/sitecustomize.py" ] && [ -f "$BACKEND_PY/mrm_admin_subscriptions.py" ]; then
+        chmod 644 "$BACKEND_PY"/*.py 2>/dev/null || true
+    fi
+
+    # 3) inject (idempotent)
+    if [ -f "$INTEGRATE" ]; then
+        MRM_ROOT="$SPECIAL_DIR" bash "$INTEGRATE" >/dev/null 2>&1 || true
+    fi
+
+    # 4) systemd self-healing watchers
+    special_install_units >/dev/null 2>&1 || true
+    return 0
+}
+
 special_menu() {
     local S_OPT
     while true; do
@@ -556,6 +587,8 @@ special_menu() {
 case "${1:-}" in
     --detect-quiet)  special_competing_present && exit 0 || exit 1 ;;
     --reintegrate)   special_reintegrate; exit 0 ;;
+    --install-quiet) special_install_auto; exit $? ;;
+    --status)        special_status; exit 0 ;;
 esac
 
 special_menu

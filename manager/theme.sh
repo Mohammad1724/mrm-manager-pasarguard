@@ -818,7 +818,16 @@ PYEOF
         fi
 
         echo ""
-        ui_step 3 3 "Activating"
+        ui_step 3 3 "Activating and Finalizing Integration"
+
+        # In-panel integration + systemd watchers (unified setup)
+        ui_task "Setting up in-panel manager & watchers"
+        if [ -x "$MRM_DIR/special.sh" ]; then
+            bash "$MRM_DIR/special.sh" --install-quiet >/dev/null 2>&1 || true
+            ui_task_done ok
+        else
+            ui_task_done warn "skipped"
+        fi
 
         local active_choice="special"
         if [ "$TARGET" = "classic" ]; then
@@ -826,20 +835,30 @@ PYEOF
         elif [ "$TARGET" = "special" ]; then
             active_choice="special"
         else
-            active_choice="$(theme_current_template)"
-            [ "$active_choice" = "none" ] && active_choice="special"
+            echo ""
+            ui_section "Active Template"
+            ui_text "Choose which template should be active right now:"
+            echo "  1) MRM Special (قالب ویژه) [Default]"
+            echo "  2) MRM Classic (قالب کلاسیک)"
+            local choice_raw
+            ui_ask "Select template [1-2]" "1" choice_raw
+            case "$choice_raw" in
+                2) active_choice="classic" ;;
+                *) active_choice="special" ;;
+            esac
         fi
 
         ui_note "Activating $(theme_template_display_name "$active_choice") and restarting the panel…"
         if theme_set_template "$active_choice" >/dev/null; then
             echo ""
-            ui_box_start ok "Template installed"
+            ui_box_start ok "Templates installed and configured"
             ui_box_line "Active" "$(theme_template_display_name "$active_choice")"
             ui_box_line "MRM Special" "$TEMPLATE_FILE"
             ui_box_line "MRM Classic" "$CLASSIC_FILE"
+            ui_box_line "In-Panel MRM" "Settings › MRM tab"
             ui_box_line "Size" "special $(du -h "$TEMPLATE_FILE" 2>/dev/null | cut -f1 || echo '?') · classic $(du -h "$CLASSIC_FILE" 2>/dev/null | cut -f1 || echo '?')"
             ui_box_end
-            ui_note "Switch templates any time in the panel: Settings › MRM."
+            ui_note "Switch templates any time in the panel: Settings › MRM or from Theme Manager."
         else
             ui_warning "Template installed, but activation failed — use 'Template on / off' from the menu"
         fi
@@ -1016,6 +1035,37 @@ theme_toggle() {
     pause
 }
 
+theme_select_active_menu() {
+    detect_active_panel > /dev/null
+    ui_header "Switch Active Template"
+    local cur
+    cur="$(theme_current_template)"
+    ui_kv_state "Current active" ok "$(theme_template_display_name "$cur")"
+    echo ""
+    ui_menu_item 1 "MRM Special (قالب ویژه)" "Modern turquoise design with Direct Connect"
+    ui_menu_item 2 "MRM Classic (قالب کلاسیک)" "Lightweight classic subscription page"
+    ui_menu_back
+    local sel
+    ui_select sel
+    case "$sel" in
+        1) theme_set_template "special"; pause ;;
+        2) theme_set_template "classic"; pause ;;
+        0) return ;;
+        *) theme_invalid_option ;;
+    esac
+}
+
+theme_status_menu() {
+    if [ -x "$MRM_DIR/special.sh" ]; then
+        bash "$MRM_DIR/special.sh" --status
+    else
+        ui_header "Theme Status"
+        theme_templates_status
+        theme_conflicts_label
+        pause
+    fi
+}
+
 theme_menu() {
     local T_OPT
     while true; do
@@ -1026,18 +1076,18 @@ theme_menu() {
         echo ""
         ui_note "Both templates stay installed; one is shown at a time. Switch in the panel: Settings › MRM."
         echo ""
-        ui_menu_item 1 "Install / Update MRM Classic"
-        ui_menu_item 2 "Install / Update MRM Special"
-        ui_menu_item 3 "Template on / off"
-        ui_menu_item 4 "MRM Special manager" "settings tab, backend bridge"
-        ui_menu_item 5 "Uninstall template"
+        ui_menu_item 1 "Install / Update Templates" "MRM Special & MRM Classic + panel integration"
+        ui_menu_item 2 "Switch Active Template" "MRM Special ⇄ MRM Classic"
+        ui_menu_item 3 "Template on / off" "Master switch"
+        ui_menu_item 4 "Status & Diagnostics" "Check files, panel hooks and watchers"
+        ui_menu_item 5 "Uninstall templates"
         ui_menu_back
         ui_select T_OPT
         case $T_OPT in
-            1) install_theme_wizard "classic" ;;
-            2) install_theme_wizard "special" ;;
+            1) install_theme_wizard "both" ;;
+            2) theme_select_active_menu ;;
             3) theme_toggle ;;
-            4) bash "$MRM_DIR/special.sh" || { ui_error "MRM Special could not be started"; sleep 1; } ;;
+            4) theme_status_menu ;;
             5) uninstall_theme ;;
             0) return ;;
             *) theme_invalid_option ;;

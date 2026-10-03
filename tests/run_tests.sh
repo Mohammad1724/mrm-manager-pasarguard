@@ -1058,6 +1058,14 @@ else
     fail "menu missing dedicated template install options"
 fi
 
+if grep -q 'Install / Update Templates' "$PROJECT_DIR/manager/theme.sh" && \
+   grep -q 'special_install_auto' "$PROJECT_DIR/manager/special.sh" && \
+   grep -q -- '--install-quiet' "$PROJECT_DIR/manager/special.sh"; then
+    pass "menu provides unified 1-click installer for MRM Special, Classic and panel manager"
+else
+    fail "menu missing unified 1-click template installer"
+fi
+
 # ─── v1.4.0: MRM Turquoise identity — فیروزه‌ای/زغالی ─────────────────────────
 if grep -qi -- "--treasury-gold: #2db7b2" templates/subscription-src/src/index.css && \
    grep -qi -- "--treasury-emerald: #0b6e6a" templates/subscription-src/src/index.css; then
