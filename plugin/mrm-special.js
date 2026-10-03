@@ -149,7 +149,33 @@
     #${ROOT_ID} .z-presets{display:flex;gap:.45rem;overflow-x:auto;padding:.08rem .03rem .22rem;scrollbar-width:thin}
     #${ROOT_ID} .z-preset{display:flex;min-width:116px;align-items:center;gap:.45rem;border:1px solid hsl(var(--border));border-radius:.78rem;padding:.48rem .55rem;color:hsl(var(--foreground));background:hsl(var(--background)/.58);font:inherit;font-size:.62rem;font-weight:760;cursor:pointer;transition:transform .15s,border-color .15s,box-shadow .15s}
     #${ROOT_ID} .z-preset:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--preset-a) 38%,hsl(var(--border)));box-shadow:0 7px 18px color-mix(in srgb,var(--preset-b) 10%,transparent)}
+    #${ROOT_ID} .z-preset.is-active-preset{border-color:var(--preset-a)!important;box-shadow:0 0 0 1.5px var(--preset-a),0 8px 20px color-mix(in srgb,var(--preset-b) 22%,transparent)!important;background:color-mix(in srgb,var(--preset-a) 12%,hsl(var(--background)))!important}
     #${ROOT_ID} .z-preset-dots{display:flex;flex:none}#${ROOT_ID} .z-preset-dots i{width:18px;height:18px;border:2px solid hsl(var(--background));border-radius:50%;box-shadow:0 0 0 1px hsl(var(--border))}#${ROOT_ID} .z-preset-dots i+i{margin-right:-7px}
+    #${ROOT_ID} .z-preview-badge{font-size:.62rem;font-weight:800;padding:.22rem .55rem;border-radius:999px;background:linear-gradient(135deg,rgba(16,185,129,.2),rgba(5,150,105,.12));border:1px solid rgba(16,185,129,.35);color:#059669}
+    html.dark #${ROOT_ID} .z-preview-badge{color:#34d399}
+    #${ROOT_ID} .z-preview-sub-title{display:block;font-size:.62rem;color:rgba(255,255,255,.75);margin-bottom:.18rem}
+    #${ROOT_ID} .z-preview-user{display:block;font-size:.92rem;font-weight:850;color:#fff;margin-bottom:.55rem}
+    #${ROOT_ID} .z-preview-metrics{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.75rem}
+    #${ROOT_ID} .z-preview-chip{font-size:.62rem;padding:.2rem .48rem;border-radius:.45rem;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);color:#fff;display:flex;align-items:center;gap:.25rem}
+    #${ROOT_ID} .z-preview-chip span{opacity:.75}
+    #${ROOT_ID} .z-preview-orbit-inner{display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1}
+    #${ROOT_ID} .z-preview-orbit-inner small{font-size:.52rem;opacity:.78;margin-top:.12rem}
+    #${ROOT_ID} .z-tpl-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.85rem;margin-bottom:1rem}
+    @media(max-width:760px){#${ROOT_ID} .z-tpl-grid{grid-template-columns:1fr}}
+    #${ROOT_ID} .z-tpl-card{position:relative;display:flex;flex-direction:column;justify-content:space-between;border:1.5px solid hsl(var(--border));border-radius:1rem;padding:1rem;background:linear-gradient(160deg,hsl(var(--background)/.72),hsl(var(--card)));cursor:pointer;transition:all .22s ease;box-shadow:0 4px 14px rgba(0,0,0,.03)}
+    #${ROOT_ID} .z-tpl-card:hover{transform:translateY(-2px);border-color:rgba(45,183,178,.45);box-shadow:0 8px 24px rgba(45,183,178,.12)}
+    #${ROOT_ID} .z-tpl-card.is-selected{border-color:#14ADA6;background:linear-gradient(160deg,rgba(45,183,178,.08),hsl(var(--card)));box-shadow:0 0 0 1px #14ADA6,0 12px 28px rgba(20,173,166,.16)}
+    #${ROOT_ID} .z-tpl-card-top{display:flex;align-items:center;justify-content:space-between;gap:.6rem;margin-bottom:.7rem}
+    #${ROOT_ID} .z-tpl-pill{font-size:.62rem;font-weight:800;padding:.2rem .48rem;border-radius:999px;line-height:1.3}
+    #${ROOT_ID} .z-tpl-pill.recommended{background:linear-gradient(135deg,rgba(20,173,166,.18),rgba(14,143,138,.1));border:1px solid rgba(20,173,166,.32);color:#0e8f8a}
+    html.dark #${ROOT_ID} .z-tpl-pill.recommended{color:#53E0BD}
+    #${ROOT_ID} .z-tpl-pill.classic{background:rgba(184,134,11,.1);border:1px solid rgba(184,134,11,.24);color:#8a5b08}
+    html.dark #${ROOT_ID} .z-tpl-pill.classic{color:#deb24b}
+    #${ROOT_ID} .z-tpl-name{font-size:.88rem;font-weight:850;margin-bottom:.35rem;display:flex;align-items:center;gap:.45rem}
+    #${ROOT_ID} .z-tpl-desc{font-size:.7rem;color:hsl(var(--muted-foreground));line-height:1.65;margin-bottom:.75rem}
+    #${ROOT_ID} .z-tpl-features{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:auto}
+    #${ROOT_ID} .z-tpl-feature{font-size:.62rem;padding:.18rem .44rem;border-radius:.45rem;background:hsl(var(--background)/.65);border:1px solid hsl(var(--border));color:hsl(var(--muted-foreground))}
+    #${ROOT_ID} .z-tpl-apply-row{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
     #${ROOT_ID} .z-color-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}
     #${ROOT_ID} .z-color-card{min-width:0;border:1px solid hsl(var(--border));border-radius:1rem;padding:.75rem;background:linear-gradient(155deg,hsl(var(--background)/.68),hsl(var(--card)/.72));box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
     #${ROOT_ID} .z-color-title{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.55rem;font-size:.74rem;font-weight:800}
@@ -535,12 +561,38 @@
     }
     const active = (cachedTemplate && cachedTemplate.active) || 'special';
     const tstat = (cachedTemplate && cachedTemplate.message) ? escapeHtml(cachedTemplate.message) : '';
-    return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.palette}</span>قالب صفحه اشتراک</h3><div class="z-card-note">قالب مورد نظر را انتخاب و دکمه «اعمال قالب» را بزنید.</div></div><span class="z-native">TEMPLATE</span></div>
-      <div class="z-grid">
-        <label class="z-toggle is-special" style="cursor:pointer"><div><div class="z-toggle-title">قالب کلاسیک (MRM Classic)</div><div class="z-toggle-sub">قالب سبک، سریع و اصیل با دکمه اتصال مستقیم</div></div><input type="radio" name="z-template" value="classic" ${active === 'classic' ? 'checked' : ''}></label>
-        <label class="z-toggle is-special" style="cursor:pointer"><div><div class="z-toggle-title">قالب ویژه (MRM Special)</div><div class="z-toggle-sub">قالب مدرن شیشه‌ای با استودیوی تم و امکانات کامل</div></div><input type="radio" name="z-template" value="special" ${active === 'special' ? 'checked' : ''}></label>
+    return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.palette}</span>قالب صفحه اشتراک</h3><div class="z-card-note">قالب مورد نظر را انتخاب و دکمه «اعمال قالب» را بزنید. تغییر قالب نیازمند ری‌استارت ایمن پنل است.</div></div><span class="z-native">TEMPLATE</span></div>
+      <div class="z-tpl-grid">
+        <label class="z-tpl-card ${active === 'special' ? 'is-selected' : ''}" style="cursor:pointer">
+          <div class="z-tpl-card-top">
+            <span class="z-tpl-pill recommended">پیشنهادی • Modern React</span>
+            <input type="radio" name="z-template" value="special" ${active === 'special' ? 'checked' : ''}>
+          </div>
+          <div class="z-tpl-name">قالب ویژه (MRM Special)</div>
+          <div class="z-tpl-desc">قالب مدرن شیشه‌ای بر پایه React 19، کارت مستر یکپارچه، تست پینگ زنده، استودیوی رنگ‌بندی داینامیک، راهنمای ۳ مرحله‌ای و فیلتر هوشمند پروتکل‌ها</div>
+          <div class="z-tpl-features">
+            <span class="z-tpl-feature">React 19 + Vite</span>
+            <span class="z-tpl-feature">تست پینگ زنده</span>
+            <span class="z-tpl-feature">فیلتر پروتکل</span>
+            <span class="z-tpl-feature">استودیوی رنگ تم</span>
+          </div>
+        </label>
+        <label class="z-tpl-card ${active === 'classic' ? 'is-selected' : ''}" style="cursor:pointer">
+          <div class="z-tpl-card-top">
+            <span class="z-tpl-pill classic">سبک و سریع • Single File</span>
+            <input type="radio" name="z-template" value="classic" ${active === 'classic' ? 'checked' : ''}>
+          </div>
+          <div class="z-tpl-name">قالب کلاسیک (MRM Classic)</div>
+          <div class="z-tpl-desc">قالب تک‌فایلی مستقل، بدون هیچ‌گونه فریمورک سنگین، نمودار مصرف زنده Canvas، جستجوی بلادرنگ و دکمه‌های اتصال مستقیم</div>
+          <div class="z-tpl-features">
+            <span class="z-tpl-feature">Zero Dependency</span>
+            <span class="z-tpl-feature">لود زیر ۱ ثانیه</span>
+            <span class="z-tpl-feature">نمودار زنده Canvas</span>
+            <span class="z-tpl-feature">کپی همگانی</span>
+          </div>
+        </label>
       </div>
-      <div class="z-field"><button class="z-save" id="z-tpl-apply">اعمال قالب</button> <span class="z-help" id="z-tpl-status">${tstat}</span></div>
+      <div class="z-tpl-apply-row"><button class="z-save" id="z-tpl-apply">اعمال قالب</button> <span class="z-help" id="z-tpl-status">${tstat}</span></div>
     </section>`;
   }
 
@@ -551,13 +603,24 @@
     } catch { return; }
     const node = field('z-tpl-status');
     const pick = document.querySelector(`input[name="z-template"][value="${cachedTemplate.active}"]`);
-    if (pick) pick.checked = true;
+    if (pick) {
+      pick.checked = true;
+      document.querySelectorAll('.z-tpl-card').forEach((card) => card.classList.remove('is-selected'));
+      pick.closest('.z-tpl-card')?.classList.add('is-selected');
+    }
     if (node && !cachedTemplate.pending) node.textContent = cachedTemplate.message ? `✔ ${cachedTemplate.message}` : '';
   }
 
   function stopTemplatePolling() { if (templatePollTimer) clearInterval(templatePollTimer); templatePollTimer = null; }
 
   function bindTemplateActions(root) {
+    root?.querySelectorAll('input[name="z-template"]').forEach((radio) => {
+      radio.addEventListener('change', () => {
+        root.querySelectorAll('.z-tpl-card').forEach((card) => card.classList.remove('is-selected'));
+        radio.closest('.z-tpl-card')?.classList.add('is-selected');
+      });
+    });
+
     root?.querySelector('#z-tpl-apply')?.addEventListener('click', async () => {
       const button = field('z-tpl-apply');
       const node = field('z-tpl-status');
@@ -802,14 +865,38 @@
         <div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.palette}</span>استودیوی ظاهر و رنگ‌بندی</h3><div class="z-card-note">دو رنگ برند، کل هویت تمپلیت را می‌سازند: Hero، کارت‌ها، سطوح شیشه‌ای، نور محیط، Border، دکمه‌ها و حالت روشن/تیره به‌صورت هماهنگ تغییر می‌کنند؛ رنگ‌های معنایی مثل خطا و موفقیت مستقل می‌مانند.</div></div><span class="z-native">THEME STUDIO</span></div>
         <div id="z-theme-preview" class="z-theme-preview" style="--z-preview-primary:${primary};--z-preview-secondary:${secondary}">
           <div class="z-preview-nav">
-            <div class="z-theme-preview-main"><span class="z-theme-preview-logo"></span><div class="z-theme-preview-text"><strong>پیش‌نمایش زنده تمپلیت</strong><span>قبل از ذخیره، ترکیب رنگ و عمق بصری را همین‌جا ببینید.</span></div></div>
-            <button class="z-theme-preview-btn" type="button" tabindex="-1">اتصال مستقیم</button>
+            <div class="z-theme-preview-main">
+              <span class="z-theme-preview-logo">${icons.gem}</span>
+              <div class="z-theme-preview-text">
+                <strong>پیش‌نمایش زنده کارت اشتراک (Master Hero)</strong>
+                <span>تغییر رنگ‌ها و عمق شیشه‌ای به‌صورت در لحظه</span>
+              </div>
+            </div>
+            <span class="z-preview-badge">فعال و متصل</span>
           </div>
           <div class="z-preview-hero">
-            <div class="z-preview-hero-copy"><strong>اشتراک من</strong><span>هویت برند و لایه‌های تم هماهنگ می‌شوند</span><b class="z-preview-cta">فعال و متصل</b></div>
-            <div class="z-preview-orbit"><strong>72%</strong></div>
+            <div class="z-preview-hero-copy">
+              <span class="z-preview-sub-title">اشتراک ویژه ۳۰ روزه</span>
+              <strong class="z-preview-user">کاربر نمونه: user_vip</strong>
+              <div class="z-preview-metrics">
+                <span class="z-preview-chip"><span>مصرف:</span> <b>۲۸.۴ GB</b></span>
+                <span class="z-preview-chip"><span>کل:</span> <b>۱۰۰ GB</b></span>
+                <span class="z-preview-chip"><span>مهلت:</span> <b>۲۴ روز</b></span>
+              </div>
+              <button class="z-theme-preview-btn" type="button" tabindex="-1">اتصال مستقیم</button>
+            </div>
+            <div class="z-preview-orbit">
+              <div class="z-preview-orbit-inner">
+                <strong>۷۲٪</strong>
+                <small>باقی‌مانده</small>
+              </div>
+            </div>
           </div>
-          <div class="z-preview-cards"><span class="z-preview-card"></span><span class="z-preview-card"></span><span class="z-preview-card"></span></div>
+          <div class="z-preview-cards">
+            <div class="z-preview-card"><span>کانفیگ VLESS</span><small>58ms</small></div>
+            <div class="z-preview-card"><span>کانفیگ VMess</span><small>64ms</small></div>
+            <div class="z-preview-card"><span>کانفیگ Trojan</span><small>72ms</small></div>
+          </div>
         </div>
         <div class="z-preset-wrap">
           <div class="z-preset-title"><span>پالت‌های آماده حرفه‌ای</span><span>برای شروع سریع</span></div>
@@ -908,6 +995,20 @@
       paint();
     });
 
+    const markActivePreset = (pHex, sHex) => {
+      root.querySelectorAll('[data-theme-preset]').forEach((btn) => {
+        const id = btn.getAttribute('data-theme-preset');
+        const p = THEME_PRESETS.find((item) => item.id === id);
+        if (p && p.primary.toUpperCase() === String(pHex).toUpperCase() && p.secondary.toUpperCase() === String(sHex).toUpperCase()) {
+          btn.classList.add('is-active-preset');
+        } else {
+          btn.classList.remove('is-active-preset');
+        }
+      });
+    };
+
+    markActivePreset(cfg.themePrimary || defaults.themePrimary, cfg.themeSecondary || defaults.themeSecondary);
+
     root.querySelectorAll('[data-theme-preset]').forEach((button) => {
       button.addEventListener('click', () => {
         const preset = THEME_PRESETS.find((item) => item.id === button.getAttribute('data-theme-preset'));
@@ -918,6 +1019,7 @@
         themePickerState.secondary = { ...secondary, hex: preset.secondary };
         paintThemePicker(root, 'primary');
         paintThemePicker(root, 'secondary');
+        markActivePreset(preset.primary, preset.secondary);
         const status = root.querySelector('#z-appearance-status');
         if (status) {
           status.className = 'z-appearance-status';
