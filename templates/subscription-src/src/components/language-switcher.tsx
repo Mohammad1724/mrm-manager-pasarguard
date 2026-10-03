@@ -4,7 +4,7 @@ import { Languages } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 export const LanguageSwitcher: React.FC = () => {
-  const { i18n } = useTranslation();
+  const { i18n, t } = useTranslation();
 
   const changeLanguage = async (lang: string) => {
     await i18n.changeLanguage(lang);
@@ -17,6 +17,7 @@ export const LanguageSwitcher: React.FC = () => {
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="icon" className="ios-toolbar-button">
           <Languages className="h-4 w-4" />
+          <span className="sr-only">{t('language.change', 'تغییر زبان')}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">

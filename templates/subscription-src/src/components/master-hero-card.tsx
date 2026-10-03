@@ -214,6 +214,8 @@ export const MasterHeroCard: FC<MasterHeroCardProps> = ({
           <svg
             height={radius * 2}
             width={radius * 2}
+            aria-hidden="true"
+            focusable="false"
             className="size-[112px] shrink-0 rotate-135 transition-all duration-700 sm:size-[132px]"
           >
             {/* Background Track */}

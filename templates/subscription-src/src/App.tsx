@@ -143,9 +143,9 @@ export default function App() {
               <RefreshCcw className="size-7 animate-spin" />
             </div>
             <div>
-              <h3 className="text-lead font-bold text-foreground">
+              <h1 className="text-lead font-bold text-foreground">
                 {isFa ? 'در حال بارگذاری اطلاعات…' : t('common.loading')}
-              </h3>
+              </h1>
               <p className="text-micro text-muted-foreground mt-1">
                 {isFa ? 'برقراری ارتباط با سرور پاسارگارد' : 'Connecting to PasarGuard...'}
               </p>
@@ -166,7 +166,7 @@ export default function App() {
               <span className="text-heading font-black">!</span>
             </div>
             <div>
-              <h3 className="text-lead font-bold text-foreground">{t('dashboard.error')}</h3>
+              <h1 className="text-lead font-bold text-foreground">{t('dashboard.error')}</h1>
               <p className="text-micro text-muted-foreground mt-1">{error.message}</p>
             </div>
             <button
@@ -226,7 +226,14 @@ export default function App() {
         </header>
 
         {/* Main Content Area */}
-        <main className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+        {/* نقش لندمارک اصلی را Layout می‌دهد؛ این لایه فقط ظرف چیدمان است
+            (لندمارک اصلی تودرتو برای صفحه‌خوان‌ها نامعتبر است). */}
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+          {/* عنوان صفحه: طرح MRM عنوانِ دیداری ندارد، ولی هر صفحه به یک سرتیتر
+              سطح‌بالا نیاز دارد تا ساختار عناوین کامل باشد. */}
+          <h1 className="sr-only">
+            {isFa ? `اشتراک من — ${effectiveData?.username ?? ''}` : `My subscription — ${effectiveData?.username ?? ''}`}
+          </h1>
           {/* Announcement Banner if present */}
           {announcementMessage && (
             <AnnouncementBanner message={announcementMessage} url={announceUrl} />
@@ -271,9 +278,9 @@ export default function App() {
                   <Sparkles className="size-4" />
                 </div>
                 <div>
-                  <h3 className="text-body sm:text-lead font-bold text-foreground">
+                  <h2 className="text-body sm:text-lead font-bold text-foreground">
                     {isFa ? 'نرم‌افزارهای پیشنهادی' : t('apps.title')}
-                  </h3>
+                  </h2>
                   <p className="text-micro text-muted-foreground">
                     {isFa ? 'بهترین برنامه‌ها متناسب با دیوایس شما' : 'Best tools for your platform'}
                   </p>
@@ -288,7 +295,7 @@ export default function App() {
               (پیش‌تر بین کارت وضعیت و لیست کانفیگ‌ها بود و دسترسی به کانفیگ را
               به ۲.۳ صفحه اسکرول عقب می‌انداخت) */}
           <FaqGuide />
-        </main>
+        </div>
       </div>
 
       {/* Master QR Code Modal */}

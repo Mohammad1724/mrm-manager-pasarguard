@@ -77,9 +77,9 @@ export const FaqGuide = memo(() => {
             <HelpCircle className="size-5" />
           </div>
           <div>
-            <h3 className="text-body sm:text-lead font-bold text-foreground">
+            <h2 className="text-body sm:text-lead font-bold text-foreground">
               {isFa ? 'راهنمای اتصال و رفع مشکل' : 'Quick Setup & FAQ'}
-            </h3>
+            </h2>
             <p className="text-micro text-muted-foreground">
               {isFa ? 'آموزش گام‌به‌گام اتصال در ۳ مرحله ساده' : 'Connect in 3 simple steps'}
             </p>
@@ -104,7 +104,7 @@ export const FaqGuide = memo(() => {
                 <Icon className="size-4" />
               </div>
               <div className="min-w-0 flex-1">
-                <h4 className="text-micro sm:text-body font-bold text-foreground">{st.title}</h4>
+                <h3 className="text-micro sm:text-body font-bold text-foreground">{st.title}</h3>
                 <p className="mt-1 text-micro leading-relaxed text-muted-foreground">{st.desc}</p>
               </div>
             </div>

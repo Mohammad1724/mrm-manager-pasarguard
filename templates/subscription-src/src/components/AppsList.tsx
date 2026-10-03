@@ -138,9 +138,11 @@ export const AppsList = React.memo(function AppsList() {
                                     <div className="flex items-center gap-3 flex-1 text-left">
                                         <span className="ios-platform-icon"><IconComponent className="size-5" /></span>
                                         <div className="flex items-center gap-2 flex-1 min-w-0">
-                                            <h3 className="page-section-title">
+                                            {/* رادیکس دور این دکمه خودش یک سرتیتر سطح سه می‌سازد؛ تکرار آن هر
+                                                پلتفرم را دو بار در ساختار عناوین ثبت می‌کرد. */}
+                                            <span className="page-section-title">
                                                 {platformLabel}
-                                            </h3>
+                                            </span>
                                             {isCurrentOS && (
                                                 <span className="ios-current-badge">
                                                     {t('apps.currentOS')}

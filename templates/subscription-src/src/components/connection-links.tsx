@@ -301,7 +301,8 @@ export const ConnectionLinks = memo(({ links }: ConnectionLinksProps) => {
         <div className="relative w-full">
           <Search className="pointer-events-none absolute right-3.5 rtl:right-3.5 rtl:left-auto ltr:left-3.5 ltr:right-auto top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
-            type="text"
+            type="search"
+            aria-label={isFa ? 'جست‌وجوی سرور' : 'Search servers'}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={isFa ? 'جستجوی نام یا لوکیشن سرور (مثلاً آلمان، Reality...)' : 'Search server name or location...'}

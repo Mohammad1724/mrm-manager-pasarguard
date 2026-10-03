@@ -63,7 +63,7 @@ export const AnnouncementBanner = memo(({ message, url }: AnnouncementBannerProp
         type="button"
         onClick={handleDismiss}
         aria-label="بستن اعلان"
-        className="mrm-tap-target -m-1.5 grid size-11 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
+        className="-m-1.5 grid size-11 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
       >
         <X className="size-4" aria-hidden="true" />
       </button>
