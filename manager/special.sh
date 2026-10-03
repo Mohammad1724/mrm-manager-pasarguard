@@ -375,7 +375,7 @@ EOF
     if [ ! -f "$INTEGRATE" ]; then
         ui_error "integrate-dashboard.sh missing — cannot continue"; special_pause; exit 1
     fi
-    MRM_ROOT="$SPECIAL_DIR" bash "$INTEGRATE"
+    MRM_ROOT="$SPECIAL_DIR" PASARGUARD_ROOT="${PANEL_DIR:-/opt/pasarguard}" bash "$INTEGRATE"
 
     # 4) systemd self-healing watchers
     ui_step 4 4 "Watchers"
@@ -507,7 +507,7 @@ special_reintegrate() {
     if [ ! -f "$INTEGRATE" ]; then
         ui_error "integrate-dashboard.sh missing: $INTEGRATE"; special_pause; return 1
     fi
-    MRM_ROOT="$SPECIAL_DIR" bash "$INTEGRATE"
+    MRM_ROOT="$SPECIAL_DIR" PASARGUARD_ROOT="${PANEL_DIR:-/opt/pasarguard}" bash "$INTEGRATE"
     echo ""
     special_pause
 }
@@ -549,7 +549,7 @@ JSONEOF
 
     # 3) inject (idempotent)
     if [ -f "$INTEGRATE" ]; then
-        MRM_ROOT="$SPECIAL_DIR" bash "$INTEGRATE" >/dev/null 2>&1 || true
+        MRM_ROOT="$SPECIAL_DIR" PASARGUARD_ROOT="${PANEL_DIR:-/opt/pasarguard}" bash "$INTEGRATE" >/dev/null 2>&1 || true
     fi
 
     # 4) systemd self-healing watchers

@@ -466,10 +466,10 @@ theme_restart_panel() {
 
     if [ -d "$PANEL_DIR" ] && command -v docker >/dev/null 2>&1; then
         if docker compose version >/dev/null 2>&1; then
-            (cd "$PANEL_DIR" && (docker compose up -d --no-deps pasarguard 2>/dev/null || docker compose restart pasarguard 2>/dev/null || docker compose restart 2>/dev/null))
+            (cd "$PANEL_DIR" && (docker compose restart panel 2>/dev/null || docker compose restart pasarguard 2>/dev/null || docker compose restart 2>/dev/null))
             return $?
         elif command -v docker-compose >/dev/null 2>&1; then
-            (cd "$PANEL_DIR" && (docker-compose up -d --no-deps pasarguard 2>/dev/null || docker-compose restart pasarguard 2>/dev/null || docker-compose restart 2>/dev/null))
+            (cd "$PANEL_DIR" && (docker-compose restart panel 2>/dev/null || docker-compose restart pasarguard 2>/dev/null || docker-compose restart 2>/dev/null))
             return $?
         fi
     fi

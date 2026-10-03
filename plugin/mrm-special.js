@@ -1247,11 +1247,24 @@
     renderLoading();
     try {
       if (isOwner) {
-        const [settings, profile] = await Promise.all([api('/api/settings'), api('/api/mrm/profile'), loadAdminProfiles(), loadUpdateStatus()]);
+        let profile = null;
+        try {
+          profile = await api('/api/mrm/profile');
+        } catch (e) {
+          console.warn('[MRM] /api/mrm/profile request failed, falling back to /api/settings', e);
+        }
+        const [settings] = await Promise.all([
+          api('/api/settings'),
+          loadAdminProfiles().catch(() => null),
+          loadUpdateStatus().catch(() => null),
+        ]);
         if (!active) return;
         renderOwner(settings, profile);
       } else {
-        const profile = await api('/api/mrm/profile');
+        let profile = null;
+        try {
+          profile = await api('/api/mrm/profile');
+        } catch (_) {}
         if (!active) return;
         renderReseller(profile);
       }

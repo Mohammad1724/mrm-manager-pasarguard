@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager v1.5.8
+# MRM Manager v1.5.9
 # domain_separator.sh — separate panel and subscription domains via nginx
 
 # ─── Shared libraries ────────────────────────────────────────────────────────

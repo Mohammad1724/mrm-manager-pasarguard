@@ -18,7 +18,7 @@ fi
 
 CONFIG_FILE="/opt/mrm-manager/panel.conf"
 MRM_VERSION_FILE="/opt/mrm-manager/VERSION"
-MRM_DEFAULT_VERSION="1.5.8"
+MRM_DEFAULT_VERSION="1.5.9"
 
 ensure_mrm_config_dir() {
     mkdir -p "$(dirname "$CONFIG_FILE")"
@@ -210,7 +210,7 @@ restart_service() {
         [ -z "$COMPOSE_FILE" ] && { ui_error "No compose file found in $PANEL_DIR"; return 1; }
         ui_note "Restarting panel service…"
         # Restart only the panel service — down/up would also stop DB/helpers
-        if (cd "$PANEL_DIR" && (docker compose up -d --no-deps pasarguard 2>/dev/null || docker compose restart pasarguard 2>/dev/null || docker-compose up -d --no-deps pasarguard 2>/dev/null || docker-compose restart pasarguard 2>/dev/null)); then
+        if (cd "$PANEL_DIR" && (docker compose restart panel 2>/dev/null || docker compose restart pasarguard 2>/dev/null || docker-compose restart panel 2>/dev/null || docker-compose restart pasarguard 2>/dev/null || docker compose restart 2>/dev/null || docker-compose restart 2>/dev/null)); then
             return 0
         fi
         ui_error "Panel restart failed"

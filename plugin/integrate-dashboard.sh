@@ -218,15 +218,38 @@ patch_router_file() {
   python3 - "${file}" "${ROUTER_MARKER}" <<'PY'
 from pathlib import Path
 import re, sys
-path=Path(sys.argv[1]); marker=sys.argv[2]; original=path.read_text(encoding='utf-8'); text=original
-text=re.sub(rf'\n?# {re.escape(marker)}-start.*?# {re.escape(marker)}-end\n?', '\n', text, flags=re.S)
+path=Path(sys.argv[1]); marker=sys.argv[2]; original=path.read_text(encoding='utf-8')
+text=re.sub(rf'\n?# {re.escape(marker)}-start.*?# {re.escape(marker)}-end\n?', '\n', original, flags=re.S)
 text=text.replace('for router in (([mrm_admin_subscriptions.router] if mrm_admin_subscriptions else []) + routers):','for router in routers:')
-if 'api_router = APIRouter()' not in text or 'for router in routers:' not in text:
+block=f'''# {marker}-start
+try:
+    from . import mrm_admin_subscriptions
+    if getattr(mrm_admin_subscriptions, 'router', None) is not None:
+        if mrm_admin_subscriptions.router not in routers:
+            routers.append(mrm_admin_subscriptions.router)
+except Exception:
+    pass
+# {marker}-end'''
+
+m = re.search(r'routers\s*=\s*\[.*?\]', text, re.S)
+if m:
+    pos = m.end()
+    text = text[:pos] + f"\n\n{block}\n" + text[pos:]
+elif 'for router in routers:' in text:
+    text = f"{block}\n\n{text}"
+    text = text.replace('for router in routers:', 'for router in (([mrm_admin_subscriptions.router] if mrm_admin_subscriptions else []) + routers):', 1)
+elif 'api_router = APIRouter()' in text:
+    text = f"{block}\n\n{text}"
+    text = text.replace('api_router = APIRouter()', 'api_router = APIRouter()\ntry:\n    if mrm_admin_subscriptions: api_router.include_router(mrm_admin_subscriptions.router)\nexcept Exception: pass\n', 1)
+else:
     raise SystemExit('unsupported PasarGuard router layout')
-block=f'''# {marker}-start\ntry:\n    from . import mrm_admin_subscriptions\nexcept Exception:\n    mrm_admin_subscriptions = None\n# {marker}-end\n\n'''
-text=text.replace('api_router = APIRouter()',block+'api_router = APIRouter()',1)
-text=text.replace('for router in routers:','for router in (([mrm_admin_subscriptions.router] if mrm_admin_subscriptions else []) + routers):',1)
-if text!=original: path.write_text(text,encoding='utf-8')
+
+compile(text, path.name, 'exec')
+if text != original:
+    path.write_text(text, encoding='utf-8')
+    print("PATCHED")
+else:
+    print("UNCHANGED")
 PY
 }
 
@@ -238,15 +261,38 @@ patch_router_container() {
   docker exec -i "${cid}" python3 - "${file}" "${ROUTER_MARKER}" <<'PY'
 from pathlib import Path
 import re, sys
-path=Path(sys.argv[1]); marker=sys.argv[2]; original=path.read_text(encoding='utf-8'); text=original
-text=re.sub(rf'\n?# {re.escape(marker)}-start.*?# {re.escape(marker)}-end\n?', '\n', text, flags=re.S)
+path=Path(sys.argv[1]); marker=sys.argv[2]; original=path.read_text(encoding='utf-8')
+text=re.sub(rf'\n?# {re.escape(marker)}-start.*?# {re.escape(marker)}-end\n?', '\n', original, flags=re.S)
 text=text.replace('for router in (([mrm_admin_subscriptions.router] if mrm_admin_subscriptions else []) + routers):','for router in routers:')
-if 'api_router = APIRouter()' not in text or 'for router in routers:' not in text:
+block=f'''# {marker}-start
+try:
+    from . import mrm_admin_subscriptions
+    if getattr(mrm_admin_subscriptions, 'router', None) is not None:
+        if mrm_admin_subscriptions.router not in routers:
+            routers.append(mrm_admin_subscriptions.router)
+except Exception:
+    pass
+# {marker}-end'''
+
+m = re.search(r'routers\s*=\s*\[.*?\]', text, re.S)
+if m:
+    pos = m.end()
+    text = text[:pos] + f"\n\n{block}\n" + text[pos:]
+elif 'for router in routers:' in text:
+    text = f"{block}\n\n{text}"
+    text = text.replace('for router in routers:', 'for router in (([mrm_admin_subscriptions.router] if mrm_admin_subscriptions else []) + routers):', 1)
+elif 'api_router = APIRouter()' in text:
+    text = f"{block}\n\n{text}"
+    text = text.replace('api_router = APIRouter()', 'api_router = APIRouter()\ntry:\n    if mrm_admin_subscriptions: api_router.include_router(mrm_admin_subscriptions.router)\nexcept Exception: pass\n', 1)
+else:
     raise SystemExit('unsupported PasarGuard router layout')
-block=f'''# {marker}-start\ntry:\n    from . import mrm_admin_subscriptions\nexcept Exception:\n    mrm_admin_subscriptions = None\n# {marker}-end\n\n'''
-text=text.replace('api_router = APIRouter()',block+'api_router = APIRouter()',1)
-text=text.replace('for router in routers:','for router in (([mrm_admin_subscriptions.router] if mrm_admin_subscriptions else []) + routers):',1)
-if text!=original: path.write_text(text,encoding='utf-8')
+
+compile(text, path.name, 'exec')
+if text != original:
+    path.write_text(text, encoding='utf-8')
+    print("PATCHED")
+else:
+    print("UNCHANGED")
 PY
 }
 
@@ -280,12 +326,13 @@ integrate_docker() {
 
   if activate_live_docker_subscription "${cid}" "${service}"; then subscription_ok=1; else warn "could not hot-activate subscription template"; fi
 
+  local patch_res=""
   router_init="$(find_container_router_init "${cid}" || true)"
   if [[ -n "${router_init}" && -s "${BACKEND_PY}" ]]; then
-    if patch_router_container "${cid}" "${router_init}"; then
+    patch_res="$(patch_router_container "${cid}" "${router_init}" 2>/dev/null || true)"
+    if [[ -n "${patch_res}" ]]; then
       backend_ok=1
       log "owner-only admin subscription namespace backend installed at ${router_init%/__init__.py}"
-      warn "new /sub/<admin>/<token> routes require one normal PasarGuard process start to become active; no restart was attempted"
     else
       warn "could not patch PasarGuard router registry for admin subscription namespaces"
     fi
@@ -303,6 +350,38 @@ integrate_docker() {
     dashboard_ok=1
   else
     warn "dashboard build was not found inside Docker service ${service}"
+  fi
+
+  # Check if uvicorn needs to be restarted to activate /api/mrm/profile
+  local needs_restart=0
+  if [[ "${patch_res}" == *"PATCHED"* ]]; then
+    needs_restart=1
+  else
+    local route_check
+    route_check="$(docker exec "${cid}" python3 -c "
+import urllib.request, sys
+try:
+    urllib.request.urlopen('http://127.0.0.1:8000/api/mrm/profile', timeout=2)
+    print('FOUND')
+except Exception as e:
+    code = getattr(e, 'code', 0)
+    if code in (200, 401, 403, 422):
+        print('FOUND')
+    elif code == 404:
+        print('NOT_FOUND')
+    else:
+        print('OTHER')
+" 2>/dev/null || true)"
+    if [[ "${route_check}" == "NOT_FOUND" ]]; then
+      needs_restart=1
+    fi
+  fi
+
+  if [[ ${needs_restart} -eq 1 && ${backend_ok} -eq 1 ]]; then
+    log "restarting container ${cid} to activate backend routes..."
+    docker restart "${cid}" >/dev/null 2>&1 || true
+    sleep 2
+    log "container restarted successfully"
   fi
   [[ ${subscription_ok} -eq 1 || ${dashboard_ok} -eq 1 || ${backend_ok} -eq 1 ]]
 }
