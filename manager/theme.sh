@@ -42,7 +42,7 @@ theme_get_special_source() {
     local dl_dst="$DATA_DIR/templates/.special.pristine.html"
     mkdir -p "$(dirname "$dl_dst")" 2>/dev/null || true
     local ver
-    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.27")"
+    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.28")"
     local dl_url="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v${ver}/templates/subscription/index.html"
     if curl -sL -f -o "$dl_dst" "$dl_url" 2>/dev/null && [ -s "$dl_dst" ] && ! grep -q "guideBanner" "$dl_dst" 2>/dev/null; then
         printf '%s\n' "$dl_dst"
@@ -73,7 +73,7 @@ theme_get_classic_source() {
     local dl_dst="$DATA_DIR/templates/.classic.pristine.html"
     mkdir -p "$(dirname "$dl_dst")" 2>/dev/null || true
     local ver
-    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.27")"
+    ver="$(get_mrm_version 2>/dev/null || cat /opt/mrm-manager/VERSION 2>/dev/null || echo "1.4.28")"
     local dl_url="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v${ver}/templates/subscription-classic/index.html"
     if curl -sL -f -o "$dl_dst" "$dl_url" 2>/dev/null && [ -s "$dl_dst" ] && grep -q "guideBanner" "$dl_dst" 2>/dev/null; then
         printf '%s\n' "$dl_dst"
@@ -499,13 +499,8 @@ install_theme_wizard() {
 
     clear
     echo -e "${CYAN}=============================================${NC}"
-    if [ "$TARGET" = "classic" ]; then
-        echo -e "${YELLOW}   INSTALL / UPDATE MRM CLASSIC (قالب کلاسیک)   ${NC}"
-    elif [ "$TARGET" = "special" ]; then
-        echo -e "${YELLOW}   INSTALL / UPDATE MRM SPECIAL (قالب ویژه)     ${NC}"
-    else
-        echo -e "${YELLOW}      THEME INSTALLATION WIZARD              ${NC}"
-    fi
+    echo -e "${YELLOW}   نصب و راه‌اندازی پکیج قالب‌های MRM (کامل)    ${NC}"
+    echo -e "${GREEN}✔ قالب ویژه (MRM Special) + قالب کلاسیک (MRM Classic) + پنل هوشمند${NC}" 
     echo -e "${CYAN}=============================================${NC}"
 
     # ✅ تشخیص مجدد پنل برای اطمینان
@@ -817,22 +812,37 @@ PYEOF
         echo -e "MRM Classic  : $CLASSIC_FILE ($(stat -c%s "$CLASSIC_FILE" 2>/dev/null || echo 0) bytes)"
         echo ""
 
-        local active_choice="special"
-        if [ "$TARGET" = "classic" ]; then
-            active_choice="classic"
-        elif [ "$TARGET" = "special" ]; then
-            active_choice="special"
-        else
-            active_choice="$(theme_current_template)"
-            [ "$active_choice" = "none" ] && active_choice="special"
+        echo -e "${BLUE}در حال اتصال به پنل و فعال‌سازی سرویس‌های هوشمند...${NC}"
+        if [ -f "/opt/mrm-manager/special.sh" ]; then
+            bash /opt/mrm-manager/special.sh --install-quiet || true
+        elif [ -f "$SCRIPT_DIR/special.sh" ]; then
+            bash "$SCRIPT_DIR/special.sh" --install-quiet || true
         fi
 
-        echo -e "${BLUE}Activating $(theme_template_display_name "$active_choice") + restarting panel...${NC}"
+        echo ""
+        echo -e "${CYAN}=============================================${NC}"
+        echo -e "${YELLOW}           کدام قالب به صورت پیش‌فرض فعال باشد؟         ${NC}"
+        echo -e "${CYAN}=============================================${NC}"
+        echo -e "1) ${GREEN}قالب ویژه (MRM Special)${NC} - مدرن با نمودار و انیمیشن [پیش‌فرض]"
+        echo -e "2) ${YELLOW}قالب کلاسیک (MRM Classic)${NC} - سبک و سریع با دکمه اتصال مستقیم"
+        echo ""
+        read -r -p "انتخاب شما [1]: " TPL_CHOICE
+        local active_choice="special"
+        case "$TPL_CHOICE" in
+            2|classic|c) active_choice="classic" ;;
+            *) active_choice="special" ;;
+        esac
+
+        echo -e "${BLUE}در حال فعال‌سازی $(theme_template_display_name "$active_choice")...${NC}"
         if theme_set_template "$active_choice"; then
-            echo -e "${GREEN}✔ Template installed & panel restarted.${NC}"
-            echo -e "${GREEN}  (Switch anytime in panel → Settings → MRM)${NC}"
+            echo ""
+            echo -e "${GREEN}=============================================${NC}"
+            echo -e "${GREEN}✔ پکیج کامل با موفقیت نصب و راه‌اندازی شد!${NC}"
+            echo -e "${GREEN}  قالب فعال کنونی: $(theme_template_display_name "$active_choice")${NC}"
+            echo -e "${CYAN}  (تغییر قالب در هر لحظه از منوی مدیریت و داخل پنل امکان‌پذیر است)${NC}"
+            echo -e "${GREEN}=============================================${NC}"
         else
-            echo -e "${YELLOW}⚠ Template installed, but activation failed.${NC}"
+            echo -e "${YELLOW}⚠ قالب‌ها نصب شدند، اما اعمال خودکار با خطا مواجه شد.${NC}"
         fi
         rm -rf "$TMP_DIR"
     else
@@ -992,6 +1002,50 @@ theme_toggle() {
     read -n 1 -s -r -p "Press any key..."; echo
 }
 
+theme_select_active_menu() {
+    clear
+    detect_active_panel > /dev/null
+    echo -e "${BLUE}===========================================${NC}"
+    echo -e "${YELLOW}         تغییر قالب فعال (SWITCH ACTIVE TEMPLATE)   ${NC}"
+    echo -e "${BLUE}===========================================${NC}"
+    local current
+    current="$(theme_current_template)"
+    echo -e "قالب فعال کنونی: ${CYAN}$(theme_template_display_name "$current")${NC}"
+    echo ""
+    echo "1) ✨ قالب ویژه (MRM Special) - مدرن با نمودار و طراحی پیشرفته"
+    echo "2) ⚡ قالب کلاسیک (MRM Classic) - سبک و سریع با دکمه اتصال مستقیم"
+    echo "0) ↩️ بازگشت"
+    echo -e "${BLUE}===========================================${NC}"
+    read -r -p "انتخاب شما: " PICK
+    case "$PICK" in
+        1)
+            echo -e "${BLUE}در حال فعال‌سازی قالب ویژه (MRM Special)...${NC}"
+            theme_set_template "special"
+            pause
+            ;;
+        2)
+            echo -e "${BLUE}در حال فعال‌سازی قالب کلاسیک (MRM Classic)...${NC}"
+            theme_set_template "classic"
+            pause
+            ;;
+        0) return ;;
+        *) theme_invalid_option ;;
+    esac
+}
+
+theme_status_menu() {
+    if [ -f "/opt/mrm-manager/special.sh" ]; then
+        bash /opt/mrm-manager/special.sh --status
+    elif [ -f "$SCRIPT_DIR/special.sh" ]; then
+        bash "$SCRIPT_DIR/special.sh" --status
+    else
+        clear
+        echo -e "${CYAN}=== وضعیت قالب‌ها ===${NC}"
+        theme_templates_status
+        pause
+    fi
+}
+
 theme_menu() {
     while true; do
         clear
@@ -1009,19 +1063,20 @@ theme_menu() {
         theme_templates_status
         theme_conflicts_label
         echo ""
-        echo "1) 📦 Install / Update MRM Classic (قالب کلاسیک)"
-        echo "2) ✨ Install / Update MRM Special (قالب ویژه)"
-        echo "3) 🔛 Template: ON / OFF"
-        echo "4) ◆ MRM Special manager"
-        echo "5) 🗑️ Uninstall Template"
-        echo "0) Back"
+        # Unified installer: combines Install / Update MRM Classic and Install / Update MRM Special with in-panel manager
+        echo "1) 📦 نصب و راه‌اندازی قالب‌ها (هر دو قالب + پنل مدیریت با یک کلیک)"
+        echo "2) 🔄 تغییر قالب فعال (MRM Classic / MRM Special)"
+        echo "3) 🔛 فعال / غیرفعال‌سازی کلی (Master Switch: ON / OFF)"
+        echo "4) ⚙️ وضعیت و عیب‌یابی قالب‌ها (Status & Diagnostics)"
+        echo "5) 🗑️ حذف قالب‌ها (Uninstall)"
+        echo "0) ↩️ بازگشت"
         echo -e "${BLUE}===========================================${NC}"
         read -p "Select: " T_OPT
         case $T_OPT in
-            1) install_theme_wizard "classic" ;;
-            2) install_theme_wizard "special" ;;
+            1) install_theme_wizard "unified" ;;
+            2) theme_select_active_menu ;;
             3) theme_toggle ;;
-            4) bash /opt/mrm-manager/special.sh || echo "MRM Special could not be started" ;;
+            4) theme_status_menu ;;
             5) uninstall_theme ;;
             0) return ;;
             *) theme_invalid_option ;;
