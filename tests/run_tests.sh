@@ -2045,6 +2045,117 @@ fi
 
 echo ""
 
+# ─── Test Group 19: in-panel tab parity (zomorod) + light-theme contrast ─────
+# (همان معیارهای گروه ۱۸ برای قالب پایهٔ زمرد + دو ایراد کنتراست تم روشن که
+#  سنجهٔ پس‌زمینهٔ واقعی هر عنصر نشان داد. زمرد ممکن است کنار مخزن نباشد → SKIP)
+echo "📋 Group 19: in-panel tab parity (zomorod) + light-theme contrast"
+echo ""
+
+ZOMOROD_DIR="${ZOMOROD_DIR:-$PROJECT_DIR/../zomorod-template}"
+ZSPECIAL="$ZOMOROD_DIR/plugin/zomorod-special.js"
+
+# 19.1: کنتراست دکمهٔ نوتیس و چیپ نقش در تم روشن (متن سفید روی #0E8F8A فقط ۳.۹۵:۱ بود)
+if grep -q 'background:#0F766E;color:white' "$SPECIAL"; then
+    pass "MRM notice button reaches AA on light theme (#0F766E, 5.47:1 with white)"
+else
+    fail "MRM notice button still uses the low-contrast teal background"
+fi
+if grep -q '\.z-role{color:#0F766E' "$SPECIAL"; then
+    pass "MRM role chip reaches AA on light theme (5.10:1 on its own tint)"
+else
+    fail "MRM role chip still below AA on light theme"
+fi
+
+# 19.2: کارت بروزرسانی رشتهٔ انگلیسی نمایش نمی‌دهد (unknown / Up to date)
+if ! grep -q ": 'unknown'; }" "$SPECIAL" && ! grep -q "Up to date" "$SPECIAL"; then
+    pass "update card shows no English fallback (unknown / Up to date)"
+else
+    fail "update card still leaks English fallback text"
+fi
+
+if [ ! -f "$ZSPECIAL" ]; then
+    skip "zomorod plugin not found at $ZSPECIAL — parity checks skipped"
+else
+    # 19.3: کف تایپوگرافی
+    if grep -qE 'font-size:(\.[0-6][0-9]*|0\.[0-6][0-9]*)rem' "$ZSPECIAL"; then
+        fail "zomorod in-panel CSS still has sub-12px font sizes"
+    else
+        pass "zomorod: no sub-12px font size in the in-panel settings CSS"
+    fi
+
+    # 19.4: هدف لمس ۴۴px
+    ZMINH=$(grep -o 'min-height:44px' "$ZSPECIAL" | wc -l | tr -d ' ')
+    if [ "$ZMINH" -ge 5 ]; then
+        pass "zomorod: in-panel buttons meet the 44px touch floor ($ZMINH rules)"
+    else
+        fail "zomorod: in-panel buttons below the touch floor (found $ZMINH)"
+    fi
+
+    # 19.5: کلیدها ناحیهٔ ضربه + کل‌ردیف کلیک‌پذیر (شامل بخش PWA که بعد رندر می‌شود)
+    ZENH=$(grep -o 'enhanceToggles(' "$ZSPECIAL" | wc -l | tr -d ' ')
+    if grep -q 'input\[type=checkbox\]::before' "$ZSPECIAL" && \
+       grep -q 'z-row-click' "$ZSPECIAL" && [ "$ZENH" -ge 2 ]; then
+        pass "zomorod: toggles expose an expanded hit area, row click and PWA re-run ($ZENH calls)"
+    else
+        fail "zomorod: toggle hit area / row click / PWA enhancement missing"
+    fi
+
+    # 19.6: ورودی لمسی + فوکوس دیداری
+    if grep -q 'pointer:coarse' "$ZSPECIAL" && grep -q ':focus-visible' "$ZSPECIAL"; then
+        pass "zomorod: touch floor on coarse pointers and a visible focus ring"
+    else
+        fail "zomorod: missing coarse-pointer floor or focus ring"
+    fi
+
+    # 19.7: اعلام وضعیت‌های پویا
+    ZLIVE=$(grep -o 'role="status" aria-live="polite"' "$ZSPECIAL" | wc -l | tr -d ' ')
+    if [ "$ZLIVE" -ge 3 ] && grep -q 'role="alert"' "$ZSPECIAL"; then
+        pass "zomorod: dynamic statuses announced ($ZLIVE live regions + alert)"
+    else
+        fail "zomorod: dynamic statuses are not announced (found $ZLIVE)"
+    fi
+
+    # 19.8: سرخ AA در هر دو تم + فضای نوار چسبان
+    if grep -q '#b91c1c' "$ZSPECIAL" && grep -q '#f87171' "$ZSPECIAL" && \
+       grep -q 'calc(2rem + 4.6rem)' "$ZSPECIAL"; then
+        pass "zomorod: AA error colours on both themes and a non-occluding sticky bar"
+    else
+        fail "zomorod: error colour or sticky-bar spacing missing"
+    fi
+
+    # 19.9: آیکون‌های تزئینی پنهان
+    ZBARE=$( (grep -o '<svg viewBox=' "$ZSPECIAL" || true) | wc -l | tr -d ' ')
+    ZHID=$( (grep -o 'aria-hidden="true" focusable="false" viewBox=' "$ZSPECIAL" || true) | wc -l | tr -d ' ')
+    if [ "$ZBARE" = "0" ] && [ "$ZHID" -ge 5 ]; then
+        pass "zomorod: decorative icons hidden from the accessibility tree ($ZHID)"
+    else
+        fail "zomorod: icons leak into the accessibility tree (bare=$ZBARE, hidden=$ZHID)"
+    fi
+
+    # 19.10: رابط فارسی — رشته‌های انگلیسی نمانده
+    # جملهٔ بارگذاری فارسی است و رشته‌های انگلیسیِ رابط برنگشته‌اند
+    # (نام‌های داخلی کد مثل renderLoading نمایش داده نمی‌شوند و بررسی نمی‌شوند)
+    if grep -q 'در حال بارگذاری' "$ZSPECIAL" && \
+       ! grep -q '>Save<' "$ZSPECIAL" && \
+       ! grep -q 'Delete /sub/' "$ZSPECIAL" && \
+       ! grep -q 'Save Zomorod Settings' "$ZSPECIAL" && \
+       ! grep -q 'Up to date' "$ZSPECIAL" && \
+       ! grep -q ": 'unknown'; }" "$ZSPECIAL"; then
+        pass "zomorod: in-panel strings are Persian (no English leftovers)"
+    else
+        fail "zomorod: English strings remain in the Persian in-panel tab"
+    fi
+
+    # 19.11: پیام تأیید حذف فضای نام فارسی شده
+    if grep -q 'حذف فضای نام' "$ZSPECIAL"; then
+        pass "zomorod: delete-namespace confirm dialog is localized"
+    else
+        fail "zomorod: delete-namespace confirm dialog is still English"
+    fi
+fi
+
+echo ""
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 echo "═══════════════════════════════════════════════════════════"
 echo "  Test Results"

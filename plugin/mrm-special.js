@@ -72,7 +72,7 @@
     #${ROOT_ID} .z-title-row{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
     #${ROOT_ID} .z-title{margin:0;font-size:1.12rem;font-weight:850;letter-spacing:-.01em}
     #${ROOT_ID} .z-special,#${ROOT_ID} .z-role{font-size:.75rem;font-weight:850;padding:.22rem .44rem;border-radius:999px;color:#8a5b08;background:rgba(184,134,11,.10);border:1px solid rgba(184,134,11,.24)}
-    #${ROOT_ID} .z-role{color:#0E8F8A;background:rgba(45,183,178,.08);border-color:rgba(45,183,178,.18)}
+    #${ROOT_ID} .z-role{color:#0F766E;background:rgba(45,183,178,.08);border-color:rgba(45,183,178,.18)}
     html.dark #${ROOT_ID} .z-special{color:#59E0D8}html.dark #${ROOT_ID} .z-role{color:#59E0D8}
     #${ROOT_ID} .z-subtitle{margin-top:.18rem;font-size:.75rem;color:hsl(var(--muted-foreground));line-height:1.65}
     #${ROOT_ID} .z-version{font-size:.75rem;color:hsl(var(--muted-foreground));border:1px solid hsl(var(--border));background:hsl(var(--background)/.72);padding:.3rem .5rem;border-radius:.45rem}
@@ -223,7 +223,7 @@
     }
     #${UPDATE_NOTICE_ID}{position:fixed;z-index:2147482000;top:12px;left:50%;transform:translateX(-50%);width:min(560px,calc(100vw - 24px));direction:rtl;border:1px solid rgba(184,134,11,.34);border-radius:14px;background:hsl(var(--background));color:hsl(var(--foreground));box-shadow:0 12px 40px rgba(0,0,0,.16);padding:.72rem .8rem;display:flex;align-items:center;justify-content:space-between;gap:.7rem;font-family:inherit}
     #${UPDATE_NOTICE_ID} .z-un-text{font-size:.75rem;line-height:1.65}#${UPDATE_NOTICE_ID} .z-un-text strong{display:block;font-size:.78rem}
-    #${UPDATE_NOTICE_ID} button{border:0;border-radius:9px;padding:.48rem .65rem;background:#0E8F8A;color:white;font:inherit;font-size:.75rem;font-weight:800;white-space:nowrap;cursor:pointer}
+    #${UPDATE_NOTICE_ID} button{border:0;border-radius:9px;padding:.48rem .65rem;background:#0F766E;color:white;font:inherit;font-size:.75rem;font-weight:800;white-space:nowrap;cursor:pointer}
   `;
 
   if (!document.getElementById('mrm-special-style')) {
@@ -508,7 +508,7 @@
     mountShell(`<div class="z-error" role="alert">تنظیمات MRM بارگذاری نشد.<br>${escapeHtml(error?.name === 'AbortError' ? 'Request timed out' : (error?.message || error))}</div>`);
   }
 
-  function versionLabel(value) { return typeof value === 'string' && /^v?\d+\.\d+\.\d+$/.test(value) ? `v${value.replace(/^v/, '')}` : 'unknown'; }
+  function versionLabel(value) { return typeof value === 'string' && /^v?\d+\.\d+\.\d+$/.test(value) ? `v${value.replace(/^v/, '')}` : 'نامشخص'; }
   function removeUpdateNotice() { document.getElementById(UPDATE_NOTICE_ID)?.remove(); }
   function isUpdateDismissed(commit) {
     if (!commit) return false;
