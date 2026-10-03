@@ -57,10 +57,10 @@
     #${NAV_ID}{position:relative;flex-shrink:0;white-space:nowrap}
     #${NAV_ID} .z-tab{display:flex;align-items:center;gap:.38rem}
     #${NAV_ID} .z-tab-gem{width:1rem;height:1rem;color:#14ADA6;filter:drop-shadow(0 0 5px rgba(45,183,178,.28))}
-    #${NAV_ID} .z-tab-badge{font-size:.56rem;font-weight:800;line-height:1;padding:.2rem .34rem;border-radius:999px;color:#fff;background:linear-gradient(135deg,#0E8F8A,#0B6E6A 58%,#2DB7B2);box-shadow:0 0 0 1px rgba(184,134,11,.18),0 2px 8px rgba(6,95,70,.15)}
+    #${NAV_ID} .z-tab-badge{font-size:.75rem;font-weight:800;line-height:1.15;padding:.14rem .4rem;border-radius:999px;color:#fff;background:linear-gradient(135deg,#0E8F8A,#0B6E6A 58%,#2DB7B2);box-shadow:0 0 0 1px rgba(184,134,11,.18),0 2px 8px rgba(6,95,70,.15)}
     [data-mrm-active="1"] > button:not(#${NAV_ID}){border-bottom-color:transparent!important;color:hsl(var(--muted-foreground))!important}
     #${NAV_ID}[data-z-active="true"]{border-bottom-width:2px!important;border-bottom-color:#14ADA6!important;color:hsl(var(--foreground))!important;background:linear-gradient(180deg,transparent,rgba(45,183,178,.05))}
-    #${ROOT_ID}{width:100%;padding:1rem 1rem 2rem;direction:rtl;color:hsl(var(--foreground));font-family:inherit}
+    #${ROOT_ID}{width:100%;padding:1rem 1rem calc(2rem + 4.6rem);direction:rtl;color:hsl(var(--foreground));font-family:inherit}
     #${ROOT_ID} *{box-sizing:border-box}
     #${ROOT_ID} .z-hero{position:relative;overflow:hidden;border:1px solid rgba(45,183,178,.22);border-radius:calc(var(--radius,.5rem) + .45rem);padding:1.1rem;background:linear-gradient(135deg,rgba(6,95,70,.12),rgba(4,120,87,.055) 55%,rgba(184,134,11,.10));box-shadow:var(--card-shadow,none)}
     #${ROOT_ID} .z-hero:before{content:"";position:absolute;width:240px;height:240px;border-radius:999px;left:-90px;top:-170px;background:radial-gradient(circle,rgba(45,183,178,.22),transparent 68%);pointer-events:none}
@@ -71,11 +71,11 @@
     #${ROOT_ID} .z-logo svg{width:25px;height:25px}
     #${ROOT_ID} .z-title-row{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
     #${ROOT_ID} .z-title{margin:0;font-size:1.12rem;font-weight:850;letter-spacing:-.01em}
-    #${ROOT_ID} .z-special,#${ROOT_ID} .z-role{font-size:.61rem;font-weight:850;padding:.22rem .44rem;border-radius:999px;color:#8a5b08;background:rgba(184,134,11,.10);border:1px solid rgba(184,134,11,.24)}
+    #${ROOT_ID} .z-special,#${ROOT_ID} .z-role{font-size:.75rem;font-weight:850;padding:.22rem .44rem;border-radius:999px;color:#8a5b08;background:rgba(184,134,11,.10);border:1px solid rgba(184,134,11,.24)}
     #${ROOT_ID} .z-role{color:#0E8F8A;background:rgba(45,183,178,.08);border-color:rgba(45,183,178,.18)}
     html.dark #${ROOT_ID} .z-special{color:#59E0D8}html.dark #${ROOT_ID} .z-role{color:#59E0D8}
     #${ROOT_ID} .z-subtitle{margin-top:.18rem;font-size:.75rem;color:hsl(var(--muted-foreground));line-height:1.65}
-    #${ROOT_ID} .z-version{font-size:.66rem;color:hsl(var(--muted-foreground));border:1px solid hsl(var(--border));background:hsl(var(--background)/.72);padding:.3rem .5rem;border-radius:.45rem}
+    #${ROOT_ID} .z-version{font-size:.75rem;color:hsl(var(--muted-foreground));border:1px solid hsl(var(--border));background:hsl(var(--background)/.72);padding:.3rem .5rem;border-radius:.45rem}
     #${ROOT_ID} .z-content{display:grid;gap:1rem;margin-top:1rem}
     #${ROOT_ID} .z-card{position:relative;border:1px solid hsl(var(--border));border-radius:calc(var(--radius,.5rem) + .25rem);background:hsl(var(--card));padding:1rem;box-shadow:var(--card-shadow,none);overflow:hidden}
     #${ROOT_ID} .z-card.z-accent{border-color:rgba(45,183,178,.20)}
@@ -84,50 +84,50 @@
     #${ROOT_ID} .z-card-title{display:flex;align-items:center;gap:.5rem;font-size:.91rem;font-weight:800;margin:0}
     #${ROOT_ID} .z-card-icon{width:29px;height:29px;border-radius:.55rem;display:grid;place-items:center;background:rgba(45,183,178,.08);color:#14ADA6;border:1px solid rgba(45,183,178,.14)}
     #${ROOT_ID} .z-card-icon svg{width:15px;height:15px}
-    #${ROOT_ID} .z-card-note{font-size:.67rem;color:hsl(var(--muted-foreground));line-height:1.6;margin-top:.18rem}
+    #${ROOT_ID} .z-card-note{font-size:.75rem;color:hsl(var(--muted-foreground));line-height:1.6;margin-top:.18rem}
     #${ROOT_ID} .z-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}
     @media(max-width:760px){#${ROOT_ID}{padding:.85rem .75rem 1.5rem}#${ROOT_ID} .z-grid{grid-template-columns:1fr}}
-    #${ROOT_ID} .z-field label{display:block;margin-bottom:.35rem;font-size:.74rem;font-weight:700}
+    #${ROOT_ID} .z-field label{display:block;margin-bottom:.35rem;font-size:.75rem;font-weight:700}
     #${ROOT_ID} input[type=text],#${ROOT_ID} input[type=number],#${ROOT_ID} input[type=url],#${ROOT_ID} textarea,#${ROOT_ID} select{width:100%;border:1px solid hsl(var(--border));background:hsl(var(--background));color:hsl(var(--foreground));border-radius:var(--radius,.5rem);padding:.58rem .68rem;font:inherit;font-size:.8rem;outline:none;transition:border-color .15s,box-shadow .15s}
     #${ROOT_ID} textarea{min-height:88px;resize:vertical;line-height:1.65}
     #${ROOT_ID} input:focus,#${ROOT_ID} textarea:focus,#${ROOT_ID} select:focus{border-color:rgba(5,150,105,.62);box-shadow:0 0 0 3px rgba(45,183,178,.09)}
-    #${ROOT_ID} .z-help{margin-top:.34rem;font-size:.66rem;color:hsl(var(--muted-foreground));line-height:1.6}
-    #${ROOT_ID} .z-toggle{min-height:55px;display:flex;align-items:center;justify-content:space-between;gap:1rem;border:1px solid hsl(var(--border));background:hsl(var(--background)/.46);border-radius:var(--radius,.5rem);padding:.62rem .72rem}
+    #${ROOT_ID} .z-help{margin-top:.34rem;font-size:.75rem;color:hsl(var(--muted-foreground));line-height:1.6}
+    #${ROOT_ID} .z-toggle{min-height:55px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:1rem;border:1px solid hsl(var(--border));background:hsl(var(--background)/.46);border-radius:var(--radius,.5rem);padding:.62rem .72rem}
     #${ROOT_ID} .z-toggle.is-special{border-color:rgba(184,134,11,.20);background:linear-gradient(135deg,rgba(6,95,70,.035),rgba(184,134,11,.045))}
     #${ROOT_ID} .z-toggle-title{font-size:.77rem;font-weight:700}
-    #${ROOT_ID} .z-toggle-sub{font-size:.64rem;color:hsl(var(--muted-foreground));margin-top:.12rem;line-height:1.5}
+    #${ROOT_ID} .z-toggle-sub{font-size:.75rem;color:hsl(var(--muted-foreground));margin-top:.12rem;line-height:1.5}
     #${ROOT_ID} input[type=checkbox]{appearance:none;width:36px;height:20px;flex:0 0 auto;border-radius:999px;background:hsl(var(--input));border:1px solid hsl(var(--border));position:relative;cursor:pointer;transition:.18s}
     #${ROOT_ID} input[type=checkbox]:after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:999px;background:hsl(var(--foreground)/.72);transition:.18s}
     #${ROOT_ID} input[type=checkbox]:checked{background:linear-gradient(135deg,#14ADA6,#0E8F8A);border-color:#0E8F8A}
     #${ROOT_ID} input[type=checkbox]:checked:after{left:18px;background:#fff}
     #${ROOT_ID} .z-apps{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center}
-    #${ROOT_ID} .z-chip{font-size:.66rem;border:1px solid rgba(45,183,178,.18);border-radius:999px;padding:.3rem .5rem;background:rgba(45,183,178,.055)}
-    #${ROOT_ID} .z-native{font-size:.61rem;padding:.18rem .36rem;border-radius:.4rem;background:rgba(184,134,11,.09);border:1px solid rgba(184,134,11,.17);color:#8a5b08}
+    #${ROOT_ID} .z-chip{font-size:.75rem;border:1px solid rgba(45,183,178,.18);border-radius:999px;padding:.3rem .5rem;background:rgba(45,183,178,.055)}
+    #${ROOT_ID} .z-native{font-size:.75rem;padding:.18rem .36rem;border-radius:.4rem;background:rgba(184,134,11,.09);border:1px solid rgba(184,134,11,.17);color:#8a5b08}
     html.dark #${ROOT_ID} .z-native{color:#deb24b}
     #${ROOT_ID} .z-actions{position:sticky;bottom:.5rem;z-index:2;margin-top:1rem;display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap;border:1px solid hsl(var(--border));border-radius:calc(var(--radius,.5rem) + .2rem);padding:.72rem .8rem;background:hsl(var(--background)/.90);backdrop-filter:blur(12px);box-shadow:0 -8px 24px rgba(0,0,0,.035)}
-    #${ROOT_ID} .z-save,#${ROOT_ID} .z-mini-btn{border:0;border-radius:var(--radius,.5rem);padding:.6rem .92rem;font:inherit;font-size:.75rem;font-weight:800;color:#fff;background:linear-gradient(135deg,#0E8F8A,#0B6E6A 68%,#0B6E6A);box-shadow:0 6px 16px rgba(6,95,70,.12);cursor:pointer}
-    #${ROOT_ID} .z-mini-btn{padding:.48rem .7rem;font-size:.68rem}
+    #${ROOT_ID} .z-save,#${ROOT_ID} .z-mini-btn{border:0;border-radius:var(--radius,.5rem);min-height:44px;padding:.6rem .92rem;font:inherit;font-size:.75rem;font-weight:800;color:#fff;background:linear-gradient(135deg,#0E8F8A,#0B6E6A 68%,#0B6E6A);box-shadow:0 6px 16px rgba(6,95,70,.12);cursor:pointer}
+    #${ROOT_ID} .z-mini-btn{padding:.48rem .7rem;font-size:.75rem}
     #${ROOT_ID} .z-mini-btn.z-danger{background:rgba(220,38,38,.09);box-shadow:none;color:#dc2626;border:1px solid rgba(220,38,38,.2)}
     #${ROOT_ID} .z-save:disabled,#${ROOT_ID} .z-mini-btn:disabled{opacity:.55;cursor:wait}
-    #${ROOT_ID} .z-status{font-size:.7rem;color:hsl(var(--muted-foreground))}
+    #${ROOT_ID} .z-status{font-size:.75rem;color:hsl(var(--muted-foreground))}
     #${ROOT_ID} .z-status.ok{color:#14ADA6}#${ROOT_ID} .z-status.err{color:#dc2626}
     #${ROOT_ID} .z-loading{padding:3rem 1rem;text-align:center;color:hsl(var(--muted-foreground));font-size:.8rem}
     #${ROOT_ID} .z-error{border:1px solid rgba(220,38,38,.24);background:rgba(220,38,38,.05);border-radius:.7rem;padding:.9rem;color:#dc2626;font-size:.76rem;line-height:1.7}
-    #${ROOT_ID} .z-pending{border:1px solid rgba(184,134,11,.24);background:linear-gradient(135deg,rgba(184,134,11,.08),rgba(45,183,178,.04));border-radius:.75rem;padding:.85rem;font-size:.72rem;line-height:1.8;color:hsl(var(--muted-foreground))}
+    #${ROOT_ID} .z-pending{border:1px solid rgba(184,134,11,.24);background:linear-gradient(135deg,rgba(184,134,11,.08),rgba(45,183,178,.04));border-radius:.75rem;padding:.85rem;font-size:.75rem;line-height:1.8;color:hsl(var(--muted-foreground))}
     #${ROOT_ID} .z-path{display:flex;align-items:center;justify-content:space-between;gap:.7rem;flex-wrap:wrap;border:1px solid rgba(45,183,178,.18);background:rgba(45,183,178,.045);border-radius:.7rem;padding:.72rem}
-    #${ROOT_ID} .z-path code{direction:ltr;text-align:left;font-size:.7rem;overflow-wrap:anywhere}
+    #${ROOT_ID} .z-path code{direction:ltr;text-align:left;font-size:.75rem;overflow-wrap:anywhere}
     #${ROOT_ID} .z-ns-create{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:.55rem;align-items:end}
     #${ROOT_ID} .z-ns-list{display:grid;gap:.55rem;margin-top:.8rem}
     #${ROOT_ID} .z-ns-row{display:grid;grid-template-columns:minmax(0,.7fr) minmax(0,1.6fr) auto auto;gap:.55rem;align-items:center;padding:.68rem;border:1px solid hsl(var(--border));border-radius:.7rem;background:hsl(var(--background)/.42)}
     #${ROOT_ID} .z-ns-admin{font-size:.75rem;font-weight:800;direction:ltr;text-align:left}
-    #${ROOT_ID} .z-ns-url{min-width:0;font-size:.66rem;direction:ltr;text-align:left;color:hsl(var(--muted-foreground));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #${ROOT_ID} .z-ns-url{min-width:0;font-size:.75rem;direction:ltr;text-align:left;color:hsl(var(--muted-foreground));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     @media(max-width:760px){#${ROOT_ID} .z-ns-create{grid-template-columns:1fr}#${ROOT_ID} .z-ns-row{grid-template-columns:1fr auto auto}#${ROOT_ID} .z-ns-url{grid-column:1/-1;grid-row:2}}
     #${ROOT_ID} .z-admin-list{display:grid;gap:.7rem}
     #${ROOT_ID} .z-admin-card{display:grid;grid-template-columns:minmax(0,.7fr) minmax(0,1fr) minmax(0,1fr) minmax(0,.8fr) auto;gap:.55rem;align-items:end;padding:.75rem;border:1px solid hsl(var(--border));border-radius:.75rem;background:hsl(var(--background)/.42)}
     #${ROOT_ID} .z-admin-meta{align-self:center;min-width:0}
     #${ROOT_ID} .z-admin-name{font-size:.76rem;font-weight:850;direction:ltr;text-align:left;overflow:hidden;text-overflow:ellipsis}
-    #${ROOT_ID} .z-admin-count{font-size:.63rem;color:hsl(var(--muted-foreground));margin-top:.18rem}
-    #${ROOT_ID} .z-admin-status{grid-column:1/-1;font-size:.66rem;color:hsl(var(--muted-foreground))}
+    #${ROOT_ID} .z-admin-count{font-size:.75rem;color:hsl(var(--muted-foreground));margin-top:.18rem}
+    #${ROOT_ID} .z-admin-status{grid-column:1/-1;font-size:.75rem;color:hsl(var(--muted-foreground))}
     #${ROOT_ID} .z-admin-status.ok{color:#14ADA6}#${ROOT_ID} .z-admin-status.err{color:#dc2626}
 
     #${ROOT_ID} .z-appearance-card{border-color:color-mix(in srgb,#14ADA6 22%,hsl(var(--border)));background:linear-gradient(145deg,color-mix(in srgb,hsl(var(--card)) 94%,#14ADA6 6%),color-mix(in srgb,hsl(var(--card)) 95%,#2db7b2 5%));box-shadow:0 18px 48px rgba(0,0,0,.07)}
@@ -136,72 +136,94 @@
     #${ROOT_ID} .z-preview-nav{display:flex;align-items:center;justify-content:space-between;gap:.6rem;margin-bottom:.65rem}
     #${ROOT_ID} .z-theme-preview-main{display:flex;align-items:center;gap:.55rem;min-width:0}
     #${ROOT_ID} .z-theme-preview-logo{width:36px;height:36px;flex:none;border:1px solid color-mix(in srgb,var(--z-preview-primary) 48%,transparent);border-radius:12px;background:linear-gradient(145deg,color-mix(in srgb,var(--z-preview-secondary) 88%,#fff 12%),color-mix(in srgb,var(--z-preview-secondary) 68%,#000));box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 8px 20px color-mix(in srgb,var(--z-preview-secondary) 25%,transparent)}
-    #${ROOT_ID} .z-theme-preview-text strong{display:block;font-size:.76rem}#${ROOT_ID} .z-theme-preview-text span{display:block;margin-top:.12rem;color:hsl(var(--muted-foreground));font-size:.6rem}
-    #${ROOT_ID} .z-theme-preview-btn{border:0;border-radius:999px;padding:.45rem .65rem;color:#fff;background:linear-gradient(135deg,color-mix(in srgb,var(--z-preview-primary) 72%,#fff 28%),var(--z-preview-primary));font:inherit;font-size:.62rem;font-weight:850;box-shadow:0 7px 18px color-mix(in srgb,var(--z-preview-primary) 28%,transparent)}
+    #${ROOT_ID} .z-theme-preview-text strong{display:block;font-size:.76rem}#${ROOT_ID} .z-theme-preview-text span{display:block;margin-top:.12rem;color:hsl(var(--muted-foreground));font-size:.75rem}
+    #${ROOT_ID} .z-theme-preview-btn{border:0;border-radius:999px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;padding:.45rem .65rem;color:#fff;background:linear-gradient(135deg,color-mix(in srgb,var(--z-preview-primary) 72%,#fff 28%),var(--z-preview-primary));font:inherit;font-size:.75rem;font-weight:850;box-shadow:0 7px 18px color-mix(in srgb,var(--z-preview-primary) 28%,transparent)}
     #${ROOT_ID} .z-preview-hero{display:grid;grid-template-columns:minmax(0,1fr) 84px;align-items:center;gap:.65rem;min-height:110px;border:1px solid color-mix(in srgb,var(--z-preview-primary) 28%,transparent);border-radius:1rem 1.8rem 1.05rem 1.5rem;padding:.75rem;color:#fff;background:radial-gradient(circle at 82% 12%,color-mix(in srgb,var(--z-preview-primary) 28%,transparent),transparent 34%),linear-gradient(145deg,color-mix(in srgb,var(--z-preview-secondary) 84%,#fff 16%),color-mix(in srgb,var(--z-preview-secondary) 82%,var(--z-preview-primary) 18%) 52%,color-mix(in srgb,var(--z-preview-secondary) 68%,#000));box-shadow:0 14px 34px color-mix(in srgb,var(--z-preview-secondary) 24%,transparent),inset 0 1px 0 rgba(255,255,255,.16)}
-    #${ROOT_ID} .z-preview-hero-copy strong{display:block;font-size:.86rem}.z-preview-hero-copy span{display:block;margin-top:.18rem;font-size:.58rem;opacity:.72}
-    #${ROOT_ID} .z-preview-cta{display:inline-flex;margin-top:.52rem;border-radius:999px;padding:.33rem .55rem;color:#171b16;background:linear-gradient(135deg,color-mix(in srgb,var(--z-preview-primary) 72%,#fff 28%),var(--z-preview-primary));font-size:.56rem;font-weight:850}
+    #${ROOT_ID} .z-preview-hero-copy strong{display:block;font-size:.86rem}.z-preview-hero-copy span{display:block;margin-top:.18rem;font-size:.75rem;opacity:.72}
+    #${ROOT_ID} .z-preview-cta{display:inline-flex;margin-top:.52rem;border-radius:999px;padding:.33rem .55rem;color:#171b16;background:linear-gradient(135deg,color-mix(in srgb,var(--z-preview-primary) 72%,#fff 28%),var(--z-preview-primary));font-size:.75rem;font-weight:850}
     #${ROOT_ID} .z-preview-orbit{display:grid;width:72px;height:72px;place-items:center;border:1px solid color-mix(in srgb,var(--z-preview-primary) 42%,transparent);border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--z-preview-secondary) 74%,#000) 54%,transparent 55%),conic-gradient(var(--z-preview-primary) 70%,rgba(255,255,255,.1) 0);box-shadow:0 0 0 6px color-mix(in srgb,var(--z-preview-primary) 7%,transparent),0 8px 22px rgba(0,0,0,.16)}
     #${ROOT_ID} .z-preview-orbit strong{font-size:.86rem}
+    #${ROOT_ID} .z-preview-card small{font-size:.75rem}
     #${ROOT_ID} .z-preview-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.45rem;margin-top:.55rem}
     #${ROOT_ID} .z-preview-card{height:34px;border:1px solid color-mix(in srgb,var(--z-preview-secondary) 18%,hsl(var(--border)));border-radius:.65rem;background:linear-gradient(145deg,color-mix(in srgb,hsl(var(--card)) 94%,var(--z-preview-secondary) 6%),color-mix(in srgb,hsl(var(--card)) 96%,var(--z-preview-primary) 4%));box-shadow:0 5px 14px rgba(0,0,0,.05)}
-    #${ROOT_ID} .z-preset-wrap{margin:.2rem 0 .9rem}#${ROOT_ID} .z-preset-title{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.5rem;font-size:.68rem;font-weight:800}#${ROOT_ID} .z-preset-title span:last-child{color:hsl(var(--muted-foreground));font-size:.6rem;font-weight:600}
+    #${ROOT_ID} .z-preset-wrap{margin:.2rem 0 .9rem}#${ROOT_ID} .z-preset-title{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.5rem;font-size:.75rem;font-weight:800}#${ROOT_ID} .z-preset-title span:last-child{color:hsl(var(--muted-foreground));font-size:.75rem;font-weight:600}
     #${ROOT_ID} .z-presets{display:flex;gap:.45rem;overflow-x:auto;padding:.08rem .03rem .22rem;scrollbar-width:thin}
-    #${ROOT_ID} .z-preset{display:flex;min-width:116px;align-items:center;gap:.45rem;border:1px solid hsl(var(--border));border-radius:.78rem;padding:.48rem .55rem;color:hsl(var(--foreground));background:hsl(var(--background)/.58);font:inherit;font-size:.62rem;font-weight:760;cursor:pointer;transition:transform .15s,border-color .15s,box-shadow .15s}
+    #${ROOT_ID} .z-preset{display:flex;min-width:116px;min-height:44px;align-items:center;gap:.45rem;border:1px solid hsl(var(--border));border-radius:.78rem;padding:.48rem .55rem;color:hsl(var(--foreground));background:hsl(var(--background)/.58);font:inherit;font-size:.75rem;font-weight:760;cursor:pointer;transition:transform .15s,border-color .15s,box-shadow .15s}
     #${ROOT_ID} .z-preset:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--preset-a) 38%,hsl(var(--border)));box-shadow:0 7px 18px color-mix(in srgb,var(--preset-b) 10%,transparent)}
     #${ROOT_ID} .z-preset.is-active-preset{border-color:var(--preset-a)!important;box-shadow:0 0 0 1.5px var(--preset-a),0 8px 20px color-mix(in srgb,var(--preset-b) 22%,transparent)!important;background:color-mix(in srgb,var(--preset-a) 12%,hsl(var(--background)))!important}
     #${ROOT_ID} .z-preset-dots{display:flex;flex:none}#${ROOT_ID} .z-preset-dots i{width:18px;height:18px;border:2px solid hsl(var(--background));border-radius:50%;box-shadow:0 0 0 1px hsl(var(--border))}#${ROOT_ID} .z-preset-dots i+i{margin-right:-7px}
-    #${ROOT_ID} .z-preview-badge{font-size:.62rem;font-weight:800;padding:.22rem .55rem;border-radius:999px;background:linear-gradient(135deg,rgba(16,185,129,.2),rgba(5,150,105,.12));border:1px solid rgba(16,185,129,.35);color:#059669}
+    #${ROOT_ID} .z-preview-badge{font-size:.75rem;font-weight:800;padding:.22rem .55rem;border-radius:999px;background:linear-gradient(135deg,rgba(16,185,129,.2),rgba(5,150,105,.12));border:1px solid rgba(16,185,129,.35);color:#059669}
     html.dark #${ROOT_ID} .z-preview-badge{color:#34d399}
-    #${ROOT_ID} .z-preview-sub-title{display:block;font-size:.62rem;color:rgba(255,255,255,.75);margin-bottom:.18rem}
+    #${ROOT_ID} .z-preview-sub-title{display:block;font-size:.75rem;color:rgba(255,255,255,.75);margin-bottom:.18rem}
     #${ROOT_ID} .z-preview-user{display:block;font-size:.92rem;font-weight:850;color:#fff;margin-bottom:.55rem}
     #${ROOT_ID} .z-preview-metrics{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.75rem}
-    #${ROOT_ID} .z-preview-chip{font-size:.62rem;padding:.2rem .48rem;border-radius:.45rem;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);color:#fff;display:flex;align-items:center;gap:.25rem}
+    #${ROOT_ID} .z-preview-chip{font-size:.75rem;padding:.2rem .48rem;border-radius:.45rem;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);color:#fff;display:flex;align-items:center;gap:.25rem}
     #${ROOT_ID} .z-preview-chip span{opacity:.75}
     #${ROOT_ID} .z-preview-orbit-inner{display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1}
-    #${ROOT_ID} .z-preview-orbit-inner small{font-size:.52rem;opacity:.78;margin-top:.12rem}
+    #${ROOT_ID} .z-preview-orbit-inner small{font-size:.75rem;opacity:.78;margin-top:.12rem}
     #${ROOT_ID} .z-tpl-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.85rem;margin-bottom:1rem}
     @media(max-width:760px){#${ROOT_ID} .z-tpl-grid{grid-template-columns:1fr}}
     #${ROOT_ID} .z-tpl-card{position:relative;display:flex;flex-direction:column;justify-content:space-between;border:1.5px solid hsl(var(--border));border-radius:1rem;padding:1rem;background:linear-gradient(160deg,hsl(var(--background)/.72),hsl(var(--card)));cursor:pointer;transition:all .22s ease;box-shadow:0 4px 14px rgba(0,0,0,.03)}
     #${ROOT_ID} .z-tpl-card:hover{transform:translateY(-2px);border-color:rgba(45,183,178,.45);box-shadow:0 8px 24px rgba(45,183,178,.12)}
     #${ROOT_ID} .z-tpl-card.is-selected{border-color:#14ADA6;background:linear-gradient(160deg,rgba(45,183,178,.08),hsl(var(--card)));box-shadow:0 0 0 1px #14ADA6,0 12px 28px rgba(20,173,166,.16)}
     #${ROOT_ID} .z-tpl-card-top{display:flex;align-items:center;justify-content:space-between;gap:.6rem;margin-bottom:.7rem}
-    #${ROOT_ID} .z-tpl-pill{font-size:.62rem;font-weight:800;padding:.2rem .48rem;border-radius:999px;line-height:1.3}
+    #${ROOT_ID} .z-tpl-pill{font-size:.75rem;font-weight:800;padding:.2rem .48rem;border-radius:999px;line-height:1.3}
     #${ROOT_ID} .z-tpl-pill.recommended{background:linear-gradient(135deg,rgba(20,173,166,.18),rgba(14,143,138,.1));border:1px solid rgba(20,173,166,.32);color:#0e8f8a}
     html.dark #${ROOT_ID} .z-tpl-pill.recommended{color:#53E0BD}
     #${ROOT_ID} .z-tpl-pill.classic{background:rgba(184,134,11,.1);border:1px solid rgba(184,134,11,.24);color:#8a5b08}
     html.dark #${ROOT_ID} .z-tpl-pill.classic{color:#deb24b}
     #${ROOT_ID} .z-tpl-name{font-size:.88rem;font-weight:850;margin-bottom:.35rem;display:flex;align-items:center;gap:.45rem}
-    #${ROOT_ID} .z-tpl-desc{font-size:.7rem;color:hsl(var(--muted-foreground));line-height:1.65;margin-bottom:.75rem}
+    #${ROOT_ID} .z-tpl-desc{font-size:.75rem;color:hsl(var(--muted-foreground));line-height:1.65;margin-bottom:.75rem}
     #${ROOT_ID} .z-tpl-features{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:auto}
-    #${ROOT_ID} .z-tpl-feature{font-size:.62rem;padding:.18rem .44rem;border-radius:.45rem;background:hsl(var(--background)/.65);border:1px solid hsl(var(--border));color:hsl(var(--muted-foreground))}
+    #${ROOT_ID} .z-tpl-feature{font-size:.75rem;padding:.18rem .44rem;border-radius:.45rem;background:hsl(var(--background)/.65);border:1px solid hsl(var(--border));color:hsl(var(--muted-foreground))}
     #${ROOT_ID} .z-tpl-apply-row{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
     #${ROOT_ID} .z-color-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}
     #${ROOT_ID} .z-color-card{min-width:0;border:1px solid hsl(var(--border));border-radius:1rem;padding:.75rem;background:linear-gradient(155deg,hsl(var(--background)/.68),hsl(var(--card)/.72));box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
-    #${ROOT_ID} .z-color-title{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.55rem;font-size:.74rem;font-weight:800}
+    #${ROOT_ID} .z-color-title{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.55rem;font-size:.75rem;font-weight:800}
     #${ROOT_ID} .z-color-swatch{width:26px;height:26px;flex:none;border:2px solid rgba(255,255,255,.72);border-radius:50%;box-shadow:0 0 0 1px hsl(var(--border)),0 4px 12px rgba(0,0,0,.14)}
     #${ROOT_ID} .z-color-plane{position:relative;height:170px;overflow:hidden;border:1px solid hsl(var(--border));border-radius:.82rem;cursor:crosshair;touch-action:none;background:linear-gradient(to top,#000,transparent),linear-gradient(to right,#fff,var(--picker-hue,#f00));box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
     #${ROOT_ID} .z-color-cursor{position:absolute;width:18px;height:18px;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.65),0 3px 7px rgba(0,0,0,.4);transform:translate(-50%,-50%);pointer-events:none}
-    #${ROOT_ID} .z-color-hue{appearance:none;width:100%;height:15px;margin:.68rem 0 .55rem;border:1px solid hsl(var(--border));border-radius:999px;outline:none;cursor:pointer;background:linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)}
+    #${ROOT_ID} .z-color-hue{appearance:none;width:100%;height:auto;min-height:44px;padding:14px 0;background-clip:content-box;margin:.55rem 0 .45rem;border:1px solid hsl(var(--border));border-radius:999px;outline:none;cursor:pointer;background:linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)}
     #${ROOT_ID} .z-color-hue::-webkit-slider-thumb{appearance:none;width:21px;height:21px;border:2px solid #fff;border-radius:50%;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.28),0 3px 7px rgba(0,0,0,.22)}
     #${ROOT_ID} .z-color-hue::-moz-range-thumb{width:19px;height:19px;border:2px solid #fff;border-radius:50%;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.28)}
     #${ROOT_ID} .z-color-hex{width:100%!important;text-transform:uppercase;font-family:ui-monospace,SFMono-Regular,Menlo,monospace!important;text-align:center;direction:ltr}
     #${ROOT_ID} .z-appearance-actions{display:flex;align-items:center;justify-content:space-between;gap:.65rem;flex-wrap:wrap;margin-top:.95rem;padding-top:.75rem;border-top:1px solid hsl(var(--border))}
     #${ROOT_ID} .z-appearance-buttons{display:flex;gap:.45rem;flex-wrap:wrap}
-    #${ROOT_ID} .z-appearance-apply{border:0;border-radius:.72rem;padding:.62rem .86rem;color:#fff;background:linear-gradient(135deg,#0E8F8A,#0B6E6A 65%,#2DB7B2);box-shadow:0 8px 20px rgba(14,143,138,.16);font:inherit;font-size:.7rem;font-weight:850;cursor:pointer}
-    #${ROOT_ID} .z-appearance-reset{border:1px solid hsl(var(--border));border-radius:.72rem;padding:.6rem .78rem;color:hsl(var(--foreground));background:hsl(var(--background));font:inherit;font-size:.68rem;font-weight:760;cursor:pointer}
+    #${ROOT_ID} .z-appearance-apply{border:0;border-radius:.72rem;min-height:44px;padding:.62rem .86rem;color:#fff;background:linear-gradient(135deg,#0E8F8A,#0B6E6A 65%,#2DB7B2);box-shadow:0 8px 20px rgba(14,143,138,.16);font:inherit;font-size:.75rem;font-weight:850;cursor:pointer}
+    #${ROOT_ID} .z-appearance-reset{border:1px solid hsl(var(--border));border-radius:.72rem;min-height:44px;padding:.6rem .78rem;color:hsl(var(--foreground));background:hsl(var(--background));font:inherit;font-size:.75rem;font-weight:760;cursor:pointer}
     #${ROOT_ID} .z-appearance-apply:disabled,#${ROOT_ID} .z-appearance-reset:disabled{opacity:.55;cursor:wait}
-    #${ROOT_ID} .z-appearance-status{font-size:.66rem;color:hsl(var(--muted-foreground))}#${ROOT_ID} .z-appearance-status.ok{color:#14ADA6}#${ROOT_ID} .z-appearance-status.err{color:#dc2626}
+    #${ROOT_ID} .z-appearance-status{font-size:.75rem;color:hsl(var(--muted-foreground))}#${ROOT_ID} .z-appearance-status.ok{color:#14ADA6}#${ROOT_ID} .z-appearance-status.err{color:#dc2626}
     @media(max-width:760px){#${ROOT_ID} .z-color-grid{grid-template-columns:1fr}#${ROOT_ID} .z-color-plane{height:150px}#${ROOT_ID} .z-theme-preview{min-height:190px}#${ROOT_ID} .z-preview-hero{grid-template-columns:minmax(0,1fr) 70px}#${ROOT_ID} .z-preview-orbit{width:62px;height:62px}}
     @media(max-width:900px){#${ROOT_ID} .z-admin-card{grid-template-columns:1fr 1fr}#${ROOT_ID} .z-admin-meta,#${ROOT_ID} .z-admin-card .z-admin-save{grid-column:1/-1}}
     #${ROOT_ID} .z-update-card{border-color:rgba(184,134,11,.26);background:linear-gradient(135deg,rgba(45,183,178,.055),rgba(184,134,11,.075))}
     #${ROOT_ID} .z-update-row{display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap}
-    #${ROOT_ID} .z-update-sha{direction:ltr;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.66rem;color:hsl(var(--muted-foreground))}
-    #${ROOT_ID} .z-update-btn{border:0;border-radius:var(--radius,.5rem);padding:.62rem .92rem;font:inherit;font-size:.74rem;font-weight:850;color:#fff;background:linear-gradient(135deg,#0E8F8A,#0B6E6A 65%,#2DB7B2);cursor:pointer}
+    #${ROOT_ID} .z-update-sha{direction:ltr;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.75rem;color:hsl(var(--muted-foreground))}
+    #${ROOT_ID} .z-update-btn{border:0;border-radius:var(--radius,.5rem);min-height:44px;padding:.62rem .92rem;font:inherit;font-size:.75rem;font-weight:850;color:#fff;background:linear-gradient(135deg,#0E8F8A,#0B6E6A 65%,#2DB7B2);cursor:pointer}
     #${ROOT_ID} .z-update-btn:disabled{opacity:.55;cursor:wait}
+
+    /* ── کف مقیاس تایپوگرافی: هیچ متنی زیر ۱۲px (هم‌استاندارد صفحهٔ اشتراک) ── */
+    /* ── هدف لمس: ناحیهٔ ضربهٔ کلید/اسلایدر/تب بزرگ می‌شود، ظاهر دست‌نخورده ── */
+    #${ROOT_ID} input[type=checkbox]::before{content:"";position:absolute;inset:-12px -6px;border-radius:999px}
+    #${ROOT_ID} input[type=range]{min-height:44px;padding:14px 0;background-clip:content-box}
+    #${NAV_ID}::after{content:"";position:absolute;inset:-2px 0}
+    /* ── فوکوس دیداری برای کاربران کیبورد ── */
+    #${ROOT_ID} button:focus-visible,#${ROOT_ID} input:focus-visible,#${ROOT_ID} select:focus-visible,
+    #${ROOT_ID} textarea:focus-visible,#${ROOT_ID} a:focus-visible,#${NAV_ID}:focus-visible{
+      outline:2px solid #14ADA6;outline-offset:2px}
+    /* ── کنتراست AA: سرخ #dc2626 هم روی تیره (۳.۵۶:۱) و هم روی روشن (۴.۳۵:۱) کم بود ── */
+    #${ROOT_ID} .z-error,#${ROOT_ID} .z-status.err,#${ROOT_ID} .z-appearance-status.err{color:#b91c1c}
+    #${ROOT_ID} .z-mini-btn.z-danger{color:#b91c1c}
+    html.dark #${ROOT_ID} .z-error,html.dark #${ROOT_ID} .z-status.err,
+    html.dark #${ROOT_ID} .z-appearance-status.err{color:#f87171}
+    html.dark #${ROOT_ID} .z-mini-btn.z-danger{color:#f87171;border-color:rgba(248,113,113,.28)}
+    /* ── روی دستگاه‌های لمسی، ورودی‌ها هم به آستانهٔ ۴۴px می‌رسند ── */
+    @media (pointer:coarse){
+      #${ROOT_ID} input[type=text],#${ROOT_ID} input[type=number],#${ROOT_ID} input[type=url],
+      #${ROOT_ID} input[type=password],#${ROOT_ID} select{min-height:44px}
+    }
     #${UPDATE_NOTICE_ID}{position:fixed;z-index:2147482000;top:12px;left:50%;transform:translateX(-50%);width:min(560px,calc(100vw - 24px));direction:rtl;border:1px solid rgba(184,134,11,.34);border-radius:14px;background:hsl(var(--background));color:hsl(var(--foreground));box-shadow:0 12px 40px rgba(0,0,0,.16);padding:.72rem .8rem;display:flex;align-items:center;justify-content:space-between;gap:.7rem;font-family:inherit}
-    #${UPDATE_NOTICE_ID} .z-un-text{font-size:.73rem;line-height:1.65}#${UPDATE_NOTICE_ID} .z-un-text strong{display:block;font-size:.78rem}
-    #${UPDATE_NOTICE_ID} button{border:0;border-radius:9px;padding:.48rem .65rem;background:#0E8F8A;color:white;font:inherit;font-size:.68rem;font-weight:800;white-space:nowrap;cursor:pointer}
+    #${UPDATE_NOTICE_ID} .z-un-text{font-size:.75rem;line-height:1.65}#${UPDATE_NOTICE_ID} .z-un-text strong{display:block;font-size:.78rem}
+    #${UPDATE_NOTICE_ID} button{border:0;border-radius:9px;padding:.48rem .65rem;background:#0E8F8A;color:white;font:inherit;font-size:.75rem;font-weight:800;white-space:nowrap;cursor:pointer}
   `;
 
   if (!document.getElementById('mrm-special-style')) {
@@ -212,12 +234,12 @@
   }
 
   const icons = {
-    gem: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6.5 3.5h11L22 9l-10 12L2 9l4.5-5.5Z"/><path d="M2 9h20M8 9l4 12 4-12M6.5 3.5 8 9m9.5-5.5L16 9"/></svg>',
-    sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M1 14h6m2-6h6m2 8h6"/></svg>',
-    link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>',
-    bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>',
-    users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
-    palette: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 0 18h1.4a1.8 1.8 0 0 0 1.1-3.2 1.8 1.8 0 0 1 1.1-3.2H18a3 3 0 0 0 3-3C21 6.85 16.97 3 12 3Z"/><circle cx="7.5" cy="10" r=".8" fill="currentColor" stroke="none"/><circle cx="10" cy="6.8" r=".8" fill="currentColor" stroke="none"/><circle cx="14.2" cy="6.8" r=".8" fill="currentColor" stroke="none"/><circle cx="17" cy="9.8" r=".8" fill="currentColor" stroke="none"/></svg>',
+    gem: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6.5 3.5h11L22 9l-10 12L2 9l4.5-5.5Z"/><path d="M2 9h20M8 9l4 12 4-12M6.5 3.5 8 9m9.5-5.5L16 9"/></svg>',
+    sliders: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M1 14h6m2-6h6m2 8h6"/></svg>',
+    link: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>',
+    bell: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>',
+    users: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+    palette: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 0 18h1.4a1.8 1.8 0 0 0 1.1-3.2 1.8 1.8 0 0 1 1.1-3.2H18a3 3 0 0 0 3-3C21 6.85 16.97 3 12 3Z"/><circle cx="7.5" cy="10" r=".8" fill="currentColor" stroke="none"/><circle cx="10" cy="6.8" r=".8" fill="currentColor" stroke="none"/><circle cx="14.2" cy="6.8" r=".8" fill="currentColor" stroke="none"/><circle cx="17" cy="9.8" r=".8" fill="currentColor" stroke="none"/></svg>',
   };
 
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
@@ -479,11 +501,11 @@
   }
 
   function renderLoading() {
-    mountShell('<div class="z-loading">Loading MRM settings…</div>');
+    mountShell('<div class="z-loading" role="status" aria-live="polite">در حال بارگذاری تنظیمات MRM…</div>');
   }
 
   function renderError(error) {
-    mountShell(`<div class="z-error">MRM could not load your settings.<br>${escapeHtml(error?.name === 'AbortError' ? 'Request timed out' : (error?.message || error))}</div>`);
+    mountShell(`<div class="z-error" role="alert">تنظیمات MRM بارگذاری نشد.<br>${escapeHtml(error?.name === 'AbortError' ? 'Request timed out' : (error?.message || error))}</div>`);
   }
 
   function versionLabel(value) { return typeof value === 'string' && /^v?\d+\.\d+\.\d+$/.test(value) ? `v${value.replace(/^v/, '')}` : 'unknown'; }
@@ -522,7 +544,7 @@
       </div>
       <div class="z-un-actions" style="display:flex;align-items:center;gap:.4rem">
         <button type="button" class="z-un-open">باز کردن MRM</button>
-        <button type="button" class="z-un-dismiss" style="background:transparent;border:1px solid rgba(184,134,11,.4);color:hsl(var(--foreground));padding:.42rem .55rem;border-radius:8px;font:inherit;font-size:.68rem;cursor:pointer" title="بستن">✕</button>
+        <button type="button" class="z-un-dismiss" style="background:transparent;border:1px solid rgba(184,134,11,.4);color:hsl(var(--foreground));padding:.42rem .55rem;border-radius:8px;font:inherit;font-size:.75rem;cursor:pointer" title="بستن">✕</button>
       </div>`;
     node.querySelector('.z-un-open')?.addEventListener('click', () => {
       if (!isSettingsRoute()) {
@@ -543,7 +565,7 @@
     const status = cachedUpdate.status || 'idle', available = cachedUpdate.update_available === true, busy = status === 'queued' || status === 'running';
     if (!available && !busy && status !== 'failed') return '';
     const stateText = busy ? 'بروزرسانی در حال اجراست…' : status === 'failed' ? `خطا: ${escapeHtml(cachedUpdate.message || 'Update failed')}` : 'نسخه جدید آماده نصب است.';
-    return `<section class="z-card z-update-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.gem}</span>بروزرسانی MRM</h3><div class="z-card-note">بروزرسانی فقط توسط Owner انجام می‌شود و روی Host اجرا می‌شود.</div></div><span class="z-native">OWNER ONLY</span></div><div class="z-update-row"><div><div class="z-status ${status === 'failed' ? 'err' : (available || busy ? '' : 'ok')}">${stateText}</div><div class="z-update-sha">installed ${versionLabel(cachedUpdate.installed_version)} · latest ${versionLabel(cachedUpdate.latest_version)}</div></div><button type="button" id="z-update-now" class="z-update-btn" ${(!available || busy) ? 'disabled' : ''}>${busy ? 'Updating…' : 'Update now'}</button></div></section>`;
+    return `<section class="z-card z-update-card"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.gem}</span>بروزرسانی MRM</h3><div class="z-card-note">بروزرسانی فقط توسط Owner انجام می‌شود و روی Host اجرا می‌شود.</div></div><span class="z-native">فقط مالک</span></div><div class="z-update-row"><div><div role="status" aria-live="polite" class="z-status ${status === 'failed' ? 'err' : (available || busy ? '' : 'ok')}">${stateText}</div><div class="z-update-sha">نصب‌شده ${versionLabel(cachedUpdate.installed_version)} · آخرین ${versionLabel(cachedUpdate.latest_version)}</div></div><button type="button" id="z-update-now" class="z-update-btn" ${(!available || busy) ? 'disabled' : ''}>${busy ? 'در حال بروزرسانی…' : 'بروزرسانی'}</button></div></section>`;
   }
   function stopUpdatePolling() { if (updatePollTimer) clearInterval(updatePollTimer); updatePollTimer = null; }
   function startUpdatePolling() {
@@ -552,7 +574,7 @@
   }
   function bindUpdateActions(root) {
     if (!isOwner) return;
-    root?.querySelector('#z-update-now')?.addEventListener('click', async (event) => { const button = event.currentTarget; if (!(button instanceof HTMLButtonElement)) return; button.disabled = true; button.textContent = 'Queuing…'; try { await api('/api/mrm/update', { method: 'POST' }); await loadUpdateStatus(true); if (cachedSettings) renderOwner(cachedSettings); startUpdatePolling(); } catch (error) { alert(`MRM update: ${error?.message || error}`); button.disabled = false; button.textContent = 'Update now'; } });
+    root?.querySelector('#z-update-now')?.addEventListener('click', async (event) => { const button = event.currentTarget; if (!(button instanceof HTMLButtonElement)) return; button.disabled = true; button.textContent = 'Queuing…'; try { await api('/api/mrm/update', { method: 'POST' }); await loadUpdateStatus(true); if (cachedSettings) renderOwner(cachedSettings); startUpdatePolling(); } catch (error) { alert(`MRM update: ${error?.message || error}`); button.disabled = false; button.textContent = 'بروزرسانی'; } });
   }
 
   function templateSection() {
@@ -656,7 +678,7 @@
       const pending = namespaceError.status === 404
         ? 'ماژول مسیرهای اختصاصی هنوز داخل پروسه PasarGuard لود نشده است. Installer جدید از restart امن خود PasarGuard استفاده می‌کند؛ یک Update موفق باید این Routeها را فعال کند.'
         : `بخش مسیرهای اختصاصی در دسترس نیست: ${namespaceError.message || namespaceError}`;
-      return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>Admin Subscription Namespaces</h3><div class="z-card-note">فقط Owner اصلی PasarGuard به این بخش دسترسی دارد.</div></div><span class="z-native">OWNER ONLY</span></div><div class="z-pending">${escapeHtml(pending)}</div></section>`;
+      return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>فضای نام اشتراک ادمین‌ها</h3><div class="z-card-note">فقط Owner اصلی PasarGuard به این بخش دسترسی دارد.</div></div><span class="z-native">فقط مالک</span></div><div class="z-pending">${escapeHtml(pending)}</div></section>`;
     }
 
     if (!cachedNamespaces) return '';
@@ -667,10 +689,10 @@
       const example = `${location.origin}${route.path_prefix}/<subscription-hash>`;
       const admin = admins.find((item) => Number(item.id) === Number(route.admin_id));
       const userCount = Number(admin?.user_count || 0);
-      return `<div class="z-ns-row" data-z-route="${escapeHtml(route.slug)}"><div class="z-ns-admin">${escapeHtml(route.username)} <span class="z-native">${escapeHtml(userCount)} users</span></div><div class="z-ns-url" title="${escapeHtml(example)}">${escapeHtml(example)}</div>${userCount === 0 ? '<div class="z-pending">این ادمین فعلاً هیچ User تحت مالکیت خود ندارد؛ ابتدا در PasarGuard برای Userها Set Owner انجام دهید.</div>' : ''}<button type="button" class="z-mini-btn z-copy-ns" data-prefix="${escapeHtml(`${location.origin}${route.path_prefix}/`)}">Copy Prefix</button><button type="button" class="z-mini-btn z-danger z-delete-ns" data-slug="${escapeHtml(route.slug)}">Delete</button></div>`;
+      return `<div class="z-ns-row" data-z-route="${escapeHtml(route.slug)}"><div class="z-ns-admin">${escapeHtml(route.username)} <span class="z-native">${escapeHtml(userCount)} users</span></div><div class="z-ns-url" title="${escapeHtml(example)}">${escapeHtml(example)}</div>${userCount === 0 ? '<div class="z-pending">این ادمین فعلاً هیچ User تحت مالکیت خود ندارد؛ ابتدا در PasarGuard برای Userها Set Owner انجام دهید.</div>' : ''}<button type="button" class="z-mini-btn z-copy-ns" data-prefix="${escapeHtml(`${location.origin}${route.path_prefix}/`)}">کپی پیشوند</button><button type="button" class="z-mini-btn z-danger z-delete-ns" data-slug="${escapeHtml(route.slug)}">حذف</button></div>`;
     }).join('') : '<div class="z-help">هنوز برای هیچ ادمینی مسیر اختصاصی ساخته نشده است.</div>';
 
-    return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>Admin Subscription Namespaces</h3><div class="z-card-note">Owner مسیر هر نماینده را می‌سازد؛ تنظیمات شخصی همان نماینده فقط روی کاربران خودش اعمال می‌شود.</div></div><span class="z-native">OWNER ONLY</span></div>
+    return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>فضای نام اشتراک ادمین‌ها</h3><div class="z-card-note">Owner مسیر هر نماینده را می‌سازد؛ تنظیمات شخصی همان نماینده فقط روی کاربران خودش اعمال می‌شود.</div></div><span class="z-native">فقط مالک</span></div>
       <div class="z-ns-create">
         <div class="z-field"><label for="z-ns-admin">ادمین</label><select id="z-ns-admin">${options}</select></div>
         <div class="z-field"><label for="z-ns-slug">مسیر</label><input id="z-ns-slug" type="text" dir="ltr" maxlength="32" placeholder="pedram"></div>
@@ -693,14 +715,14 @@
         <div class="z-field"><label for="z-own-slug">مسیر Subscription</label><input id="z-own-slug" type="text" dir="ltr" maxlength="32" value="${escapeHtml(slug)}" placeholder="${escapeHtml(fallbackSlug)}"><div class="z-help">فقط حروف کوچک انگلیسی، عدد، - و _</div></div>
         <div class="z-toggle"><div><div class="z-toggle-title">فعال بودن مسیر اختصاصی</div><div class="z-toggle-sub">لینک کاربران این ادمین روی همین مسیر ساخته می‌شود.</div></div><input id="z-own-enabled" type="checkbox" ${enabled ? 'checked' : ''}></div>
       </div>
-      <div class="z-path" style="margin-top:.7rem"><code id="z-own-prefix">${escapeHtml(prefix)}&lt;subscription-hash&gt;</code><button type="button" class="z-mini-btn" id="z-copy-own-prefix">Copy Prefix</button></div>
+      <div class="z-path" style="margin-top:.7rem"><code id="z-own-prefix">${escapeHtml(prefix)}&lt;subscription-hash&gt;</code><button type="button" class="z-mini-btn" id="z-copy-own-prefix">کپی پیشوند</button></div>
     </section>`;
   }
 
   function adminProfilesSection() {
     if (!isOwner) return '';
     if (adminProfilesError) {
-      return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>مدیریت فروشگاه ادمین‌ها</h3></div><span class="z-native">OWNER ONLY</span></div><div class="z-error">${escapeHtml(adminProfilesError?.message || adminProfilesError)}</div></section>`;
+      return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>مدیریت فروشگاه ادمین‌ها</h3></div><span class="z-native">فقط مالک</span></div><div class="z-error" role="alert">${escapeHtml(adminProfilesError?.message || adminProfilesError)}</div></section>`;
     }
     const admins = Array.isArray(cachedAdminProfiles?.admins) ? cachedAdminProfiles.admins : [];
     const managed = admins.filter((admin) => Number(admin.admin_id) !== Number(currentAdmin?.id));
@@ -717,7 +739,7 @@
         <div class="z-admin-status">/sub/${escapeHtml(namespace.slug || fallbackSlug)}/&lt;subscription-hash&gt;</div>
       </div>`;
     }).join('') : '<div class="z-help">ادمین دیگری برای مدیریت وجود ندارد.</div>';
-    return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>مدیریت فروشگاه ادمین‌ها</h3><div class="z-card-note">Owner می‌تواند نام فروشگاه، پشتیبانی و مسیر هر ادمین را جداگانه ببیند و تغییر دهد.</div></div><span class="z-native">OWNER ONLY</span></div><div class="z-admin-list">${rows}</div></section>`;
+    return `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.users}</span>مدیریت فروشگاه ادمین‌ها</h3><div class="z-card-note">Owner می‌تواند نام فروشگاه، پشتیبانی و مسیر هر ادمین را جداگانه ببیند و تغییر دهد.</div></div><span class="z-native">فقط مالک</span></div><div class="z-admin-list">${rows}</div></section>`;
   }
 
   function bindNamespaceActions(root) {
@@ -764,7 +786,7 @@
 
     root?.querySelectorAll('.z-delete-ns').forEach((button) => button.addEventListener('click', async () => {
       const routeSlug = button.dataset.slug || '';
-      if (!routeSlug || !confirm(`Delete /sub/${routeSlug}/ namespace?`)) return;
+      if (!routeSlug || !confirm(`حذف فضای نام /sub/${routeSlug}/ ؟`)) return;
       button.disabled = true;
       try {
         await api(`/api/mrm/admin-subscriptions/${encodeURIComponent(routeSlug)}`, { method: 'DELETE' });
@@ -907,7 +929,7 @@
           ${colorPickerMarkup('secondary', 'رنگ پایه برند', 'Hero، سطوح، آیکن‌ها و عمق بصری', secondary)}
         </div>
         <div class="z-appearance-actions">
-          <span id="z-appearance-status" class="z-appearance-status">تغییرها تا زمان تأیید فقط در پیش‌نمایش هستند.</span>
+          <span id="z-appearance-status" class="z-appearance-status" role="status" aria-live="polite">تغییرها تا زمان تأیید فقط در پیش‌نمایش هستند.</span>
           <div class="z-appearance-buttons"><button id="z-theme-reset" class="z-appearance-reset" type="button">پیش‌فرض MRM</button><button id="z-theme-apply" class="z-appearance-apply" type="button">ذخیره و اعمال تم</button></div>
         </div>
       </section>`;
@@ -1095,10 +1117,10 @@
     const roleBadge = isOwner ? '<span class="z-role">OWNER</span>' : '<span class="z-role">RESELLER</span>';
 
     const html = `
-      <section class="z-hero"><div class="z-hero-row"><div class="z-brand"><div class="z-logo">${icons.gem}</div><div><div class="z-title-row"><h2 class="z-title">MRM Template</h2><span class="z-special">SPECIAL</span>${roleBadge}<span class="z-version">v${VERSION}</span></div><div class="z-subtitle">${subtitle}</div></div></div><button type="button" class="z-debug-btn" id="z-debug-open" style="display:none" aria-hidden="true">تشخیص نقش</button></div></section>
+      <section class="z-hero"><div class="z-hero-row"><div class="z-brand"><div class="z-logo">${icons.gem}</div><div><div class="z-title-row"><h2 class="z-title">MRM Template</h2><span class="z-special">ویژه</span>${roleBadge}<span class="z-version">v${VERSION}</span></div><div class="z-subtitle">${subtitle}</div></div></div><button type="button" class="z-debug-btn" id="z-debug-open" style="display:none" aria-hidden="true">تشخیص نقش</button></div></section>
       <div class="z-content">
         ${updateSection()}
-        ${isOwner ? `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.sliders}</span>کنترل ویژه MRM</h3><div class="z-card-note">خاموش = صفحه اشتراک بدون هیچ دستکاری MRM (حالت خام پاسارگارد)</div></div><span class="z-native">MASTER</span></div><div class="z-grid"><div class="z-toggle is-special"><div><div class="z-toggle-title">MRM Special فعال</div><div class="z-toggle-sub">روشن/خاموش کلیِ همه قابلیت‌های ویژه صفحه اشتراک برای همه کاربران</div></div><input id="z-enabled" type="checkbox" ${cfg.enabled ? 'checked' : ''}></div></div></section>` : `<section class="z-card"><div class="z-card-note">کلید روشن/خاموش MRM Special در دست Owner اصلی است.</div></section>`}
+        ${isOwner ? `<section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.sliders}</span>کنترل ویژه MRM</h3><div class="z-card-note">خاموش = صفحه اشتراک بدون هیچ دستکاری MRM (حالت خام پاسارگارد)</div></div><span class="z-native">کلید اصلی</span></div><div class="z-grid"><div class="z-toggle is-special"><div><div class="z-toggle-title">MRM Special فعال</div><div class="z-toggle-sub">روشن/خاموش کلیِ همه قابلیت‌های ویژه صفحه اشتراک برای همه کاربران</div></div><input id="z-enabled" type="checkbox" ${cfg.enabled ? 'checked' : ''}></div></div></section>` : `<section class="z-card"><div class="z-card-note">کلید روشن/خاموش MRM Special در دست Owner اصلی است.</div></section>`}
         ${templateSection()}
         ${adminProfilesSection()}
         ${ownPathSection(profilePayload)}
@@ -1110,12 +1132,12 @@
           <div class="z-toggle"><div><div class="z-toggle-title">نمایش اپلیکیشن‌ها</div><div class="z-toggle-sub">Applications تعریف‌شده در PasarGuard</div></div><input id="z-show-apps" type="checkbox" ${cfg.showApps ? 'checked' : ''}></div>
           <div class="z-field"><label>اپلیکیشن‌ها</label><div class="z-apps">${apps}</div></div>
         </div></section>
-        <section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.link}</span>Special Connections</h3><div class="z-card-note">${isOwner ? 'کنترل اصلی Subscription و فرمت‌های Native.' : 'فقط نمایش کانفیگ‌های کاربران خودتان؛ تنظیمات Native اصلی دست Owner باقی می‌ماند.'}</div></div><span class="z-native">SPECIAL</span></div><div class="z-grid">
+        <section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.link}</span>اتصال‌های ویژه</h3><div class="z-card-note">${isOwner ? 'کنترل اصلی Subscription و فرمت‌های Native.' : 'فقط نمایش کانفیگ‌های کاربران خودتان؛ تنظیمات Native اصلی دست Owner باقی می‌ماند.'}</div></div><span class="z-native">ویژه</span></div><div class="z-grid">
           <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش کانفیگ‌های معمولی</div><div class="z-toggle-sub">VLESS / VMess / Trojan / SS و سایر کانفیگ‌ها</div></div><input id="z-show-configs" type="checkbox" ${cfg.showConfigs ? 'checked' : ''}></div>
           <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش WireGuard</div><div class="z-toggle-sub">فقط اگر WireGuard واقعاً داخل Subscription باشد</div></div><input id="z-show-wg" type="checkbox" ${cfg.showWireGuard ? 'checked' : ''}></div>
           ${ownerNativeConnections}
         </div></section>
-        <section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.bell}</span>Special Announcement</h3><div class="z-card-note">${isOwner ? 'اعلان Native پاسارگارد با استایل Emerald/Gold.' : 'متن اعلان را Owner اصلی تعیین می‌کند؛ شما نمایش، حالت و زمان‌بندی آن را برای کاربران خودتان کنترل می‌کنید.'}</div></div><span class="z-native">SPECIAL</span></div><div class="z-grid">
+        <section class="z-card z-accent"><div class="z-card-head"><div><h3 class="z-card-title"><span class="z-card-icon">${icons.bell}</span>اعلان ویژه</h3><div class="z-card-note">${isOwner ? 'اعلان Native پاسارگارد با استایل Emerald/Gold.' : 'متن اعلان را Owner اصلی تعیین می‌کند؛ شما نمایش، حالت و زمان‌بندی آن را برای کاربران خودتان کنترل می‌کنید.'}</div></div><span class="z-native">ویژه</span></div><div class="z-grid">
           <div class="z-toggle is-special"><div><div class="z-toggle-title">نمایش اعلان ویژه</div><div class="z-toggle-sub">بدون متن اعلان، کارت ساختگی نمایش داده نمی‌شود</div></div><input id="z-show-ann" type="checkbox" ${cfg.showAnnouncement ? 'checked' : ''}></div>
           <div class="z-field"><label for="z-ann-mode">حالت نمایش</label><select id="z-ann-mode"><option value="always" ${cfg.announcementMode === 'always' ? 'selected' : ''}>همیشه</option><option value="scheduled" ${cfg.announcementMode === 'scheduled' ? 'selected' : ''}>ساعت‌بندی‌شده</option></select></div>
           <div class="z-field"><label for="z-ann-times">ساعت‌ها</label><input id="z-ann-times" type="text" dir="ltr" placeholder="09:00,14:30,21:00" value="${escapeHtml(cfg.announcementTimes)}"></div>
@@ -1123,7 +1145,7 @@
           ${ownerAnnouncementFields}
         </div></section>
       </div>
-      <div class="z-actions"><span class="z-status" id="z-status">آماده ذخیره</span><button class="z-save" id="z-save">Save MRM Settings</button></div>`;
+      <div class="z-actions"><span class="z-status" id="z-status" role="status" aria-live="polite">آماده ذخیره</span><button class="z-save" id="z-save">ذخیرهٔ تنظیمات MRM</button></div>`;
 
     const root = mountShell(html);
     root?.querySelector('#z-save')?.addEventListener('click', () => isOwner ? saveOwner(cachedSettings) : saveReseller());
@@ -1134,6 +1156,7 @@
     bindAdminProfileActions(root);
     bindAppearance(root, cfg);
     bindRoleDebug(root);
+    enhanceToggles(root);
   }
 
   function renderOwner(settings, profilePayload = cachedProfile) {
@@ -1147,11 +1170,32 @@
     renderForm(extractReseller(payload), payload);
   }
 
+
+  /* دسترس‌پذیری تب: کلیدها نام می‌گیرند و کل ردیف قابل کلیک می‌شود،
+     بدون تغییر ظاهر (کلید ۳۶×۲۰ می‌ماند ولی ناحیهٔ ضربهٔ آن بزرگ است). */
+  function enhanceToggles(root) {
+    if (!root) return;
+    root.querySelectorAll('.z-toggle').forEach((row) => {
+      const input = row.querySelector('input[type=checkbox]');
+      if (!input) return;
+      if (!input.getAttribute('aria-label')) {
+        const title = row.querySelector('.z-toggle-title')?.textContent?.trim();
+        if (title) input.setAttribute('aria-label', title);
+      }
+      row.classList.add('z-row-click');
+      row.addEventListener('click', (event) => {
+        if (event.target === input) return;
+        input.checked = !input.checked;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    });
+  }
+
   function bindRoleDebug(root) {
     if (!document.getElementById('z-debug-css')) {
       const style = document.createElement('style');
       style.id = 'z-debug-css';
-      style.textContent = '#z-debug-overlay{position:fixed;inset:0;background:rgba(4,48,46,.55);display:none;align-items:center;justify-content:center;z-index:99999;padding:16px}#z-debug-overlay.is-open{display:flex}.z-debug-card{background:#0B2422;color:#EAF7F5;border:1px solid rgba(45,183,178,.45);border-radius:14px;width:min(560px,94vw);max-height:86vh;overflow:auto;padding:14px;font-size:12px;box-shadow:0 18px 50px rgba(0,0,0,.45)}.z-debug-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}.z-debug-head button{background:transparent;border:1px solid rgba(45,183,178,.5);color:#59E0D8;border-radius:999px;padding:4px 12px;font-size:11px;cursor:pointer}.z-debug-card pre{white-space:pre-wrap;word-break:break-all;background:rgba(4,48,46,.6);border:1px solid rgba(45,183,178,.25);border-radius:10px;padding:10px;font-size:11px;line-height:1.7;direction:ltr;text-align:left}.z-debug-note{margin-top:8px;color:#9FD6D1;font-size:11px}.z-debug-btn{margin-inline-start:8px;padding:4px 10px;border-radius:999px;border:1px solid rgba(45,183,178,.5);background:transparent;color:inherit;font-size:11px;cursor:pointer;opacity:.8;vertical-align:middle}';
+      style.textContent = '#z-debug-overlay{position:fixed;inset:0;background:rgba(4,48,46,.55);display:none;align-items:center;justify-content:center;z-index:99999;padding:16px}#z-debug-overlay.is-open{display:flex}.z-debug-card{background:#0B2422;color:#EAF7F5;border:1px solid rgba(45,183,178,.45);border-radius:14px;width:min(560px,94vw);max-height:86vh;overflow:auto;padding:14px;font-size:12.0px;box-shadow:0 18px 50px rgba(0,0,0,.45)}.z-debug-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}.z-debug-head button{background:transparent;border:1px solid rgba(45,183,178,.5);color:#59E0D8;border-radius:999px;padding:4px 12px;font-size:12px;cursor:pointer}.z-debug-card pre{white-space:pre-wrap;word-break:break-all;background:rgba(4,48,46,.6);border:1px solid rgba(45,183,178,.25);border-radius:10px;padding:10px;font-size:12px;line-height:1.7;direction:ltr;text-align:left}.z-debug-note{margin-top:8px;color:#9FD6D1;font-size:12px}.z-debug-btn{margin-inline-start:8px;padding:4px 10px;border-radius:999px;border:1px solid rgba(45,183,178,.5);background:transparent;color:inherit;font-size:12px;cursor:pointer;opacity:.8;vertical-align:middle}';
       document.head.appendChild(style);
     }
     root?.querySelector('#z-debug-open')?.addEventListener('click', () => { void openRoleDebug(); });

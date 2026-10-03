@@ -1949,6 +1949,102 @@ fi
 
 echo ""
 
+# ─── Test Group 18: in-panel settings tab standards ──────────────────────────
+# (تب «MRM Special» داخل پنل — معیارهای همان صفحهٔ اشتراک: کف تایپوگرافی،
+#  هدف لمس، برچسب دسترس‌پذیر، کنتراست، و نوار ذخیره‌ای که محتوا را نپوشاند)
+echo "📋 Group 18: in-panel settings tab standards"
+echo ""
+
+SPECIAL="$PROJECT_DIR/plugin/mrm-special.js"
+
+# 18.1: هیچ اندازهٔ فونتی زیر کف مقیاس (۰.۷۵rem = ۱۲px) نمانده
+if grep -qE 'font-size:(\.[0-6][0-9]*|0\.[0-6][0-9]*)rem' "$SPECIAL"; then
+    fail "in-panel CSS still has sub-12px font sizes"
+else
+    pass "no sub-12px font size in the in-panel settings CSS"
+fi
+
+# 18.2: دکمه‌ها حداقل ارتفاع ۴۴px دارند (حداقل ۵ دکمه)
+MINH=$(grep -o 'min-height:44px' "$SPECIAL" | wc -l | tr -d ' ')
+if [ "$MINH" -ge 5 ]; then
+    pass "in-panel buttons meet the 44px touch floor ($MINH rules)"
+else
+    fail "in-panel buttons below the touch floor (found $MINH min-height rules)"
+fi
+
+# 18.3: کلیدها ناحیهٔ ضربهٔ گسترش‌یافته دارند و کل ردیف کلیک‌پذیر است
+if grep -q 'input\[type=checkbox\]::before' "$SPECIAL" && \
+   grep -q 'enhanceToggles' "$SPECIAL" && \
+   grep -q 'z-row-click' "$SPECIAL"; then
+    pass "toggle switches expose an expanded hit area and row-level click"
+else
+    fail "toggle switches lack expanded hit area or row click"
+fi
+
+# 18.4: ورودی‌ها روی دستگاه لمسی به آستانهٔ ۴۴px می‌رسند
+if grep -q 'pointer:coarse' "$SPECIAL" && grep -q 'min-height:44px' "$SPECIAL"; then
+    pass "in-panel inputs reach the touch floor on coarse pointers"
+else
+    fail "in-panel inputs do not adapt to touch devices"
+fi
+
+# 18.5: فوکوس دیداری برای کاربران کیبورد
+if grep -q ':focus-visible' "$SPECIAL"; then
+    pass "in-panel controls expose a visible keyboard focus ring"
+else
+    fail "no visible focus ring in the in-panel tab"
+fi
+
+# 18.6: وضعیت‌های پویا اعلام می‌شوند (ذخیره/ظاهر/بروزرسانی)
+LIVE=$(grep -o 'role="status" aria-live="polite"' "$SPECIAL" | wc -l | tr -d ' ')
+if [ "$LIVE" -ge 3 ]; then
+    pass "in-panel save/appearance/update statuses are announced ($LIVE live regions)"
+else
+    fail "in-panel dynamic statuses are not announced (found $LIVE)"
+fi
+if grep -q 'role="alert"' "$SPECIAL"; then
+    pass "in-panel error state is announced as an alert"
+else
+    fail "in-panel error state is not announced"
+fi
+
+# 18.7: خطا و وضعیت ناموفق کنتراست AA دارند (سرخ کم‌کنتراست ممنوع)
+if grep -q '#b91c1c' "$SPECIAL" && grep -q '#f87171' "$SPECIAL"; then
+    pass "in-panel error/danger colours meet AA on both themes"
+else
+    fail "in-panel error colours left at the low-contrast red"
+fi
+
+# 18.8: نوار ذخیرهٔ چسبان فضای کافی پایین می‌گذارد تا محتوا پنهان نشود
+if grep -q 'calc(2rem + 4.6rem)' "$SPECIAL"; then
+    pass "sticky save bar reserves space so no content is occluded"
+else
+    fail "sticky save bar can occlude the last card"
+fi
+
+# 18.9: آیکون‌های تزئینی از درخت دسترس‌پذیری کنار گذاشته شده‌اند
+# نکته: زیر set -euo pipefail، grep بی‌خروجی اسکریپت را می‌کشد → || true لازم است
+BARE_SVG=$( (grep -o '<svg viewBox=' "$SPECIAL" || true) | wc -l | tr -d ' ')
+HIDDEN_SVG=$( (grep -o 'aria-hidden="true" focusable="false" viewBox=' "$SPECIAL" || true) | wc -l | tr -d ' ')
+if [ "$BARE_SVG" = "0" ] && [ "$HIDDEN_SVG" -ge 5 ]; then
+    pass "in-panel decorative icons are hidden from the accessibility tree ($HIDDEN_SVG)"
+else
+    fail "in-panel icons leak into the accessibility tree (bare=$BARE_SVG, hidden=$HIDDEN_SVG)"
+fi
+
+# 18.10: رابط فارسی است — رشته‌های انگلیسی نمانده
+if ! grep -q 'Save MRM Settings' "$SPECIAL" && \
+   ! grep -q 'Loading MRM settings' "$SPECIAL" && \
+   ! grep -q 'Update now' "$SPECIAL" && \
+   ! grep -q 'OWNER ONLY' "$SPECIAL" && \
+   ! grep -q 'Copy Prefix' "$SPECIAL"; then
+    pass "in-panel strings are Persian (no English leftovers)"
+else
+    fail "English strings remain in the Persian in-panel tab"
+fi
+
+echo ""
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 echo "═══════════════════════════════════════════════════════════"
 echo "  Test Results"
