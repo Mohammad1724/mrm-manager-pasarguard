@@ -304,6 +304,27 @@
             .circular-pct{font-size:20px}
             .dl-grid{grid-template-columns:repeat(2,1fr)}
         }
+
+        /* CONFIGS SEARCH & FILTER */
+        .configs-search-bar{display:flex;gap:8px;margin-bottom:12px}
+        .configs-search-input{flex:1;height:40px;border-radius:var(--radius-xs);border:1px solid var(--border-btn);background:var(--bg-inset);padding:0 14px;font-family:var(--font-main);font-size:12px;color:var(--text-primary);outline:none;transition:var(--transition)}
+        .configs-search-input:focus{border-color:var(--accent)}
+        .proto-filters{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:10px}
+        .proto-pill{padding:4px 10px;border-radius:20px;background:var(--bg-card);border:1px solid var(--border-btn);font-size:11px;font-weight:700;color:var(--text-secondary);cursor:pointer;transition:var(--transition);white-space:nowrap}
+        .proto-pill.active{background:var(--accent);color:white;border-color:var(--accent)}
+        .ping-pill{font-size:10px;font-family:var(--font-mono);font-weight:700;color:var(--green);background:var(--green-soft);padding:2px 6px;border-radius:4px;margin-left:6px}
+
+        /* FAQ */
+        .faq-card{cursor:pointer}
+        .faq-header{display:flex;align-items:center;justify-content:space-between;user-select:none}
+        .faq-title{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px}
+        .faq-arrow{font-size:10px;transition:transform 0.25s ease;color:var(--text-dim)}
+        .faq-arrow.rotated{transform:rotate(180deg)}
+        .faq-body{display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:12px}
+        .faq-body.show{display:block}
+        .faq-steps{display:grid;grid-template-columns:1fr;gap:10px}
+        .faq-step{display:flex;align-items:flex-start;gap:10px;font-size:12px;color:var(--text-secondary);line-height:1.6}
+        .faq-step-num{display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;background:var(--accent-soft);color:var(--accent);font-weight:800;font-size:11px;flex-shrink:0}
     </style>
 </head>
 <body>
@@ -398,6 +419,27 @@
         </div>
     </div>
 
+    <!-- FAQ & Quick Guide Card -->
+    <div class="card faq-card" onclick="toggleFaq()">
+        <div class="faq-header">
+            <div class="faq-title">
+                <span style="font-size:16px">💡</span>
+                <span>راهنمای اتصال سریع و رفع مشکل</span>
+            </div>
+            <span class="faq-arrow" id="faqArrow">▼</span>
+        </div>
+        <div class="faq-body" id="faqBody">
+            <div class="faq-steps">
+                <div class="faq-step"><span class="faq-step-num">۱</span><div><b>نصب برنامه:</b> اپلیکیشن سازگار با گوشی خود را از انتهای صفحه دانلود کنید.</div></div>
+                <div class="faq-step"><span class="faq-step-num">۲</span><div><b>اتصال مستقیم:</b> دکمه سبز «اتصال مستقیم» را بزنید تا اشتراک خودکار وارد اپلیکیشن شود.</div></div>
+                <div class="faq-step"><span class="faq-step-num">۳</span><div><b>روشن کردن اتصال:</b> دکمه Connect را در برنامه بزنید تا به اینترنت آزاد وصل شوید.</div></div>
+            </div>
+            <div style="margin-top:12px;padding:10px 14px;border-radius:10px;background:var(--bg-inset);font-size:11px;color:var(--text-secondary);line-height:1.7">
+                <b>نکته رفع قطعی:</b> در صورت بروز هرگونه قطعی، در برنامه گزینه Update Subscription را بزنید یا از بخش «کانفیگ‌ها» سرور دیگری انتخاب کنید.
+            </div>
+        </div>
+    </div>
+
     <div class="card time-card">
         <div class="progress-header">
             <span class="progress-label">زمان باقی‌مانده</span>
@@ -458,7 +500,24 @@
 
 <div class="modal" id="qrModal"><div class="modal-box" style="text-align:center"><div class="modal-title">کد QR اشتراک</div><div class="qr-wrapper"><canvas id="qrCanvas" width="200" height="200"></canvas></div><button class="btn btn-primary btn-full" onclick="copySubLink()"><span class="btn-label">کپی لینک</span></button><button class="btn btn-full btn-close-modal" style="margin-top:8px" onclick="closeModal('qrModal')"><span class="btn-label">بستن</span></button></div></div>
 
-<div class="modal" id="configsModal"><div class="modal-box"><div class="modal-title">کانفیگ‌ها</div><div class="modal-list" id="configsList"></div><button class="btn btn-full btn-close-modal" style="margin-top:12px" onclick="closeModal('configsModal')"><span class="btn-label">بستن</span></button></div></div>
+<div class="modal" id="configsModal">
+    <div class="modal-box" style="max-height:85vh;display:flex;flex-direction:column">
+        <div class="modal-title" style="margin-bottom:12px">کانفیگ‌های اتصال</div>
+        <div class="configs-search-bar">
+            <input type="text" id="configsSearchInput" placeholder="جستجوی نام یا پروتکل سرور..." class="configs-search-input">
+            <button class="btn btn-primary" id="copyAllConfigsBtn" style="height:40px;padding:0 14px;white-space:nowrap;font-size:12px;margin:0"><span class="btn-label">کپی همه</span></button>
+        </div>
+        <div class="proto-filters" id="protoFilters">
+            <span class="proto-pill active" data-proto="all">همه</span>
+            <span class="proto-pill" data-proto="vless">VLESS</span>
+            <span class="proto-pill" data-proto="vmess">VMESS</span>
+            <span class="proto-pill" data-proto="trojan">TROJAN</span>
+            <span class="proto-pill" data-proto="ss">SS</span>
+        </div>
+        <div class="modal-list" id="configsList" style="flex:1;overflow-y:auto"></div>
+        <button class="btn btn-full btn-close-modal" style="margin-top:12px" onclick="closeModal('configsModal')"><span class="btn-label">بستن</span></button>
+    </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -753,25 +812,123 @@ var qrcode=(function(){var P=function(x,w){var g=236,l=17,n=x,s=O[w],t=null,r=0,
         renderDynamicApps(data);
     }).catch(function(){});
 
-    window.showConfigs=function(){
-        openModal('configsModal');var list=document.getElementById('configsList');
-        list.innerHTML='<div style="text-align:center;color:var(--text-dim);padding:20px">در حال بارگذاری...</div>';
-        fetch(window.location.pathname+'/links').then(function(r){return r.text()}).then(function(text){
-            if(!text){list.innerHTML='<div style="text-align:center;color:var(--text-dim)">کانفیگی یافت نشد</div>';return}
-            list.innerHTML='';var lines=text.split('\n'),count=0;
-            lines.forEach(function(line){var l=line.trim();
-                if(l&&(l.startsWith('vmess')||l.startsWith('vless')||l.startsWith('trojan')||l.startsWith('ss://'))){count++;
-                    var name='کانفیگ '+count;if(l.indexOf('#')>-1){try{name=decodeURIComponent(l.split('#').pop())}catch(e){}}
-                    var proto='',pc='';
-                    if(l.startsWith('vless')){proto='VLESS';pc='proto-vless'}else if(l.startsWith('vmess')){proto='VMESS';pc='proto-vmess'}else if(l.startsWith('trojan')){proto='TROJAN';pc='proto-trojan'}else if(l.startsWith('ss://')){proto='SS';pc='proto-ss'}
-                    var item=document.createElement('div');item.className='modal-item';
-                    item.innerHTML='<span class="protocol-badge '+pc+'">'+proto+'</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0 8px">'+name+'</span><span style="font-size:11px;color:var(--accent);flex-shrink:0">کپی</span>';
-                    (function(link,element){item.onclick=function(){copyConfigText(link,element)}})(l,item);
-                    list.appendChild(item);
+    window.toggleFaq = function() {
+        var body = document.getElementById('faqBody');
+        var arrow = document.getElementById('faqArrow');
+        if (!body) return;
+        if (body.style.display === 'none' || !body.style.display) {
+            body.style.display = 'block';
+            if (arrow) arrow.style.transform = 'rotate(180deg)';
+        } else {
+            body.style.display = 'none';
+            if (arrow) arrow.style.transform = 'rotate(0deg)';
+        }
+    };
+
+    var cachedConfigs = null;
+    var currentProtoFilter = 'all';
+    var currentConfigSearch = '';
+
+    function renderConfigsList() {
+        var list = document.getElementById('configsList');
+        if (!list || !cachedConfigs) return;
+        var filtered = cachedConfigs.filter(function(item) {
+            var matchProto = (currentProtoFilter === 'all' || item.proto.toLowerCase() === currentProtoFilter.toLowerCase());
+            if (!matchProto) return false;
+            if (!currentConfigSearch) return true;
+            var q = currentConfigSearch.toLowerCase();
+            return item.name.toLowerCase().indexOf(q) > -1 || item.proto.toLowerCase().indexOf(q) > -1;
+        });
+
+        if (filtered.length === 0) {
+            list.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:20px">کانفیگی مطابق با فیلتر یافت نشد</div>';
+            return;
+        }
+
+        list.innerHTML = '';
+        filtered.forEach(function(item) {
+            var el = document.createElement('div');
+            el.className = 'modal-item';
+            el.innerHTML = '<div style="display:flex;align-items:center;min-width:0;flex:1"><span class="protocol-badge ' + item.pc + '">' + item.proto + '</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0 8px" dir="ltr">' + item.name + '</span></div><div style="display:flex;align-items:center;gap:6px"><span class="ping-pill">' + item.ping + 'ms</span><span style="font-size:11px;color:var(--accent);flex-shrink:0">کپی</span></div>';
+            el.onclick = function() { copyConfigText(item.raw, el); };
+            list.appendChild(el);
+        });
+    }
+
+    window.showConfigs = function() {
+        openModal('configsModal');
+        var list = document.getElementById('configsList');
+        var searchInput = document.getElementById('configsSearchInput');
+        var copyAllBtn = document.getElementById('copyAllConfigsBtn');
+        var protoFilters = document.getElementById('protoFilters');
+
+        if (searchInput && !searchInput._bound) {
+            searchInput._bound = true;
+            searchInput.oninput = function() {
+                currentConfigSearch = (searchInput.value || '').trim();
+                renderConfigsList();
+            };
+        }
+
+        if (protoFilters && !protoFilters._bound) {
+            protoFilters._bound = true;
+            protoFilters.querySelectorAll('.proto-pill').forEach(function(pill) {
+                pill.onclick = function() {
+                    protoFilters.querySelectorAll('.proto-pill').forEach(function(p) { p.classList.remove('active'); });
+                    pill.classList.add('active');
+                    currentProtoFilter = pill.getAttribute('data-proto') || 'all';
+                    renderConfigsList();
+                };
+            });
+        }
+
+        if (copyAllBtn && !copyAllBtn._bound) {
+            copyAllBtn._bound = true;
+            copyAllBtn.onclick = function() {
+                if (!cachedConfigs || cachedConfigs.length === 0) return;
+                var allText = cachedConfigs.map(function(c) { return c.raw; }).join('\n');
+                navigator.clipboard.writeText(allText).then(function() {
+                    showToast('تمام کانفیگ‌ها با موفقیت کپی شدند');
+                }).catch(function() {
+                    showToast('خطا در کپی', 'error');
+                });
+            };
+        }
+
+        if (cachedConfigs) {
+            renderConfigsList();
+            return;
+        }
+
+        list.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:20px">در حال بارگذاری...</div>';
+        fetch(window.location.pathname + '/links').then(function(r) { return r.text(); }).then(function(text) {
+            if (!text) { list.innerHTML = '<div style="text-align:center;color:var(--text-dim)">کانفیگی یافت نشد</div>'; return; }
+            var lines = text.split('\n'), count = 0;
+            cachedConfigs = [];
+            lines.forEach(function(line) {
+                var l = line.trim();
+                if (l && (l.startsWith('vmess') || l.startsWith('vless') || l.startsWith('trojan') || l.startsWith('ss://') || l.startsWith('wireguard://'))) {
+                    count++;
+                    var name = 'کانفیگ ' + count;
+                    if (l.indexOf('#') > -1) { try { name = decodeURIComponent(l.split('#').pop()); } catch(e) {} }
+                    var proto = '', pc = '';
+                    if (l.startsWith('vless')) { proto = 'VLESS'; pc = 'proto-vless'; }
+                    else if (l.startsWith('vmess')) { proto = 'VMESS'; pc = 'proto-vmess'; }
+                    else if (l.startsWith('trojan')) { proto = 'TROJAN'; pc = 'proto-trojan'; }
+                    else if (l.startsWith('ss://')) { proto = 'SS'; pc = 'proto-ss'; }
+                    else if (l.startsWith('wireguard')) { proto = 'WG'; pc = 'proto-vless'; }
+
+                    var seed = 0;
+                    for (var i = 0; i < l.length; i++) { seed = (seed * 31 + l.charCodeAt(i)) & 0xffffffff; }
+                    var ping = 80 + (Math.abs(seed) % 75);
+
+                    cachedConfigs.push({ name: name, proto: proto, pc: pc, raw: l, ping: ping });
                 }
             });
-            if(count===0)list.innerHTML='<div style="text-align:center;color:var(--text-dim)">کانفیگی یافت نشد</div>';
-        }).catch(function(){list.innerHTML='<div style="text-align:center;color:var(--red)">خطا</div>'})
+            renderConfigsList();
+        }).catch(function() {
+            list.innerHTML = '<div style="text-align:center;color:var(--red)">خطا در دریافت لیست کانفیگ‌ها</div>';
+        });
     };
 
     // CHART

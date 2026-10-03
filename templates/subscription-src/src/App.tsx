@@ -1,30 +1,23 @@
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  Activity,
-  AlertTriangle,
-  Bell,
-  CalendarDays,
-  ChevronDown,
-  Database,
-  RefreshCcw,
-  ShieldCheck,
   Sparkles,
+  ShieldCheck,
+  RefreshCcw,
 } from 'lucide-react';
 import { useUserInfo, useConfigData, useChartData } from '@/hooks/useUserData';
 import { useLanguage } from '@/hooks/useLanguage';
 import { Layout } from '@/components/layout';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { LanguageSwitcher } from '@/components/language-switcher';
-import { OnlineBadge } from '@/components/online-badge';
+import { MasterHeroCard } from '@/components/master-hero-card';
+import { FaqGuide } from '@/components/faq-guide';
+import { AnnouncementBanner } from '@/components/announcement-banner';
 import { TrafficChart } from '@/components/traffic-chart';
 import { ConnectionLinks } from '@/components/connection-links';
 import { ProminentSubscriptionLink } from '@/components/prominent-subscription-link';
 import { AppsList } from '@/components/AppsList';
-import { QuickConnect, RenewButton, ConnectGuide } from '@/components/quick-connect';
-import { formatRelativeExpiry, formatDate } from '@/lib/dateFormatter';
-import { useDir } from '@/hooks/useDir';
-import { cn } from '@/lib/utils';
+import { QRModal } from '@/components/qr-modal';
 import type { UsageDataPoint } from '@/types/user';
 
 const isUsageDataSeries = (value: unknown): value is UsageDataPoint[] => Array.isArray(value);
@@ -34,20 +27,12 @@ const getChartUsageData = (stats: unknown): UsageDataPoint[] => {
   return Object.values(stats).find(isUsageDataSeries) ?? [];
 };
 
-const formatBytes = (bytes: number) => {
-  if (!bytes || bytes === 0 || Number.isNaN(bytes)) return '0 B';
-  const unit = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const index = Math.floor(Math.log(bytes) / Math.log(unit));
-  if (index < 0 || index >= sizes.length) return '0 B';
-  return `${(bytes / Math.pow(unit, index)).toFixed(2)} ${sizes[index]}`;
-};
-
-function App() {
+export default function App() {
   const { t, i18n } = useTranslation();
-  const dir = useDir();
   useLanguage();
   const [timeRange, setTimeRange] = useState('7d');
+  const [masterQROpen, setMasterQROpen] = useState(false);
+  const isFa = i18n.language.startsWith('fa');
 
   const { startTime, period } = useMemo(() => {
     const now = new Date();
@@ -89,6 +74,7 @@ function App() {
   const effectiveData = data ?? initialUser;
   const hasData = Boolean(effectiveData);
 
+  // Announcement message
   const rawAnnouncement = headers?.announce;
   const announcementMessage = useMemo(() => {
     if (!rawAnnouncement || typeof rawAnnouncement !== 'string') return null;
@@ -111,83 +97,59 @@ function App() {
     typeof headers?.['announce-url'] === 'string' && headers['announce-url'].trim()
       ? headers['announce-url']
       : null;
-  const normalizedStatus = useMemo(() => {
-    const status = String(effectiveData?.status || 'active').toLowerCase();
-    return ['active', 'disabled', 'limited', 'expired', 'on_hold'].includes(status)
-      ? status
-      : 'active';
-  }, [effectiveData?.status]);
 
-  const usagePercentage = useMemo(() => {
-    if (!effectiveData?.data_limit || !effectiveData.used_traffic) return 0;
-    return Math.min((effectiveData.used_traffic / effectiveData.data_limit) * 100, 100);
-  }, [effectiveData]);
+  const supportUrl =
+    typeof headers?.['support-url'] === 'string' && headers['support-url'].trim()
+      ? headers['support-url']
+      : null;
 
-  const expiryInfo = useMemo(() => {
-    if (!effectiveData) return { status: '', time: '', isExpired: false };
-    if (effectiveData.status === 'on_hold') {
-      if (!effectiveData.on_hold_expire_duration) {
-        return { status: t('userInfo.available'), time: t('userInfo.noTimeLimit'), isExpired: false };
-      }
-      const days = Math.floor(effectiveData.on_hold_expire_duration / 86400);
-      const hours = Math.floor((effectiveData.on_hold_expire_duration % 86400) / 3600);
-      const time = days > 0
-        ? `${days} ${t(days === 1 ? 'time.day' : 'time.days')}`
-        : `${hours} ${t(hours === 1 ? 'time.hour' : 'time.hours')}`;
-      return { status: t('userInfo.available'), time, isExpired: false };
-    }
-    return formatRelativeExpiry(effectiveData.expire, t);
-  }, [effectiveData, t]);
+  const subUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}${window.location.pathname.replace(/\/(info|raw)\/?$/, '').replace(/\/+$/, '')}`
+    : '';
 
-  const remainingPercentage = !effectiveData?.data_limit
-    ? 100
-    : Math.max(0, Math.min(100, 100 - usagePercentage));
-
-  /* Smart renew alert: < 5 days left OR < 20% traffic remaining */
-  const daysRemaining = useMemo(() => {
-    if (!effectiveData?.expire || effectiveData.expire === '0') return null;
-    const ms = new Date(effectiveData.expire).getTime() - Date.now();
-    return Number.isNaN(ms) ? null : Math.ceil(ms / 86400000);
-  }, [effectiveData?.expire]);
-
-  const isRenewUrgent = useMemo(() => {
-    const lowTime = daysRemaining !== null && daysRemaining < 5;
-    const lowTraffic = remainingPercentage < 20;
-    return lowTime || lowTraffic;
-  }, [daysRemaining, remainingPercentage]);
-
-  const statusConfig = {
-    active: { color: 'text-[var(--success)]', dot: 'bg-[var(--success)]', tone: 'status-success' },
-    disabled: { color: 'text-muted-foreground', dot: 'bg-muted-foreground', tone: 'status-neutral' },
-    limited: { color: 'text-destructive', dot: 'bg-destructive', tone: 'status-danger' },
-    expired: { color: 'text-[var(--warning)]', dot: 'bg-[var(--warning)]', tone: 'status-warning' },
-    on_hold: { color: 'text-[var(--info)]', dot: 'bg-[var(--info)]', tone: 'status-info' },
-  } as const;
-
+  // Loading Screen
   if (isLoading && !hasData) {
     return (
       <Layout>
-        <div className="flex min-h-[100svh] items-center justify-center px-6" role="status" aria-live="polite">
-          <div className="ios-loading-card">
-            <div className="ios-spinner" aria-hidden="true" />
-            <span className="page-label">{t('common.loading')}</span>
+        <div className="flex min-h-[85vh] items-center justify-center px-6" role="status">
+          <div className="flex flex-col items-center gap-4 rounded-3xl border border-border/80 bg-card/80 p-8 shadow-2xl backdrop-blur-xl text-center max-w-xs w-full">
+            <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <RefreshCcw className="size-7 animate-spin" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-foreground">
+                {isFa ? 'در حال بارگذاری اطلاعات…' : t('common.loading')}
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                {isFa ? 'برقراری ارتباط با سرور پاسارگارد' : 'Connecting to PasarGuard...'}
+              </p>
+            </div>
           </div>
         </div>
       </Layout>
     );
   }
 
+  // Error Screen
   if (error && !hasData && !isLoading && !isValidating) {
     return (
       <Layout>
-        <div className="flex min-h-[100svh] items-center justify-center px-6">
-          <div className="ios-error-card" role="alert">
-            <div className="ios-error-symbol">!</div>
-            <p className="text-xl font-semibold text-foreground">{t('dashboard.error')}</p>
-            <p className="page-meta">{error.message}</p>
-            <button type="button" className="ios-primary-button" onClick={() => refresh()}>
-              <RefreshCcw className="size-4" />
-              {t('common.retry', 'Try again')}
+        <div className="flex min-h-[85vh] items-center justify-center px-6">
+          <div className="flex flex-col items-center gap-4 rounded-3xl border border-destructive/30 bg-card/90 p-8 shadow-2xl backdrop-blur-xl text-center max-w-sm w-full">
+            <div className="flex size-14 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
+              <span className="text-2xl font-black">!</span>
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-foreground">{t('dashboard.error')}</h3>
+              <p className="text-xs text-muted-foreground mt-1">{error.message}</p>
+            </div>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground shadow-sm transition hover:opacity-90 active:scale-95"
+              onClick={() => refresh()}
+            >
+              <RefreshCcw className="size-3.5" />
+              <span>{t('common.retry', 'تلاش دوباره')}</span>
             </button>
           </div>
         </div>
@@ -197,261 +159,117 @@ function App() {
 
   if (!effectiveData) return null;
 
-  const statusStyle = statusConfig[normalizedStatus as keyof typeof statusConfig];
-  const locale = i18n.language === 'fa' ? 'fa-IR' : i18n.language;
-  const isFa = i18n.language.startsWith('fa');
-  const remainingTraffic = !effectiveData.data_limit
-    ? '∞'
-    : formatBytes(Math.max(0, effectiveData.data_limit - (effectiveData.used_traffic || 0)));
-  const expiryDate = !effectiveData.expire || effectiveData.expire === '0'
-    ? t('userInfo.noTimeLimit')
-    : formatDate(effectiveData.expire, locale);
-  const durationText = !effectiveData.on_hold_expire_duration
-    ? t('userInfo.noTimeLimit')
-    : `${Math.max(1, Math.floor(effectiveData.on_hold_expire_duration / 86400))} ${t('time.days')}`;
-
   const hasLinks = Boolean(configData?.links?.length);
   const hasChart = !chartError;
   const chartUsage = getChartUsageData(chartData?.stats);
 
-  const isTrafficEmpty = Boolean(effectiveData.data_limit) && remainingPercentage <= 0;
-  const liquidHue = Math.round(remainingPercentage * 1.35);
-  const liquidStyle = {
-    '--liquid-level': `${remainingPercentage}%`,
-    '--liquid-color': `hsl(${liquidHue} 72% 38%)`,
-    '--liquid-color-bright': `hsl(${liquidHue} 78% 55%)`,
-  } as CSSProperties;
-
-  const scrollToConnections = () => {
-    document.getElementById('connection-links')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
   return (
     <Layout>
       <div className="treasury-shell relative min-h-[100svh] overflow-hidden">
-        <div className="treasury-ambient" aria-hidden="true" />
+        {/* Subtle mesh background effect */}
+        <div className="treasury-ambient pointer-events-none" aria-hidden="true" />
 
-        <header className="treasury-navigation">
-          <div className="ios-container flex items-center justify-between gap-3">
-            <div className="treasury-brand" aria-label="__BRAND__">
-              <span className="treasury-brand-shield"><ShieldCheck className="size-[18px]" /></span>
-              <span>__BRAND__</span>
+        {/* Sticky Frosted Header */}
+        <header className="sticky top-0 z-40 w-full border-b border-border/50 bg-background/70 backdrop-blur-xl transition-all">
+          <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
+            <div className="flex items-center gap-2.5">
+              <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+                <ShieldCheck className="size-5" />
+              </div>
+              <div>
+                <span className="font-extrabold text-foreground text-sm tracking-tight block">
+                  __BRAND__
+                </span>
+                <span className="text-[10px] text-muted-foreground -mt-0.5 block">
+                  PasarGuard Security
+                </span>
+              </div>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+
+            <div className="flex items-center gap-2">
               <LanguageSwitcher />
               <ThemeToggle />
             </div>
           </div>
         </header>
 
-        <main className="ios-container treasury-page">
-          <section className="treasury-titlebar animate-fadeIn">
-            <div className="min-w-0">
-              <p className="treasury-kicker"><Sparkles className="size-3.5" /> {isFa ? 'فضای امن شما' : 'Your secure space'}</p>
-              <h1>{isFa ? 'اشتراک من' : t('dashboard.title')}</h1>
-              <div className="treasury-identity">
-                <span className={cn('treasury-live-dot', statusStyle.dot)} aria-hidden="true" />
-                <span dir="ltr" title={effectiveData.username}>{effectiveData.username}</span>
-                <OnlineBadge lastOnline={effectiveData.online_at} />
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => !isValidating && normalizedStatus !== 'disabled' && refresh()}
-              disabled={isValidating || normalizedStatus === 'disabled'}
-              className="treasury-refresh"
-              aria-label={isFa ? 'به‌روزرسانی اطلاعات' : 'Refresh data'}
-            >
-              <RefreshCcw className={cn('size-[18px]', isValidating && 'animate-spin')} />
-            </button>
-          </section>
+        {/* Main Content Area */}
+        <main className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+          {/* Announcement Banner if present */}
+          {announcementMessage && (
+            <AnnouncementBanner message={announcementMessage} url={announceUrl} />
+          )}
 
-          <section className={cn('treasury-hero animate-fadeIn', statusStyle.tone, isTrafficEmpty && 'is-traffic-empty')} aria-labelledby="account-status">
-            <div className="treasury-hero-glow" aria-hidden="true" />
-            <div className="treasury-hero-copy">
-              <span className="treasury-shield">
-                {isTrafficEmpty ? <AlertTriangle className="size-7" /> : <ShieldCheck className="size-7" />}
-              </span>
-              <div id="account-status" className="treasury-status">
-                <span className={cn('size-2 rounded-full', statusStyle.dot)} aria-hidden="true" />
-                {isTrafficEmpty
-                  ? (isFa ? 'حجم به اتمام رسیده' : 'Traffic depleted')
-                  : (normalizedStatus === 'active' && isFa ? 'متصل و فعال' : t(`status.${normalizedStatus}`))}
-              </div>
-              <p>
-                {isTrafficEmpty
-                  ? (isFa ? 'برای ادامه استفاده، حجم سرویس را تمدید کنید' : 'Renew your traffic to continue')
-                  : (isFa ? 'اتصال امن شما آماده استفاده است' : 'Your secure connection is ready')}
-              </p>
-              <div className="treasury-cta-stack">
-                <QuickConnect variant="hero" />
-                <div className="treasury-cta-secondary">
-                  <button type="button" className="treasury-cta-chip" onClick={scrollToConnections}>
-                    <ChevronDown className="size-3.5 -rotate-90 rtl:rotate-90" />
-                    {isFa ? 'کانفیگ‌ها' : t('config.title')}
-                  </button>
-                  <RenewButton
-                    supportUrl={typeof headers?.['support-url'] === 'string' ? headers['support-url'] : null}
-                    urgent={isRenewUrgent}
-                  />
-                </div>
-              </div>
-            </div>
+          {/* Master Account Hero Card */}
+          <MasterHeroCard
+            user={effectiveData}
+            isValidating={isValidating}
+            onRefresh={() => !isValidating && refresh()}
+            supportUrl={supportUrl}
+            onOpenQR={() => setMasterQROpen(true)}
+          />
 
-            <div className="treasury-orbit-wrap">
-              <div
-                className="treasury-orbit"
-                style={{ '--progress': `${Math.min(usagePercentage, 100) * 3.6}deg` } as CSSProperties}
-                role="img"
-                aria-label={`${Math.min(usagePercentage, 100).toFixed(0)}% ${t('userInfo.used')}`}
-              >
-                <span className="treasury-orbit-spark" aria-hidden="true" />
-                <div className="treasury-orbit-water" style={{ '--water-level': `${Math.min(usagePercentage, 100)}%` } as CSSProperties} aria-hidden="true">
-                  <div className="treasury-orbit-water-fill">
-                    <svg viewBox="0 0 240 14" preserveAspectRatio="none">
-                      <path className="treasury-orbit-wave-soft" d="M0 8 C24 1 48 13 72 7 C96 1 120 13 144 7 C168 1 192 13 216 7 C228 4 234 8 240 6 L240 14 L0 14 Z" />
-                      <path className="treasury-orbit-wave-line" d="M0 9 C30 3 54 12 84 8 C114 4 138 12 168 8 C198 4 222 12 240 8 L240 14 L0 14 Z" />
-                    </svg>
-                  </div>
-                </div>
-                <div className="treasury-orbit-center">
-                  <strong>{Math.min(usagePercentage, 100).toFixed(0)}<small>%</small></strong>
-                  <span>{t('userInfo.used')}</span>
-                </div>
-              </div>
-              <div className={cn('treasury-expiry', expiryInfo.isExpired && 'is-danger')}>
-                <CalendarDays className="size-4" />
-                <span>{expiryInfo.time}</span>
-              </div>
-            </div>
+          {/* Connection Guide & FAQ */}
+          <FaqGuide />
 
-            <svg className="treasury-wave" viewBox="0 0 720 150" preserveAspectRatio="none" aria-hidden="true">
-              <path className="treasury-wave-soft" d="M0 95 C70 20 115 130 190 68 C255 12 302 126 375 72 C455 15 510 126 575 70 C636 18 675 96 720 48" />
-              <path className="treasury-wave-line" d="M0 108 C76 36 122 136 194 82 C262 26 306 132 382 80 C452 31 512 132 580 79 C638 34 681 104 720 65" />
-            </svg>
-          </section>
-
-          <ConnectGuide />
-
-          <section className="treasury-metrics animate-fadeIn" aria-label={t('userInfo.usageDetails', 'Usage details')}>
-            <div className="treasury-metric">
-              <span>{t('userInfo.totalLimit')}</span>
-              <strong dir="ltr">{effectiveData.data_limit ? formatBytes(effectiveData.data_limit) : t('userInfo.unlimited')}</strong>
+          {/* Usage Chart Section */}
+          {hasChart && (
+            <div className="w-full">
+              <TrafficChart
+                data={chartUsage}
+                isLoading={!chartData}
+                error={chartError}
+                timeRange={timeRange}
+                onTimeRangeChange={setTimeRange}
+              />
             </div>
-            <div className="treasury-filament" aria-hidden="true"><i /></div>
-            <div className="treasury-metric">
-              <span>{t('userInfo.usedTraffic')}</span>
-              <strong dir="ltr">{formatBytes(effectiveData.used_traffic || 0)}</strong>
-            </div>
-            <div className="treasury-filament" aria-hidden="true"><i /></div>
-            <div className="treasury-metric is-success">
-              <span>{t('remaining')}</span>
-              <strong dir="ltr">{remainingTraffic}</strong>
-            </div>
-          </section>
+          )}
 
-          <section className={cn('treasury-reservoir animate-fadeIn', isTrafficEmpty && 'is-empty')} style={liquidStyle} aria-labelledby="reservoir-title">
-            <div className="treasury-reservoir-copy">
-              <div>
-                <span className="treasury-reservoir-icon" aria-hidden="true">
-                  {isTrafficEmpty ? <AlertTriangle className="size-[18px]" /> : <Database className="size-[18px]" />}
-                </span>
-                <div>
-                  <h2 id="reservoir-title">{isFa ? 'حجم باقی‌مانده' : 'Remaining traffic'}</h2>
-                </div>
-              </div>
-              <strong dir="ltr">{remainingTraffic}</strong>
-            </div>
-            <div
-              className="treasury-liquid-vessel"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(remainingPercentage)}
-              aria-label={`${Math.round(remainingPercentage)}% ${t('remaining')}`}
-            >
-              <div className="treasury-liquid-fill">
-                <span className="treasury-liquid-wave is-front" />
-                <span className="treasury-liquid-wave is-back" />
-                <i className="treasury-liquid-bubble is-one" />
-                <i className="treasury-liquid-bubble is-two" />
-                <i className="treasury-liquid-bubble is-three" />
-              </div>
-              <div className="treasury-liquid-readout">
-                {isTrafficEmpty ? (
-                  <div className="treasury-empty-state">
-                    <span><AlertTriangle className="size-5" /></span>
-                    <strong>{isFa ? 'به اتمام رسیده' : 'Depleted'}</strong>
-                  </div>
-                ) : (
-                  <>
-                    <strong>{Math.round(remainingPercentage)}<small>%</small></strong>
-                    <span>{isFa ? 'باقی مانده' : 'remaining'}</span>
-                  </>
-                )}
-              </div>
-              <div className="treasury-liquid-scale" aria-hidden="true"><i /><i /><i /><i /><i /></div>
-            </div>
-          </section>
-
-          <section className="treasury-notice animate-fadeIn" aria-labelledby="announcement-title">
-            <div className="treasury-notice-icon"><Bell className="size-[18px]" /></div>
-            <div className="min-w-0 flex-1">
-              <h2 id="announcement-title">{t('userInfo.announcement')}</h2>
-              <p className="whitespace-pre-wrap break-words">
-                {announcementMessage || (() => {
-                  /* Classic MRM placeholder flow: theme.sh replaces __NEWS__.
-                     An unreplaced placeholder segment starts with '__'. */
-                  const newsDefault = '__NEWS__';
-                  const hasNews = !newsDefault.startsWith('__');
-                  return hasNews
-                    ? newsDefault
-                    : (isFa ? 'سرویس شما آماده استفاده است' : 'Your service is ready to use');
-                })()}
-              </p>
-              {announceUrl && (
-                <a href={announceUrl} target="_blank" rel="noopener noreferrer" className="ios-link">
-                  {t('userInfo.viewAnnouncement')}
-                </a>
-              )}
-            </div>
-            <ChevronDown className="size-4 -rotate-90 text-muted-foreground rtl:rotate-90" aria-hidden="true" />
-          </section>
-
-          <section className="treasury-detail-strip animate-fadeIn">
-            <div><Database className="size-4" /><span>{t('userInfo.lifetimeTraffic')}</span><strong dir="ltr">{formatBytes(effectiveData.lifetime_used_traffic || 0)}</strong></div>
-            <div><CalendarDays className="size-4" /><span>{effectiveData.status === 'on_hold' ? t('userInfo.duration') : t('userInfo.expiryDate')}</span><strong dir={dir === 'rtl' && effectiveData.status === 'on_hold' ? 'rtl' : 'ltr'}>{effectiveData.status === 'on_hold' ? durationText : expiryDate}</strong></div>
-            <div><Activity className="size-4" /><span>{t('userInfo.lastOnline')}</span><strong dir="ltr">{effectiveData.online_at ? formatDate(effectiveData.online_at, locale) : t('notConnectedYet')}</strong></div>
-          </section>
-
-          <div className="treasury-content-stack">
-            {(hasLinks || hasChart) && (
-              <div className={cn('treasury-content-grid', hasLinks && hasChart && 'has-two-columns')}>
-                {hasChart && (
-                  <div className="min-w-0 w-full animate-fadeIn">
-                    <TrafficChart data={chartUsage} isLoading={!chartData} error={chartError} timeRange={timeRange} onTimeRangeChange={setTimeRange} />
-                  </div>
-                )}
-                {hasLinks ? (
-                  <div id="connection-links" className="scroll-mt-24">
-                    <ConnectionLinks links={configData!.links} />
-                  </div>
-                ) : (
-                  <ProminentSubscriptionLink hasChart={hasChart} />
-                )}
-              </div>
+          {/* Connection Links & Configs */}
+          <div id="connection-links" className="scroll-mt-24">
+            {hasLinks ? (
+              <ConnectionLinks links={configData!.links} />
+            ) : (
+              <ProminentSubscriptionLink hasChart={hasChart} />
             )}
+          </div>
 
-            <div className="treasury-section-title animate-fadeIn">
-              <div><span><Sparkles className="size-4" /></span><h2>{isFa ? 'اپلیکیشن پیشنهادی' : t('apps.title')}</h2></div>
-              <p>{isFa ? 'بهترین ابزار برای دستگاه شما' : 'The best tools for your device'}</p>
+          {/* Supported Applications Section */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Sparkles className="size-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-foreground">
+                    {isFa ? 'نرم‌افزارهای پیشنهادی' : t('apps.title')}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {isFa ? 'بهترین برنامه‌ها متناسب با دیوایس شما' : 'Best tools for your platform'}
+                  </p>
+                </div>
+              </div>
             </div>
+
             <AppsList />
           </div>
         </main>
       </div>
+
+      {/* Master QR Code Modal */}
+      {effectiveData && (
+        <QRModal
+          open={masterQROpen}
+          onOpenChange={setMasterQROpen}
+          link={{
+            protocol: 'unknown',
+            name: `${effectiveData.username} · Subscription`,
+            emoji: '',
+            raw: subUrl,
+          }}
+        />
+      )}
     </Layout>
   );
 }
-
-export default App;
