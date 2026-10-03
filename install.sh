@@ -44,25 +44,120 @@ else
 fi
 PAD="  "
 TASK_OPEN=0
+TASK_LABEL_LEN=0
 _task_break() { [ "$TASK_OPEN" = 1 ] && { echo ""; TASK_OPEN=0; }; return 0; }
-ui_success() { _task_break; printf '%s%s✔%s %s%s%s\n' "$PAD" "$GREEN" "$NC" "$TEXT" "$1" "$NC"; }
-ui_error()   { _task_break; printf '%s%s✘%s %s%s%s\n' "$PAD" "$RED" "$NC" "$TEXT" "$1" "$NC" >&2; }
-ui_warning() { _task_break; printf '%s%s⚠%s %s%s%s\n' "$PAD" "$YELLOW" "$NC" "$TEXT" "$1" "$NC"; }
-ui_note()    { _task_break; printf '%s%s%s%s\n' "$PAD" "$DIM" "$1" "$NC"; }
+# پیام‌ها با بودجهٔ «عرض منهای پیشوند» شکسته می‌شوند؛ پیشوند = PAD + نشانگر + فاصله
+_ui_msg() { # _ui_msg COLOUR GLYPH TEXT
+    local C="$1" G="$2" T="$3" MAX FIRST=1 _l
+    MAX=$(( $(ui_cols) - 4 ))
+    [ "$MAX" -lt 12 ] && MAX=12
+    ui_wrap "$T" "$MAX" | while IFS= read -r _l; do
+        if [ "$FIRST" = 1 ]; then
+            printf '%s%b%s%b %b%s%b\n' "$PAD" "$C" "$G" "$NC" "$TEXT" "${_l#"$PAD"}" "$NC"
+            FIRST=0
+        else
+            printf '%s  %b%s%b\n' "$PAD" "$TEXT" "${_l#"$PAD"}" "$NC"
+        fi
+    done
+}
+ui_success() { _task_break; _ui_msg "$GREEN" "✔" "$1"; }
+ui_error()   { _task_break; _ui_msg "$RED" "✘" "$1" >&2; }
+ui_warning() { _task_break; _ui_msg "$YELLOW" "⚠" "$1"; }
+ui_note()    { _task_break; ui_wrap "$1" | while IFS= read -r _l; do printf '%b%s%b\n' "$DIM" "$_l" "$NC"; done; }
 ui_step()    { _task_break; printf '\n%s%s[%s/%s]%s %s%s%s\n' "$PAD" "$CYAN" "$1" "$2" "$NC" "$BOLD$TEXT" "$3" "$NC"; }
 # ui_task "label" … ui_task_done ok|bad ["detail"]  —   › label … ✔ detail
-ui_task()      { printf '%s%s›%s %s%s%s %s…%s ' "$PAD" "$CYAN" "$NC" "$TEXT" "$1" "$NC" "$DIM" "$NC"; TASK_OPEN=1; }
+ui_task() {
+    # برچسب بلند هم بریده می‌شود تا خط پیشرفت از لبهٔ پنجره بیرون نزند
+    local LABEL; LABEL="$(ui_cut "$1" $(( $(ui_cols) - 8 )))"
+    TASK_LABEL_LEN=${#LABEL}
+    printf '%s%s›%s %s%s%s %s…%s ' "$PAD" "$CYAN" "$NC" "$TEXT" "$LABEL" "$NC" "$DIM" "$NC"; TASK_OPEN=1
+}
 ui_task_done() {
     local C G; case "$1" in ok) C="$GREEN"; G="✔" ;; warn) C="$YELLOW"; G="⚠" ;; *) C="$RED"; G="✘" ;; esac
     if [ "$TASK_OPEN" = 1 ]; then
-        printf '%s%s%s' "$C" "$G" "$NC"; [ -n "${2:-}" ] && printf ' %s%s%s' "$DIM" "$2" "$NC"; echo ""
+        printf '%s%s%s' "$C" "$G" "$NC"
+        # بریدن جزئیات تا خط پیشرفت پنجره را نشکند
+        # جزئیات به عرض باقی‌ماندهٔ خط محدود می‌شود: PAD + «› » + برچسب + « … » + نشانگر
+        local BUDGET=$(( $(ui_cols) - ${TASK_LABEL_LEN:-0} - 9 ))
+        # اگر جا برای جزئیات معنادار نباشد چاپ نمی‌شود («unreach…» گنگ‌تر از نبودنش است)
+        [ -n "${2:-}" ] && [ "$BUDGET" -ge 8 ] && printf ' %s%s%s' "$DIM" "$(ui_cut "$2" "$BUDGET")" "$NC"
+        echo ""
     else
         printf '%s%s%s%s %s%s%s\n' "$PAD" "$C" "$G" "$NC" "$TEXT" "${2:-done}" "$NC"
     fi
     TASK_OPEN=0
 }
 ui_repeat() { local OUT="" i; for ((i=0; i<${2:-0}; i++)); do OUT+="$1"; done; printf '%s' "$OUT"; }
-ui_bullet() { _task_break; printf '%s%s•%s %s%s%s\n' "$PAD" "$CYAN" "$NC" "$TEXT" "$1" "$NC"; }
+
+# عرض مفید پنجره (منهای تورفتگی). زنجیرهٔ تشخیص: COLUMNS → stty size → tput cols.
+# `stty size` از خودِ ترمینال می‌پرسد و با TERM ناشناخته/خالی هم کار می‌کند.
+ui_cols() {
+    local cols="${COLUMNS:-}"
+    # یک منبع وقتی معتبر است که عدد باشد و ≥ ۲۰ ستون بدهد. pty بدون اندازه
+    # («stty size» = 0 0) و ترمینال‌های عجیب نباید رابط را به یک‌ستونی برسانند.
+    if [ -z "$cols" ] || ! [[ "$cols" =~ ^[0-9]+$ ]] || [ "$cols" -lt 20 ]; then
+        cols="$(stty size 2>/dev/null | awk '{print $2}')"
+    fi
+    if [ -z "$cols" ] || ! [[ "$cols" =~ ^[0-9]+$ ]] || [ "$cols" -lt 20 ]; then
+        cols="$(tput cols 2>/dev/null || echo 80)"
+    fi
+    [[ "$cols" =~ ^[0-9]+$ ]] || cols=80
+    [ "$cols" -lt 20 ] && cols=80
+    local w=$(( cols - ${#PAD} ))
+    [ "$w" -gt 100 ] && w=100      # متن‌های خیلی بلند روی ترمینال غول‌پیکر هم خوانا بمانند
+    [ "$w" -lt 1 ] && w=1
+    echo "$w"
+}
+
+# عرض متن: هر نویسه یک ستون. همهٔ نویسه‌های این رابط (✔ ✘ ⚠ › • —) یک‌ستونی‌اند؛
+# در لوکیل C محافظه‌کارانه بیش‌برآورد می‌شود (زودتر می‌شکند) که بی‌خطر است.
+ui_cut() {
+    local s="$1" max="$2"
+    [ "${#s}" -le "$max" ] && { printf '%s' "$s"; return 0; }
+    [ "$max" -le 1 ] && { printf '%s' "${s:0:1}"; return 0; }
+    printf '%s…' "${s:0:$(( max - 1 ))}"
+}
+
+# ui_wrap TEXT [MAX] — متن را پیش از سرریز کردن پنجره می‌شکند؛ واژهٔ بلند
+# (URL/مسیر) هم تکه می‌شود تا خطی از لبهٔ ترمینال بیرون نزند.
+ui_wrap() {
+    local TEXT="$1" MAX="${2:-}" LINE="" WORD PIECE REST
+    [ -n "$MAX" ] || MAX="$(ui_cols)"
+    [ "$MAX" -lt 12 ] && MAX=12
+    for WORD in $TEXT; do
+        if [ "${#WORD}" -gt "$MAX" ]; then
+            [ -n "$LINE" ] && { printf '%s%s\n' "$PAD" "$LINE"; LINE=""; }
+            while [ "${#WORD}" -gt "$MAX" ]; do
+                printf '%s%s\n' "$PAD" "${WORD:0:$MAX}"
+                WORD="${WORD:$MAX}"
+            done
+            LINE="$WORD"
+            continue
+        fi
+        if [ -z "$LINE" ]; then
+            LINE="$WORD"
+        elif [ $(( ${#LINE} + 1 + ${#WORD} )) -le "$MAX" ]; then
+            LINE="$LINE $WORD"
+        else
+            printf '%s%s\n' "$PAD" "$LINE"
+            LINE="$WORD"
+        fi
+    done
+    [ -n "$LINE" ] && printf '%s%s\n' "$PAD" "$LINE"
+    return 0
+}
+ui_bullet() {
+    _task_break
+    local FIRST=1 _l MAX
+    MAX=$(( $(ui_cols) - 4 )); [ "$MAX" -lt 12 ] && MAX=12
+    ui_wrap "$1" "$MAX" | while IFS= read -r _l; do
+        if [ "$FIRST" = 1 ]; then
+            printf '%s%b•%b %b%s%b\n' "$PAD" "$CYAN" "$NC" "$TEXT" "${_l#"$PAD"}" "$NC"; FIRST=0
+        else
+            printf '%s  %b%s%b\n' "$PAD" "$TEXT" "${_l#"$PAD"}" "$NC"
+        fi
+    done
+}
 # ask_run_now <seconds> [default] — live countdown, so the default is never a
 # silent surprise when the operator walks away from the prompt.
 ask_run_now() {
@@ -80,8 +175,10 @@ ask_run_now() {
 }
 ui_header() {
     local TITLE="$1" W LINE
-    W="$(tput cols 2>/dev/null || echo 56)"; [[ "$W" =~ ^[0-9]+$ ]] || W=56
-    [ "$W" -gt 56 ] && W=56; [ "$W" -lt 40 ] && W=40
+    W="$(ui_cols)"
+    [ "$W" -gt 56 ] && W=56        # سقف خوانایی قاب (متن‌ها سقف جداگانه دارند)
+    # کف خوانایی روی پنجرهٔ باریک قربانی می‌شود: قابِ شکسته بدتر از قابِ کوتاه است
+    if [ "${#TITLE}" -gt $(( W - 4 )) ]; then TITLE="$(ui_cut "$TITLE" $(( W - 4 )))"; fi
     LINE="$(ui_repeat '─' $((W - 2)))"      # no `tr`: it is byte-based and mangles UTF-8
     printf '\n%s%s┌%s┐%s\n' "$PAD" "$FRAME" "$LINE" "$NC"
     printf '%s%s│%s %s%-*s%s %s│%s\n' "$PAD" "$FRAME" "$NC" "$BOLD$TEXT" $((W - 4)) "$TITLE" "$NC" "$FRAME" "$NC"

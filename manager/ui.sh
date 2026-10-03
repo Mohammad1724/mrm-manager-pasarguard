@@ -133,13 +133,16 @@ ui_width() {
     # keeps working when TERM is unknown/empty, where `tput cols` fails and the
     # old fallback (80 → clamped 72) silently overflowed a 40-column window.
     local cols="${COLUMNS:-}"
-    if [ -z "$cols" ] || ! [[ "$cols" =~ ^[0-9]+$ ]]; then
+    # یک منبع وقتی معتبر است که عدد باشد و ≥ ۲۰ ستون بدهد؛ pty بدون اندازه
+    # («stty size» = 0 0) نباید قاب را به یک‌ستونی فروریزد.
+    if [ -z "$cols" ] || ! [[ "$cols" =~ ^[0-9]+$ ]] || [ "$cols" -lt 20 ]; then
         cols="$(stty size 2>/dev/null | awk '{print $2}')"
     fi
-    if [ -z "$cols" ] || ! [[ "$cols" =~ ^[0-9]+$ ]]; then
+    if [ -z "$cols" ] || ! [[ "$cols" =~ ^[0-9]+$ ]] || [ "$cols" -lt 20 ]; then
         cols="$(tput cols 2>/dev/null || echo 80)"
     fi
     [[ "$cols" =~ ^[0-9]+$ ]] || cols=80
+    [ "$cols" -lt 20 ] && cols=80
 
     # The frame is printed after UI_PAD, so it may only be as wide as the
     # remaining columns. On a window narrower than UI_MIN_WIDTH the readable

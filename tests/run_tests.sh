@@ -2337,7 +2337,48 @@ else
         fail "unknown TERM overflows the window (widest ${WUNK})"
     fi
 
-    # 21.6: NO_COLOR — هیچ کد رنگی در خروجی نباشد
+    # 21.6: نصب‌کننده — قاب و پیام‌ها هم به عرض پنجره احترام می‌گذارند
+    # (شیم‌ها: id که root گزارش می‌دهد و curl که شکست می‌خورد → بدون نصب واقعی)
+    SHIM_DIR="$(mktemp -d 2>/dev/null || echo /tmp/mrm-shim-$$)"
+    mkdir -p "$SHIM_DIR/fake" "$SHIM_DIR/fail" 2>/dev/null
+    printf '#!/bin/bash\nif [ "${1:-}" = "-u" ]; then echo 0; else /usr/bin/id "$@"; fi\n' > "$SHIM_DIR/fake/id"
+    printf '#!/bin/bash\nexit 22\n' > "$SHIM_DIR/fail/curl"
+    chmod +x "$SHIM_DIR/fake/id" "$SHIM_DIR/fail/curl" 2>/dev/null
+
+    render_installer() { # $1=cols  $2=offline|lowdisk
+        local cols="$1" mode="$2" envs
+        if [ "$mode" = offline ]; then
+            envs="PATH=$SHIM_DIR/fake:$SHIM_DIR/fail:$PATH"
+        else
+            envs="PATH=$SHIM_DIR/fake:$PATH MRM_MIN_FREE_MB=9999999"
+        fi
+        env -i PATH="$PATH" HOME="$HOME" TERM=dumb             script -qec "stty cols $cols rows 24 2>/dev/null; cd /tmp; $envs bash '$INSTALLER'" /dev/null 2>/dev/null \
+            | tr -d '\r' || true
+    }
+
+    OUTI="$(render_installer 40 lowdisk)"
+    WI="$(printf '%s\n' "$OUTI" | max_line_width)"
+    if printf '%s' "$OUTI" | grep -q 'MRM Manager Installer' && [ "$WI" -le 40 ]; then
+        pass "installer header fits a 40-column window (widest ${WI})"
+    else
+        fail "installer header overflows a 40-column window (widest ${WI:-?})"
+    fi
+
+    OUTO="$(render_installer 40 offline)"
+    WO="$(printf '%s\n' "$OUTO" | max_line_width)"
+    if [ "$WO" -le 40 ] && ! printf '%s' "$OUTO" | grep -qE "unknown terminal type|tput:"; then
+        pass "installer network-error path wraps inside 40 columns (widest ${WO})"
+    else
+        fail "installer error path overflows or leaks raw errors (widest ${WO:-?})"
+    fi
+    if printf '%s' "$OUTO" | grep -q 'Nothing was installed'; then
+        pass "installer states that nothing was installed before aborting"
+    else
+        fail "installer abort message is unclear about system state"
+    fi
+    rm -rf "$SHIM_DIR" 2>/dev/null
+
+    # 21.7: NO_COLOR — هیچ کد رنگی در خروجی نباشد
     OUTNC="$(render_at 40 xterm-256color "NO_COLOR=1")"
     if [ -n "$OUTNC" ] && ! printf '%s' "$OUTNC" | grep -q $'\033\[[0-9;]*m'; then
         pass "NO_COLOR=1: output carries no colour codes"
