@@ -2437,23 +2437,36 @@ else
     fail "template-picker radios still use the 13px browser default"
 fi
 
-# 22.6: دکمهٔ بستن اعلان بروزرسانی به کف لمسی ۴۴px می‌رسد (هر دو قالب)
-if grep -qF '.z-un-dismiss{min-width:44px;min-height:44px' "$SPECIAL" && \
-   grep -qF 'width:44px;height:44px;min-width:44px;min-height:44px' "$ZSPECIAL"; then
-    pass "update-notice close buttons meet the 44px touch floor in both plugins"
+# 22.6: دکمهٔ بستن اعلان بروزرسانی به کف لمسی ۴۴px می‌رسد
+# (سمت زمرد فقط وقتی مخزن خواهر کنار ما هست — در CI فقط MRM چک‌اوت می‌شود)
+if grep -qF '.z-un-dismiss{min-width:44px;min-height:44px' "$SPECIAL"; then
+    if [ ! -f "$ZSPECIAL" ]; then
+        pass "MRM update-notice close button meets the 44px touch floor"
+        skip "zomorod plugin not found — close-button parity check skipped"
+    elif grep -qF 'width:44px;height:44px;min-width:44px;min-height:44px' "$ZSPECIAL"; then
+        pass "update-notice close buttons meet the 44px touch floor in both plugins"
+    else
+        fail "zomorod update-notice close button is still below 44px"
+    fi
 else
-    fail "an update-notice close button is still below 44px"
+    fail "the MRM update-notice close button is still below 44px"
 fi
 
 # 22.7: نوار اسکنِ «حجم تمام‌شده» دیگر translate نمی‌کند (منبع CLS دوره‌ای)
 SCAN_CSS="$PROJECT_DIR/templates/subscription-src/src/index.css"
 ZSCAN_CSS="$ZOMOROD_DIR/src/index.css"
 if grep -qF 'background-position: var(--scan-from' "$SCAN_CSS" && \
-   ! grep -qF 'transform: translateX(var(--scan-travel' "$SCAN_CSS" && \
-   grep -qF 'background-position: var(--scan-from' "$ZSCAN_CSS"; then
-    pass "danger-scan sweep animates background-position, not transform (no periodic CLS)"
+   ! grep -qF 'transform: translateX(var(--scan-travel' "$SCAN_CSS"; then
+    if [ ! -f "$ZSCAN_CSS" ]; then
+        pass "danger-scan sweep animates background-position, not transform (no periodic CLS)"
+        skip "zomorod source CSS not found — scan-animation parity check skipped"
+    elif grep -qF 'background-position: var(--scan-from' "$ZSCAN_CSS"; then
+        pass "danger-scan runs on background-position in both templates (no periodic CLS)"
+    else
+        fail "zomorod danger-scan still moves the box — periodic layout shift remains"
+    fi
 else
-    fail "danger-scan still moves the box — periodic layout shift remains"
+    fail "MRM danger-scan still moves the box — periodic layout shift remains"
 fi
 
 # 22.8: نصب‌کننده شکست ساخت دایرکتوری را با پیام راه‌دار گزارش می‌کند، نه خطای خام
