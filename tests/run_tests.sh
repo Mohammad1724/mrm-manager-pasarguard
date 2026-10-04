@@ -1216,11 +1216,18 @@ else
     fail "[174] connect dialog fits mobile viewports + touch linux stays on mobile tabs"
 fi
 
-# ─── v1.4.11: no foreign brand leftovers + versioned footer + no-cache ───────
+# ─── v1.4.11 → v1.5.11: no foreign brand leftovers + versioned footer ─────────
+# قرارداد نسخهٔ فوتر از «رقم هاردکد» به «تزریق از منبع یگانه» ارتقا یافت:
+#   vite.config.ts نسخه را از فایل VERSION ریشه می‌خواند و __MRM_VERSION__ را تعریف می‌کند،
+#   فوتر همان را رندر می‌کند، و قالب منتشرشده باید همان نسخهٔ VERSION را داشته باشد.
+FOOTER_SRC="templates/subscription-src/src/components/layout/footer.tsx"
 if ! grep -rqF 'ganj' templates/subscription-src/src &&
-   grep -qF 'Powered by' templates/subscription-src/src/components/layout/footer.tsx &&
-   grep -qF '<span className="font-semibold text-primary">MRM</span>' templates/subscription-src/src/components/layout/footer.tsx &&
-   grep -qE 'v1\.[0-9]+\.[0-9]+' templates/subscription-src/src/components/layout/footer.tsx &&
+   grep -qF 'Powered by' "$FOOTER_SRC" &&
+   grep -qF '<span className="font-semibold text-primary">MRM</span>' "$FOOTER_SRC" &&
+   grep -qF '__MRM_VERSION__' "$FOOTER_SRC" &&
+   grep -qF 'MRM_VERSION = readFileSync(path.resolve(__dirname, "../../VERSION")' templates/subscription-src/vite.config.ts &&
+   grep -qF '__MRM_VERSION__: JSON.stringify(MRM_VERSION)' templates/subscription-src/vite.config.ts &&
+   grep -qF "v$(tr -d ' \n' < VERSION)" templates/subscription/index.html &&
    grep -qF '__BRAND__' templates/subscription-src/src/App.tsx &&
    grep -qF 'no-cache, no-store, must-revalidate' plugin/mrm_admin_subscriptions.py; then
     pass "[175] MRM-branded versioned footer, zero ganj leftovers, no-cache headers" || fail "[175] MRM-branded versioned footer, zero ganj leftovers, no-cache headers"

@@ -30,7 +30,7 @@ const FooterContent = () => {
         Powered by &nbsp;
         <span className="font-semibold text-primary">MRM</span>
         &nbsp;·&nbsp;
-        <span className="font-semibold text-foreground/70">v1.5.10</span>
+        <span className="font-semibold text-foreground/70">{`v${__MRM_VERSION__}`}</span>
       </p>
     </div>
   );

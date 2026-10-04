@@ -1,8 +1,13 @@
+import { readFileSync } from "fs"
 import path from "path"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig, type Plugin } from "vite"
 import { viteSingleFile } from "vite-plugin-singlefile"
+
+// نسخهٔ مدیر MRM از منبع یگانهٔ VERSION (ریشهٔ مخزن) خوانده می‌شود تا فوتر قالب
+// هرگز از نسخهٔ انتشار عقب نماند — همان درسی که گروه ۱۱ تست از آن گرفته است.
+const MRM_VERSION = readFileSync(path.resolve(__dirname, "../../VERSION"), "utf8").trim()
 
 const devMockPlugin = (): Plugin => {
   const mockUser = {
@@ -142,6 +147,9 @@ const devMockPlugin = (): Plugin => {
 };
 
 export default defineConfig(({ command }) => ({
+  define: {
+    __MRM_VERSION__: JSON.stringify(MRM_VERSION),
+  },
   plugins: [
     ...(command === "serve" ? [devMockPlugin()] : []),
     react(), 
