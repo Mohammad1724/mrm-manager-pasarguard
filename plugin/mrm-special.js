@@ -111,6 +111,26 @@
     #${ROOT_ID} .z-save:disabled,#${ROOT_ID} .z-mini-btn:disabled{opacity:.55;cursor:wait}
     #${ROOT_ID} .z-status{font-size:.75rem;color:hsl(var(--muted-foreground))}
     #${ROOT_ID} .z-status.ok{color:#14ADA6}#${ROOT_ID} .z-status.err{color:#dc2626}
+    /* ── نوار ذخیره: دو حالت صریح ─────────────────────────────────────────
+       قبلاً دکمه همیشه فعال بود و «آماده ذخیره» ثابت می‌ماند؛ کاربر نمی‌دانست
+       چیزی برای ذخیره هست یا نه. هندسهٔ نوار در هر دو حالت یکی است و فقط
+       رنگ/سایه/شفافیت عوض می‌شود، تا تغییرِ حالت هیچ جابه‌جایی چیدمان نسازد. */
+    #${ROOT_ID} .z-actions{transition:border-color .18s ease,background .18s ease,box-shadow .18s ease}
+    #${ROOT_ID} .z-actions[data-state="clean"]{background:hsl(var(--muted)/.5);border-color:hsl(var(--border));box-shadow:none}
+    #${ROOT_ID} .z-actions[data-state="clean"] .z-save{background:hsl(var(--muted));color:hsl(var(--muted-foreground));box-shadow:none;opacity:1;cursor:default}
+    #${ROOT_ID} .z-actions[data-state="dirty"]{background:hsl(var(--card));border-color:rgba(45,183,178,.55);box-shadow:0 -10px 30px rgba(20,173,166,.16)}
+    #${ROOT_ID} .z-actions[data-state="dirty"] .z-status{color:#0E8F8A;font-weight:700}
+    html.dark #${ROOT_ID} .z-actions[data-state="dirty"] .z-status{color:#53E0BD}
+    #${ROOT_ID} .z-actions-buttons{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+    #${ROOT_ID} .z-revert{border:1px solid hsl(var(--border));border-radius:var(--radius,.5rem);min-height:44px;padding:.5rem .8rem;font:inherit;font-size:.75rem;font-weight:700;color:hsl(var(--muted-foreground));background:transparent;cursor:pointer}
+    #${ROOT_ID} .z-revert:hover{color:hsl(var(--foreground));border-color:hsl(var(--foreground)/.35)}
+    #${ROOT_ID} .z-status-dot{display:inline-block;width:8px;height:8px;border-radius:999px;background:#14ADA6;margin-inline-end:.4rem;vertical-align:middle}
+    @media(max-width:520px){
+      #${ROOT_ID} .z-actions{flex-direction:column;align-items:stretch;gap:.5rem;padding:.6rem .7rem}
+      #${ROOT_ID} .z-actions-buttons{width:100%;justify-content:flex-end}
+      #${ROOT_ID} .z-actions-buttons .z-save{flex:1}
+    }
+    @media(prefers-reduced-motion:reduce){#${ROOT_ID} .z-actions{transition:none}}
     #${ROOT_ID} .z-loading{padding:3rem 1rem;text-align:center;color:hsl(var(--muted-foreground));font-size:.8rem}
     #${ROOT_ID} .z-error{border:1px solid rgba(220,38,38,.24);background:rgba(220,38,38,.05);border-radius:.7rem;padding:.9rem;color:#dc2626;font-size:.76rem;line-height:1.7}
     #${ROOT_ID} .z-pending{border:1px solid rgba(184,134,11,.24);background:linear-gradient(135deg,rgba(184,134,11,.08),rgba(45,183,178,.04));border-radius:.75rem;padding:.85rem;font-size:.75rem;line-height:1.8;color:hsl(var(--muted-foreground))}
@@ -281,6 +301,174 @@
   const field = (id) => document.getElementById(id);
   const value = (id) => String(field(id)?.value ?? '').trim();
   const checked = (id) => Boolean(field(id)?.checked);
+
+  /* ── وضعیت «ذخیرهنشده» ──────────────────────────────────────────────────
+     نوار ذخیره باید صریح بگوید چه خبر است. پیش‌تر دکمه همیشه فعال بود و برچسب
+     «آماده ذخیره» ثابت می‌ماند؛ کاربر نمی‌فهمید چیزی برای ذخیره هست یا نه و با
+     تغییر تب، ویرایشش بی‌صدا از بین می‌رفت. اکنون:
+       · savedSnapshot = آخرین وضعیتِ ذخیره‌شده (سرور یا پاسخ ذخیره)
+       · draftValues   = ویرایش‌های کاربر؛ روی هر رندر دوباره نشانده می‌شود
+       · نوار در دو حالت clean/dirty، و خروج با تغییر ذخیرهنشده هشدار دارد. */
+  const SAVE_FIELD_IDS = [
+    'z-enabled', 'z-store', 'z-support', 'z-own-slug', 'z-own-enabled',
+    'z-show-configs', 'z-show-wg', 'z-show-ping', 'z-show-apps',
+    'z-show-ann', 'z-ann-mode', 'z-ann-times', 'z-ann-duration',
+    'z-ann-text', 'z-ann-url', 'z-native-browser', 'z-native-links', 'z-native-wg',
+  ];
+  let savedSnapshot = null;
+  let draftValues = null;
+  let unloadGuardBound = false;
+
+  const readSaveValues = () => {
+    const out = {};
+    SAVE_FIELD_IDS.forEach((id) => {
+      const node = field(id);
+      if (!node) return;
+      out[id] = node instanceof HTMLInputElement && node.type === 'checkbox' ? Boolean(node.checked) : String(node.value ?? '');
+    });
+    try {
+      out.__theme = [themePickerState.primary?.hex || '', themePickerState.secondary?.hex || ''];
+    } catch (_) { /* پیش از رندر استودیو، تمی برای خواندن نیست */ }
+    return out;
+  };
+
+  const sameValues = (a, b) => {
+    if (!a || !b) return true;
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    for (const key of keys) {
+      const x = key === '__theme' ? JSON.stringify(a[key]) : a[key];
+      const y = key === '__theme' ? JSON.stringify(b[key]) : b[key];
+      if (x !== y) return false;
+    }
+    return true;
+  };
+
+  const saveBarNode = () => document.querySelector(`#${ROOT_ID} .z-actions[data-save-bar]`);
+
+  const setSaveBarState = (state, message) => {
+    const bar = saveBarNode();
+    if (!bar) return;
+    bar.setAttribute('data-state', state);
+    const status = bar.querySelector('#z-status');
+    if (status && message != null) status.innerHTML = message;
+    const save = bar.querySelector('#z-save');
+    if (save instanceof HTMLButtonElement) save.disabled = state !== 'dirty' || save.dataset.busy === '1';
+    const revert = bar.querySelector('#z-revert');
+    if (revert instanceof HTMLButtonElement) revert.hidden = state !== 'dirty';
+  };
+
+  const isDirty = () => !sameValues(readSaveValues(), savedSnapshot);
+
+  const refreshSaveState = (options = {}) => {
+    if (!savedSnapshot) return;
+    const dirty = isDirty();
+    if (dirty) {
+      draftValues = readSaveValues();
+      setSaveBarState('dirty', options.restored
+        ? '<span class="z-status-dot" aria-hidden="true"></span>پیش‌نویس شما بازیابی شد — ذخیره کنید'
+        : '<span class="z-status-dot" aria-hidden="true"></span>تغییرات ذخیره‌نشده دارید');
+    } else {
+      draftValues = null;
+      setSaveBarState('clean', 'تغییری برای ذخیره نیست');
+    }
+  };
+
+  const captureSavedValues = () => { savedSnapshot = readSaveValues(); draftValues = null; };
+
+  /* پیش‌نویس کاربر روی هر رندر دوباره نشانده می‌شود: تب عوض شود، پایش نسخه
+     تازه‌رندر کند یا استودیو رنگ بازسازی شود، ویرایش‌ها پاک نمی‌شوند. */
+  const applyDraftValues = (root) => {
+    if (!root || !draftValues) return;
+    SAVE_FIELD_IDS.forEach((id) => {
+      if (!(id in draftValues)) return;
+      const node = field(id);
+      if (!node) return;
+      if (node instanceof HTMLInputElement && node.type === 'checkbox') node.checked = Boolean(draftValues[id]);
+      else node.value = String(draftValues[id]);
+    });
+    const theme = draftValues.__theme;
+    if (Array.isArray(theme)) {
+      ['primary', 'secondary'].forEach((key, index) => {
+        const hex = normalizeHex(theme[index], '');
+        if (!hex) return;
+        themePickerState[key] = { ...rgbToHsv(hexToRgb(hex)), hex };
+        paintThemePicker(root, key);
+      });
+    }
+  };
+
+  const revertDraft = () => {
+    if (!savedSnapshot) return;
+    SAVE_FIELD_IDS.forEach((id) => {
+      if (!(id in savedSnapshot)) return;
+      const node = field(id);
+      if (!node) return;
+      if (node instanceof HTMLInputElement && node.type === 'checkbox') node.checked = Boolean(savedSnapshot[id]);
+      else node.value = String(savedSnapshot[id]);
+    });
+    const theme = savedSnapshot.__theme;
+    if (Array.isArray(theme)) {
+      ['primary', 'secondary'].forEach((key, index) => {
+        const hex = normalizeHex(theme[index], '');
+        if (!hex) return;
+        themePickerState[key] = { ...rgbToHsv(hexToRgb(hex)), hex };
+        paintThemePicker(document.getElementById(ROOT_ID), key);
+      });
+    }
+    draftValues = null;
+    setSaveBarState('clean', 'تغییرات بازگردانی شد');
+    const status = document.querySelector(`#${ROOT_ID} #z-status`);
+    if (status) status.className = 'z-status';
+  };
+
+  /* خروج از صفحه با تغییر ذخیرهنشده باید هشدار داشته باشد (رفرش/بستن تب).
+     تغییر تب داخل پنل رویداد unload ندارد؛ آن مسیر با پیش‌نویس پوشش داده شده. */
+  const bindUnloadGuard = () => {
+    if (unloadGuardBound) return;
+    unloadGuardBound = true;
+    window.addEventListener('beforeunload', (event) => {
+      if (!savedSnapshot || !isDirty()) return;
+      event.preventDefault();
+      event.returnValue = '';
+    });
+  };
+
+  /* هر تغییری در فرم: وضعیت را تازه کن. رویدادهای واقعی + یک ضربان سبک برای
+     کنترل‌هایی که رویداد input نمی‌دهند (صفحهٔ رنگ با درگ اشاره‌گر). */
+  const bindSaveBar = (root) => {
+    if (!root) return;
+    bindUnloadGuard();
+    /* ترتیب مهم است: اول اسنپ‌شاتِ رندر تازه (پایهٔ «ذخیره‌شده»)، بعد نشاندنِ
+       پیش‌نویسِ قبلی، و در آخر سنجش. اگر پیش‌نویس پیش از خواندن پایه دور ریخته
+       شود، ویرایشِ کاربر با تعویض تب بی‌صدا از بین می‌رود. */
+    const pendingDraft = draftValues;
+    savedSnapshot = readSaveValues();
+    draftValues = pendingDraft;
+    if (pendingDraft) applyDraftValues(root);
+    const dirty = !sameValues(readSaveValues(), savedSnapshot);
+    if (dirty) refreshSaveState({ restored: Boolean(pendingDraft) });
+    else {
+      draftValues = null;
+      setSaveBarState('clean', 'تغییری برای ذخیره نیست');
+    }
+
+    if (root.dataset.saveBarBound === '1') return;
+    root.dataset.saveBarBound = '1';
+    const onChange = () => refreshSaveState();
+    root.addEventListener('input', onChange, true);
+    root.addEventListener('change', onChange, true);
+    root.addEventListener('pointerup', onChange, true);
+    root.addEventListener('click', onChange, true);
+    const pulse = window.setInterval(() => {
+      const bar = saveBarNode();
+      if (!bar || !document.body.contains(bar)) return;
+      if (bar.querySelector('#z-save')?.dataset.busy === '1') return;
+      if (isDirty() !== (bar.getAttribute('data-state') === 'dirty')) refreshSaveState();
+    }, 1200);
+    window.addEventListener('pagehide', () => window.clearInterval(pulse), { once: true });
+    root.querySelector('#z-revert')?.addEventListener('click', revertDraft);
+  };
+
 
   const normalizeHex = (input, fallback) => {
     const value = String(input || '').trim().toUpperCase();
@@ -1159,7 +1347,7 @@
           ${ownerAnnouncementFields}
         </div></section>
       </div>
-      <div class="z-actions"><span class="z-status" id="z-status" role="status" aria-live="polite">آماده ذخیره</span><button class="z-save" id="z-save">ذخیرهٔ تنظیمات MRM</button></div>`;
+      <div class="z-actions" data-save-bar data-state="clean" role="group" aria-label="اقدام‌های ذخیره"><span class="z-status" id="z-status" role="status" aria-live="polite">تغییری برای ذخیره نیست</span><span class="z-actions-buttons"><button type="button" class="z-revert" id="z-revert" hidden>بازگردانی</button><button class="z-save" id="z-save" disabled>ذخیرهٔ تنظیمات MRM</button></span></div>`;
 
     const root = mountShell(html);
     root?.querySelector('#z-save')?.addEventListener('click', () => isOwner ? saveOwner(cachedSettings) : saveReseller());
@@ -1171,6 +1359,7 @@
     bindAppearance(root, cfg);
     bindRoleDebug(root);
     enhanceToggles(root);
+    bindSaveBar(root);
   }
 
   function renderOwner(settings, profilePayload = cachedProfile) {
@@ -1276,6 +1465,7 @@
     const statusNode = field('z-status');
     if (!button || !statusNode || !settings) return;
     button.disabled = true;
+    button.dataset.busy = '1';
     statusNode.className = 'z-status';
     statusNode.textContent = 'در حال ذخیره…';
     try {
@@ -1321,6 +1511,12 @@
       cachedSettings = updatedSettings;
       cachedProfile = updatedProfile;
       await loadAdminProfiles();
+      /* نام فروشگاه اگر خالی مانده باشد، سرور نام کاربری را می‌گذارد؛ فیلد را
+         با همان مقدار همگام کن تا بلافاصله «تغییر ذخیره‌نشده» قلابی نسازد. */
+      if (updatedProfile?.store_name && field('z-store') instanceof HTMLInputElement) {
+        field('z-store').value = String(updatedProfile.store_name);
+      }
+      captureSavedValues();
       statusNode.className = 'z-status ok';
       statusNode.textContent = 'تنظیمات اختصاصی Owner ذخیره شد ✓';
     } catch (error) {
@@ -1328,7 +1524,10 @@
       statusNode.className = 'z-status err';
       statusNode.textContent = `خطا: ${error?.name === 'AbortError' ? 'timeout' : (error?.message || error)}`;
     } finally {
-      button.disabled = false;
+      /* دکمه را بی‌قید فعال نکن: اگر تغییری نمانده باشد باید خاموش بماند. پیام
+         (موفقیت یا خطا) دست‌نخورده می‌ماند و فقط حالت/فعال‌بودن تازه می‌شود. */
+      button.dataset.busy = '';
+      setSaveBarState(isDirty() ? 'dirty' : 'clean', null);
     }
   }
 
@@ -1337,6 +1536,7 @@
     const statusNode = field('z-status');
     if (!button || !statusNode) return;
     button.disabled = true;
+    button.dataset.busy = '1';
     statusNode.className = 'z-status';
     statusNode.textContent = 'در حال ذخیره…';
     try {
@@ -1360,6 +1560,10 @@
         theme_secondary: themeFormValues().secondary,
       };
       cachedProfile = await api('/api/mrm/profile', { method: 'PUT', body: JSON.stringify(payload) });
+      if (updatedProfile?.store_name && field('z-store') instanceof HTMLInputElement) {
+        field('z-store').value = String(updatedProfile.store_name);
+      }
+      captureSavedValues();
       statusNode.className = 'z-status ok';
       statusNode.textContent = 'تنظیمات نمایندگی ذخیره شد ✓';
     } catch (error) {
@@ -1367,7 +1571,10 @@
       statusNode.className = 'z-status err';
       statusNode.textContent = `خطا: ${error?.name === 'AbortError' ? 'timeout' : (error?.message || error)}`;
     } finally {
-      button.disabled = false;
+      /* دکمه را بی‌قید فعال نکن: اگر تغییری نمانده باشد باید خاموش بماند. پیام
+         (موفقیت یا خطا) دست‌نخورده می‌ماند و فقط حالت/فعال‌بودن تازه می‌شود. */
+      button.dataset.busy = '';
+      setSaveBarState(isDirty() ? 'dirty' : 'clean', null);
     }
   }
 

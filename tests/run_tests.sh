@@ -2478,6 +2478,101 @@ else
     fail "installer still leaks raw mkdir errors"
 fi
 
+echo "📋 Group 23: save-bar honesty (dirty state, draft guard, exit guard)"
+
+# 23.1: نوار ذخیره وضعیت صریح دارد و متنِ گمراه‌کنندهٔ «آماده ذخیره» رفته است
+if grep -qF 'data-save-bar data-state="clean" role="group" aria-label="اقدام‌های ذخیره"' "$SPECIAL" && \
+   ! grep -qF '>آماده ذخیره<' "$SPECIAL"; then
+    pass "save bar exposes an explicit state instead of a static 'ready to save' label"
+else
+    fail "save bar still claims to be ready while nothing changed"
+fi
+
+# 23.2: در حالت پاک، دکمهٔ ذخیره در مارک‌آپ غیرفعال متولد می‌شود
+if grep -qF '<button class="z-save" id="z-save" disabled>' "$SPECIAL" && \
+   grep -qF "save.disabled = state !== 'dirty' || save.dataset.busy === '1'" "$SPECIAL"; then
+    pass "save button is born disabled and is driven by the dirty state"
+else
+    fail "save button can still look clickable with nothing to save"
+fi
+
+# 23.3: دکمهٔ بازگردانی وجود دارد و به revertDraft وصل است
+if grep -qF 'id="z-revert"' "$SPECIAL" && \
+   grep -qF "root.querySelector('#z-revert')?.addEventListener('click', revertDraft)" "$SPECIAL" && \
+   grep -qF "setSaveBarState('clean', 'تغییرات بازگردانی شد')" "$SPECIAL"; then
+    pass "one-click revert restores the last saved values"
+else
+    fail "no way to discard unsaved edits without reloading the page"
+fi
+
+# 23.4: ردیابی تغییرات از همان شناسه‌هایی مشتق شده که مسیر ذخیره می‌خواند
+SAVE_BLOCK="$(sed -n "/const SAVE_FIELD_IDS = \[/,/\];/p" "$SPECIAL" || true)"
+SAVE_IDS="$(sed -n "/async function saveOwner/,/^  }/p" "$SPECIAL" | grep -oE "(value|checked)\('[a-z-]+'\)" | grep -oE "'[a-z-]+'" | tr -d "'" | sort -u || true)"
+MISSING=""
+for id in $SAVE_IDS; do
+    case "$id" in
+        z-*) printf '%s' "$SAVE_BLOCK" | grep -qF "'$id'" || MISSING="$MISSING $id" ;;
+    esac
+done
+if [ -n "$SAVE_IDS" ] && [ -z "$MISSING" ]; then
+    pass "dirty tracking covers every field the save payload reads ($(printf '%s' "$SAVE_IDS" | wc -w | tr -d ' ') ids)"
+else
+    fail "fields can be edited without the bar noticing:$MISSING"
+fi
+
+# 23.5: خروج از صفحه با تغییر ذخیره‌نشده هشدار دارد
+if grep -qF "window.addEventListener('beforeunload'" "$SPECIAL" && \
+   grep -qF "if (!savedSnapshot || !isDirty()) return;" "$SPECIAL" && \
+   grep -qF "event.returnValue = ''" "$SPECIAL"; then
+    pass "leaving the page with unsaved edits asks for confirmation"
+else
+    fail "unsaved edits still disappear on refresh without a warning"
+fi
+
+# 23.6: پیش‌نویس روی رندر تازه دوباره نشانده می‌شود (تغییر تب ویرایش را نمی‌خورد)
+if grep -qF 'const pendingDraft = draftValues;' "$SPECIAL" && \
+   grep -qF 'if (pendingDraft) applyDraftValues(root);' "$SPECIAL" && \
+   grep -qF "setSaveBarState('dirty'" "$SPECIAL"; then
+    pass "draft is re-applied after every re-render (tab switch keeps edits)"
+else
+    fail "tab switch still discards the edit silently"
+fi
+
+# 23.7: پیام‌های وضعیت فارسی و صریح‌اند
+if grep -qF 'تغییرات ذخیره‌نشده دارید' "$SPECIAL" && \
+   grep -qF 'پیش‌نویس شما بازیابی شد' "$SPECIAL" && \
+   grep -qF 'تغییری برای ذخیره نیست' "$SPECIAL" && \
+   grep -qF '>بازگردانی<' "$SPECIAL"; then
+    pass "status copy tells the user what actually happened"
+else
+    fail "status copy still hides whether anything is pending"
+fi
+
+# 23.8: تغییرِ حالت هیچ جابه‌جایی چیدمان نمی‌سازد (فقط رنگ/سایه انیمیت می‌شود)
+if grep -qF '#${ROOT_ID} .z-actions{transition:border-color .18s ease,background .18s ease,box-shadow .18s ease}' "$SPECIAL" && \
+   grep -qF '[data-state="clean"]' "$SPECIAL" && grep -qF '[data-state="dirty"]' "$SPECIAL" && \
+   grep -qF '@media(max-width:520px)' "$SPECIAL"; then
+    pass "state change animates colour only; mobile bar is a deliberate two-row layout"
+else
+    fail "state change can shift the layout"
+fi
+
+# 23.9: زمرد همین قرارداد را دارد (اگر همسایه در دسترس باشد)
+if [ ! -f "$ZSPECIAL" ]; then
+    skip "zomorod plugin not found — save-bar parity checks skipped"
+else
+    if grep -qF 'data-save-bar data-state="clean" role="group" aria-label="اقدام‌های ذخیره"' "$ZSPECIAL" && \
+       grep -qF 'id="z-revert"' "$ZSPECIAL" && \
+       grep -qF 'const pendingDraft = draftValues;' "$ZSPECIAL" && \
+       grep -qF "window.addEventListener('beforeunload'" "$ZSPECIAL" && \
+       grep -qF "@media(max-width:520px)" "$ZSPECIAL" && \
+       ! grep -qF '>آماده ذخیره<' "$ZSPECIAL"; then
+        pass "zomorod carries the same honest save-bar contract"
+    else
+        fail "zomorod save bar diverges from the MRM contract"
+    fi
+fi
+
 echo ""
 
 # ─── Summary ─────────────────────────────────────────────────────────────────
