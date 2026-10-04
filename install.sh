@@ -214,13 +214,25 @@ if [ "$FREE_KB" -lt $((MRM_MIN_FREE_MB * 1024)) ]; then
     exit 1
 fi
 
+# ساخت دایرکتوری با پیامِ راه‌دار: اگر مجوز/مسیر مشکل داشته باشد، خطای خام
+# بش («mkdir: cannot create directory …: Permission denied») به اپراتور نشان
+# داده نمی‌شود؛ همان شکست، با علت و راه‌حل گزارش می‌شود.
+ensure_dir() { # ensure_dir <path> [<path>…]
+    if ! mkdir -p "$@" 2>/dev/null; then
+        ui_error "Cannot create the install directory: $INSTALL_DIR"
+        ui_note "Nothing was installed. Run the installer as root (sudo), or check that"
+        ui_note "$(dirname "$INSTALL_DIR") is writable, then re-run."
+        exit 1
+    fi
+}
+
 # MRM-003: keep a rollback copy of the current install before overwriting
 HAD_PREVIOUS=0
 if [ -d "$INSTALL_DIR" ]; then
     rm -rf "${INSTALL_DIR}.previous" 2>/dev/null
     cp -a "$INSTALL_DIR" "${INSTALL_DIR}.previous" 2>/dev/null && HAD_PREVIOUS=1
 else
-    mkdir -p "$INSTALL_DIR"
+    ensure_dir "$INSTALL_DIR"
 fi
 
 # MRM-001: the version is parsed (never sourced) from the pinned versions.conf.
@@ -288,7 +300,7 @@ verify_download() {
 }
 
 ui_step 1 5 "Preparing directories"
-mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/backup" "$INSTALL_DIR/plugin" "$INSTALL_DIR/templates/subscription-classic" "$INSTALL_DIR/templates/subscription-special"
+ensure_dir "$INSTALL_DIR" "$INSTALL_DIR/backup" "$INSTALL_DIR/plugin" "$INSTALL_DIR/templates/subscription-classic" "$INSTALL_DIR/templates/subscription-special"
 
 FILES=(
     "utils.sh" "ui.sh" "ssl.sh" "backup.sh" "domain_separator.sh"

@@ -4,6 +4,105 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>__BRAND__ · {{ user.username }}</title>
+    <!-- بوت MRM — پیش از باندل (Vite باندل را بعد از این نقطه می‌نشاند):
+         ۱) واکشی تنظیمات در حین پارس HTML شروع می‌شود (موازی با ارزیابی باندل).
+         ۲) تا لحظه‌ای که runtime تنظیمات را اِعمال کند، صفحه پنهان است. این کار
+            «رندر با حالت اشتباه و بعد اصلاح» را حذف می‌کند؛ همان ریشهٔ پرشِ
+            ~۱۷۰پیکسلی و پرشِ تم/برند در اولین رنگ (CLS 0.05 روی دسکتاپ).
+         ۳) قاعدهٔ پنهان‌سازیِ بخش کانفیگ‌ها/اتصال سریع از همان ابتدا در CSS
+            حاضر است تا کارتِ خاموش‌شدهٔ ادمین هرگز رندر نشود. -->
+    <style id="mrm-runtime-boot-style">
+html[data-mrm-booting="1"] body>*:not(#mrm-boot-screen):not(script):not(style){visibility:hidden!important}
+html[data-mrm-boot-dark] #mrm-boot-screen{background:#0b0f0e}
+html[data-mrm-boot-dark] #mrm-boot-screen span{border-color:rgba(245,247,246,.14);border-top-color:#59E0D8}
+#mrm-boot-screen{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:#f4f6f5}
+#mrm-boot-screen span{width:28px;height:28px;border:2px solid rgba(20,40,38,.16);border-top-color:#2DB7B2;border-radius:999px;animation:mrmBootSpin .72s linear infinite}
+@keyframes mrmBootSpin{to{transform:rotate(360deg)}}
+@media(prefers-color-scheme:dark){
+#mrm-boot-screen{background:#0b0f0e}
+#mrm-boot-screen span{border-color:rgba(245,247,246,.14);border-top-color:#59E0D8}}
+@media(prefers-reduced-motion:reduce){
+#mrm-boot-screen span{animation:none}}
+html.mrm-hide-connections [data-ui="configs"],html.mrm-hide-connections #connection-links,html.mrm-hide-connections .treasury-links-section,html.mrm-hide-connections [data-ui="quick-connect"],html.mrm-hide-connections .treasury-quick-action,html.mrm-hide-connections .treasury-quick-main{display:none!important}
+    </style>
+    <script id="mrm-runtime-boot-script">
+      (() => {
+        const root = document.documentElement;
+        root.setAttribute('data-mrm-booting', '1');
+        /* تم ذخیره‌شدهٔ کاربر را از پلهٔ اول رعایت کن تا صفحهٔ بوت با تم نهایی
+           هم‌رنگ باشد (نه فلاش سفید روی تم تاریک). */
+        try {
+          const saved = localStorage.getItem('mrm-theme') || '';
+          if (/dark/i.test(saved)) root.setAttribute('data-mrm-boot-dark', '1');
+        } catch (_) {}
+
+        const reveal = () => {
+          try {
+            root.removeAttribute('data-mrm-booting');
+            document.getElementById('mrm-boot-screen')?.remove();
+          } catch (_) {}
+        };
+        window.__mrmFinishBoot = reveal;
+
+        const mountScreen = () => {
+          if (document.getElementById('mrm-boot-screen')) return;
+          const node = document.createElement('div');
+          node.id = 'mrm-boot-screen';
+          node.setAttribute('aria-label', 'در حال بارگذاری');
+          node.innerHTML = '<span aria-hidden="true"></span>';
+          (document.body || root).appendChild(node);
+        };
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountScreen, { once: true });
+        else mountScreen();
+
+        const route = location.pathname.endsWith('/') ? location.pathname.slice(0, -1) : location.pathname;
+        if (!route || route === '/') { reveal(); return; }
+
+        let pending;
+        try {
+          const controller = new AbortController();
+          const deadline = setTimeout(() => controller.abort(), 6500);
+          pending = fetch(location.origin + route + '/raw', {
+            headers: { Accept: 'application/json' }, cache: 'no-store', signal: controller.signal,
+          }).then((response) => {
+            if (!response.ok) throw new Error('raw ' + response.status);
+            return response.json();
+          }).finally(() => clearTimeout(deadline));
+        } catch (_) {
+          reveal();
+          return;
+        }
+        window.__mrmRawPromise = pending;
+        pending.then((data) => {
+          try {
+            const headers = (data && data.headers) || (data && data.body && data.body.headers) || {};
+            const read = (key) => {
+              const value = headers['x-mrm-' + key] != null ? headers['x-mrm-' + key] : headers[key];
+              return value == null ? '' : String(value).trim().toLowerCase();
+            };
+            if (read('enabled') === 'false') return;
+            /* فقط تصمیمِ قطعی: کانفیگ‌ها خاموش‌اند و WireGuard روشن نشده است.
+               ترکیب «کانفیگ خاموش + WireGuard روشن» به دادهٔ SSR/DOM نیاز دارد؛
+               runtime بعد از ساخت DOM همان را قطعی می‌کند. */
+            if (read('show-configs') === 'false' && read('show-wireguard') !== 'true') {
+              root.classList.add('mrm-hide-connections');
+            }
+          } catch (_) {}
+        }).catch(() => {});
+
+        /* شبکهٔ ایمنی: صفحه هرگز پشت صفحهٔ بوت گیر نکند.
+           - اگر runtime نصب/تزریق نشده باشد، روی DOMContentLoaded آزاد می‌شود.
+           - اگر runtime باشد ولی دیر برسد، ۲.۵ ثانیه بعد از load آزاد می‌شود.
+           - سقف مطلق: ۹ ثانیه. */
+        document.addEventListener('DOMContentLoaded', () => {
+          if (!document.getElementById('mrm-runtime-inline')) reveal();
+        }, { once: true });
+        window.addEventListener('load', () => {
+          setTimeout(() => { if (root.hasAttribute('data-mrm-booting')) reveal(); }, 2500);
+        }, { once: true });
+        setTimeout(() => { if (root.hasAttribute('data-mrm-booting')) reveal(); }, 9000);
+      })();
+    </script>
     <!-- اعلان ادمین از سرور می‌آید (پنل آن را در همین رندر دارد). اگر از پلهٔ
          اول رندر شود، بنر بعد از بارگذاری روی صفحه نمی‌پرد؛ پیش‌تر runtime آن را
          با تأخیر تزریق می‌کرد و کل صفحه ~۳۶۰px جابه‌جا می‌شد (CLS 0.41).

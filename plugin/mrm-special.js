@@ -204,6 +204,18 @@
     /* ── کف مقیاس تایپوگرافی: هیچ متنی زیر ۱۲px (هم‌استاندارد صفحهٔ اشتراک) ── */
     /* ── هدف لمس: ناحیهٔ ضربهٔ کلید/اسلایدر/تب بزرگ می‌شود، ظاهر دست‌نخورده ── */
     #${ROOT_ID} input[type=checkbox]::before{content:"";position:absolute;inset:-12px -6px;border-radius:999px}
+    /* رادیوی انتخاب قالب: کنترل ۱۳px پیش‌فرض مرورگر در ردیف اول کارت قالب گم
+       می‌شد (زیر آستانهٔ ۲۰px کنترل‌های کلیدی و به‌مراتب زیر کف لمسی ۴۴px).
+       اینجا هم‌زبان با کلیدهای همین تب کشیده می‌شود: دایرهٔ ۲۲px + حلقهٔ داخلی،
+       ناحیهٔ ضربهٔ ۴۴px و حلقهٔ فوکوس دیداری. */
+    #${ROOT_ID} input[type=radio]{appearance:none;width:22px;height:22px;flex:0 0 auto;border-radius:999px;border:1.5px solid hsl(var(--border));background:hsl(var(--input));position:relative;cursor:pointer;transition:border-color .18s,box-shadow .18s}
+    #${ROOT_ID} input[type=radio]:after{content:"";position:absolute;inset:4px;border-radius:999px;background:transparent;transition:background .18s}
+    #${ROOT_ID} input[type=radio]:hover{border-color:rgba(45,183,178,.55)}
+    #${ROOT_ID} input[type=radio]:checked{border-color:#14ADA6;background:hsl(var(--card))}
+    #${ROOT_ID} input[type=radio]:checked:after{background:linear-gradient(135deg,#14ADA6,#0E8F8A)}
+    #${ROOT_ID} input[type=radio]:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(45,183,178,.35)}
+    #${ROOT_ID} input[type=radio]::before{content:"";position:absolute;inset:-11px;border-radius:999px}
+    @media (pointer:coarse){#${ROOT_ID} input[type=radio]{width:26px;height:26px}}
     #${ROOT_ID} input[type=range]{min-height:44px;padding:14px 0;background-clip:content-box}
     #${NAV_ID}::after{content:"";position:absolute;inset:-2px 0}
     /* ── فوکوس دیداری برای کاربران کیبورد ── */
@@ -223,7 +235,9 @@
     }
     #${UPDATE_NOTICE_ID}{position:fixed;z-index:2147482000;top:12px;left:50%;transform:translateX(-50%);width:min(560px,calc(100vw - 24px));direction:rtl;border:1px solid rgba(184,134,11,.34);border-radius:14px;background:hsl(var(--background));color:hsl(var(--foreground));box-shadow:0 12px 40px rgba(0,0,0,.16);padding:.72rem .8rem;display:flex;align-items:center;justify-content:space-between;gap:.7rem;font-family:inherit}
     #${UPDATE_NOTICE_ID} .z-un-text{font-size:.75rem;line-height:1.65}#${UPDATE_NOTICE_ID} .z-un-text strong{display:block;font-size:.78rem}
-    #${UPDATE_NOTICE_ID} button{border:0;border-radius:9px;padding:.48rem .65rem;background:#0F766E;color:white;font:inherit;font-size:.75rem;font-weight:800;white-space:nowrap;cursor:pointer}
+    #${UPDATE_NOTICE_ID} button{border:0;border-radius:9px;padding:.48rem .65rem;background:#0F766E;color:white;font:inherit;font-size:.75rem;font-weight:800;white-space:nowrap;cursor:pointer;min-height:44px;min-width:44px;display:inline-flex;align-items:center;justify-content:center}
+    #${UPDATE_NOTICE_ID} .z-un-dismiss{min-width:44px;min-height:44px;display:grid;place-items:center;padding:0;background:transparent;border:1px solid rgba(184,134,11,.4);color:hsl(var(--foreground))}
+    #${UPDATE_NOTICE_ID} .z-un-dismiss:hover{background:hsl(var(--muted)/.7)}
   `;
 
   if (!document.getElementById('mrm-special-style')) {
@@ -544,7 +558,7 @@
       </div>
       <div class="z-un-actions" style="display:flex;align-items:center;gap:.4rem">
         <button type="button" class="z-un-open">باز کردن MRM</button>
-        <button type="button" class="z-un-dismiss" style="background:transparent;border:1px solid rgba(184,134,11,.4);color:hsl(var(--foreground));padding:.42rem .55rem;border-radius:8px;font:inherit;font-size:.75rem;cursor:pointer" title="بستن">✕</button>
+        <button type="button" class="z-un-dismiss" aria-label="بستن اعلان بروزرسانی" title="بستن" style="border-radius:9px;font:inherit;font-size:.9rem;line-height:1;cursor:pointer">✕</button>
       </div>`;
     node.querySelector('.z-un-open')?.addEventListener('click', () => {
       if (!isSettingsRoute()) {

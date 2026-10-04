@@ -401,6 +401,16 @@ if (typeof window !== 'undefined') { window.__UI_CONTRACT__ = UI_CONTRACT; }
     @media(prefers-reduced-motion:reduce){
       .mrm-special-announcement,.mrm-special-announcement:before,.mrm-special-announcement .treasury-notice-icon{animation:none!important}
     }
+    /* پنهان‌سازیِ زودهنگام بخش کانفیگ‌ها/اتصال سریع — پیش از اولین رنگ.
+       کلاس روی <html> و قاعدهٔ CSS اینجا با هم کار می‌کنند تا کلیدِ ادمین
+       (show-configs=false) باعث «رندر و بعد ناپدید شدن» کارت و پرش چیدمان
+       نشود؛ runtime همین‌که پاسخ /raw رسید کلاس را می‌گذارد. */
+    html.mrm-hide-connections [data-ui="configs"],
+    html.mrm-hide-connections #connection-links,
+    html.mrm-hide-connections .treasury-links-section,
+    html.mrm-hide-connections [data-ui="quick-connect"],
+    html.mrm-hide-connections .treasury-quick-action,
+    html.mrm-hide-connections .treasury-quick-main{display:none!important}
   `;
 
   if (!document.getElementById('mrm-runtime-style')) {
@@ -623,6 +633,16 @@ if (typeof window !== 'undefined') { window.__UI_CONTRACT__ = UI_CONTRACT; }
   const basePath = () => window.location.pathname.replace(/\/+$/, '');
 
   async function fetchRaw() {
+    /* اگر اسکریپت بوت (داخل قالب) واکشی را در حین پارس شروع کرده باشد، همان
+       پاسخ را مصرف می‌کنیم: یک درخواست، و زودتر از اولین رنگِ React. */
+    const early = window.__mrmRawPromise;
+    if (early && typeof early.then === 'function') {
+      try {
+        return await early;
+      } catch (error) {
+        /* بوت شکست خورد؛ خودمان دوباره تلاش می‌کنیم (مسیر اصلی پایین) */
+      }
+    }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 7000);
     try {
@@ -743,6 +763,8 @@ if (typeof window !== 'undefined') { window.__UI_CONTRACT__ = UI_CONTRACT; }
     const showSection = config.showConfigs || (config.showWireGuard && hasWireGuard);
     UI.all('configs').forEach((node) => setDisplay(node, showSection));
     UI.all('quickConnect').forEach((node) => setDisplay(node, showSection));
+    /* با DOM واقعی، همان تصمیم را روی کلاس ریشه هم تازه کن (منبعِ یکسان) */
+    syncEarlyConnectionsVisibility(config, hasWireGuard);
 
     return hasWireGuard;
   };
@@ -901,6 +923,7 @@ if (typeof window !== 'undefined') { window.__UI_CONTRACT__ = UI_CONTRACT; }
   const applyClassicConnections = (config) => {
     const configsBtn = document.querySelector('button[onclick*="showConfigs"]');
     setDisplay(configsBtn, config.showConfigs);
+    syncEarlyConnectionsVisibility(config, null);
   };
 
   const applyClassicApps = (visible) => {
@@ -932,6 +955,20 @@ if (typeof window !== 'undefined') { window.__UI_CONTRACT__ = UI_CONTRACT; }
     }
   };
 
+  /* پایان بوت: صفحهٔ بوتِ نصب‌شده در قالب را برمی‌دارد. قالب تا وقتی تنظیمات
+     اِعمال نشده صفحه را پنهان نگه می‌دارد تا اولین رنگِ کاربر با حالت درست
+     باشد (نه رندر با تم/نمایشِ پیش‌فرض و اصلاحِ بعدی → پرش چیدمان). */
+  const finishBoot = () => {
+    try {
+      if (typeof window.__mrmFinishBoot === 'function') {
+        window.__mrmFinishBoot();
+        return;
+      }
+      document.documentElement.removeAttribute('data-mrm-booting');
+      document.getElementById('mrm-boot-screen')?.remove();
+    } catch (error) { /* برنداشتن صفحهٔ بوت هرگز نباید اجرای runtime را متوقف کند */ }
+  };
+
   const apply = () => {
     applyQueued = false;
     if (!state.loaded) return;
@@ -941,6 +978,7 @@ if (typeof window !== 'undefined') { window.__UI_CONTRACT__ = UI_CONTRACT; }
       const config = state.config;
       if (!config.enabled) {
         restoreOriginalUi();
+        finishBoot();
         return;
       }
       if (isSpecial) {
@@ -969,6 +1007,7 @@ if (typeof window !== 'undefined') { window.__UI_CONTRACT__ = UI_CONTRACT; }
          همه‌چیز «گم‌شده» به نظر می‌رسد؛ اگر فقط یک‌بار نوشته شود، پشتیبانی
          و CI گزارش کهنه می‌بینند. */
       UI.diagnose('silent', 'mrm-runtime');
+      finishBoot();
     } finally {
       observeDom();
     }
@@ -980,6 +1019,43 @@ if (typeof window !== 'undefined') { window.__UI_CONTRACT__ = UI_CONTRACT; }
     requestAnimationFrame(apply);
   };
 
+  /* ── تصمیمِ زودهنگامِ «بخش اتصال‌ها» ────────────────────────────────────
+     show-configs=false یعنی ادمین بخش کانفیگ/اتصال سریع را خاموش کرده است.
+     اگر این تصمیم پس از اولین رنگ گرفته شود، کارت رندر می‌شود و سپس ناپدید
+     می‌شود → پرش چیدمان (اندازه‌گیری‌شده: CLS 0.05 روی دسکتاپ). پس تصمیم را
+     به‌صورت کلاس روی <html> می‌گذاریم؛ قاعدهٔ CSS همان کلاس، کارتِ رندرشدهٔ
+     React را از اولین رنگ پنهان نگه می‌دارد و setDisplay بعدی بی‌اثر می‌شود. */
+  const ssrHasWireGuard = () => {
+    try {
+      const data = window.__INITIAL_DATA__ || {};
+      const links = Array.isArray(data.links) ? data.links : [];
+      if (links.some((link) => typeof link === 'string' && /^wireguard:\/\//i.test(link))) return true;
+      const wg = data.user && data.user.proxy_settings ? data.user.proxy_settings.wireguard : null;
+      return Boolean(wg && (wg.public_key || (Array.isArray(wg.peer_ips) && wg.peer_ips.length)));
+    } catch (error) {
+      return false;
+    }
+  };
+
+  /* domHasWireGuard را وقتی داریم که DOM ساخته شده باشد؛ در غیر این‌صورت به
+     دادهٔ رندرشدهٔ سرور (__INITIAL_DATA__) تکیه می‌کنیم. */
+  const syncEarlyConnectionsVisibility = (config, domHasWireGuard) => {
+    try {
+      const root = document.documentElement;
+      if (!root || !root.classList || !config) return;
+      const hasWireGuard = (domHasWireGuard === null || domHasWireGuard === undefined)
+        ? ssrHasWireGuard()
+        : Boolean(domHasWireGuard);
+      const hide = !config.showConfigs && !(config.showWireGuard && hasWireGuard);
+      root.classList.toggle('mrm-hide-connections', hide);
+    } catch (error) { /* هیچ‌گاه به‌خاطر پنهان‌سازی، اجرای runtime را متوقف نکن */ }
+  };
+
+  const whenDomReady = (callback) => {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', callback, { once: true });
+    else callback();
+  };
+
   const refreshSettings = async ({ initial = false } = {}) => {
     if (refreshInFlight) return;
     refreshInFlight = true;
@@ -988,12 +1064,18 @@ if (typeof window !== 'undefined') { window.__UI_CONTRACT__ = UI_CONTRACT; }
       state.raw = raw;
       state.config = parseConfig(raw);
       state.loaded = true;
+      /* پیش از هر رندر/رنگ: کارت‌هایی که باید پنهان بمانند، از پلهٔ اول پنهان‌اند */
+      syncEarlyConnectionsVisibility(state.config, null);
       scheduleApply();
     } catch (error) {
       if (initial) {
         console.warn('[MRM] runtime settings unavailable; original template remains untouched.', error);
-        restoreOriginalUi();
-        deTokenizeBrand();   /* حتی وقتی تنظیمات نمی‌رسد، توکن خام روی صفحه نماند */
+        whenDomReady(() => {
+          document.documentElement.classList.remove('mrm-hide-connections');
+          restoreOriginalUi();
+          deTokenizeBrand();   /* حتی وقتی تنظیمات نمی‌رسد، توکن خام روی صفحه نماند */
+          finishBoot();        /* تنظیمات نیامد → صفحه با قالب اصلی آزاد شود */
+        });
         state.loaded = false;
       } else {
         console.warn('[MRM] runtime refresh failed; keeping last known settings.', error);
@@ -1002,6 +1084,11 @@ if (typeof window !== 'undefined') { window.__UI_CONTRACT__ = UI_CONTRACT; }
       refreshInFlight = false;
     }
   };
+
+  /* واکشی تنظیمات همین حالا (هنگام پارس اسکریپت) شروع می‌شود: پاسخی که برای
+     تصمیم «نمایش/پنهانِ» بخش اتصال‌ها لازم است، دیگر تا DOMContentLoaded
+     منتظر نمی‌ماند و پیش از اولین رنگِ React می‌رسد. */
+  const initialLoad = refreshSettings({ initial: true });
 
   const start = async () => {
     /* شکست بی‌صدا → شکست پرصدا: اگر قالب قرارداد را رعایت نکند، گزارش می‌دهد */
@@ -1013,9 +1100,15 @@ if (typeof window !== 'undefined') { window.__UI_CONTRACT__ = UI_CONTRACT; }
       }
     } catch (e) { /* هیچ‌گاه به‌خاطر تشخیص، اجرا را متوقف نکن */ }
 
-    await refreshSettings({ initial: true });
-    domObserver = new MutationObserver(scheduleApply);
-    observeDom();
+    /* ناظر DOM را زودتر نصب می‌کنیم؛ ممکن است مونت‌شدن React پیش از
+       DOMContentLoaded رخ دهد و تغییراتش از دست برود. */
+    if (!domObserver) {
+      domObserver = new MutationObserver(scheduleApply);
+      observeDom();
+    }
+    await initialLoad;
+    /* یک اِعمال کامل بعد از ساخته‌شدن DOM، مستقل از ناظر (idempotent) */
+    scheduleApply();
 
     // Settings rarely change while a subscription page is open. Refresh less
     // often and never poll a background tab; DOM changes are already handled by

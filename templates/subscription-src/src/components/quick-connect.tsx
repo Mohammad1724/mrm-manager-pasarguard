@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Zap,
@@ -405,6 +405,28 @@ export function QuickConnect({ variant = 'hero', className }: QuickConnectProps)
 
   const platformTabs: PlatformKey[] = ['android', 'ios', 'desktop'];
 
+  /* پیمایش کیبورد بین تب‌های پلتفرم — در RTL پیکان راست «قبلی» است. */
+  const tabsRef = useRef<HTMLDivElement | null>(null);
+  const handleTabsKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    const key = event.key;
+    if (!['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(key)) return;
+    const rtl = document.documentElement.getAttribute('dir') === 'rtl' ||
+      getComputedStyle(event.currentTarget).direction === 'rtl';
+    const forward = key === 'ArrowDown' || (rtl ? key === 'ArrowLeft' : key === 'ArrowRight');
+    const backward = key === 'ArrowUp' || (rtl ? key === 'ArrowRight' : key === 'ArrowLeft');
+    const index = platformTabs.indexOf(activePlatform);
+    let next = index;
+    if (key === 'Home') next = 0;
+    else if (key === 'End') next = platformTabs.length - 1;
+    else if (forward) next = (index + 1) % platformTabs.length;
+    else if (backward) next = (index - 1 + platformTabs.length) % platformTabs.length;
+    if (next === index) return;
+    event.preventDefault();
+    setActivePlatform(platformTabs[next]);
+    tabsRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+  }, [activePlatform, platformTabs]);
+
+
   return (
     <>
       {variant === 'hero' ? (
@@ -509,15 +531,27 @@ export function QuickConnect({ variant = 'hero', className }: QuickConnectProps)
             </div>
           ) : (
           <>
-          <div className="ios-segmented-control mrm-connect-tabs" role="tablist">
+          {/* الگوی کامل ARIA tabs: نقش‌ها + tabindex چرخشی + کلیدهای جهت/Home/End.
+              بدون پیمایش کیبورد، «role=tab» فقط ادعاست (کاربر کیبورد نمی‌تواند
+              بین تب‌ها جابه‌جا شود). راست‌به‌چپ جهت پیکان‌ها را برمی‌گرداند. */}
+          <div
+            className="ios-segmented-control mrm-connect-tabs"
+            role="tablist"
+            aria-label={t('quickConnect.platformTabs', 'پلتفرم')}
+            onKeyDown={handleTabsKeyDown}
+            ref={tabsRef}
+          >
             {platformTabs.map((p) => {
               const Icon = PLATFORM_META[p].icon;
               return (
                 <button
                   key={p}
+                  id={`qconnect-tab-${p}`}
                   type="button"
                   role="tab"
                   aria-selected={activePlatform === p}
+                  aria-controls="qconnect-apps-panel"
+                  tabIndex={activePlatform === p ? 0 : -1}
                   className={`ios-segmented-item ${activePlatform === p ? 'is-selected' : ''}`}
                   onClick={() => setActivePlatform(p)}
                 >
@@ -529,7 +563,13 @@ export function QuickConnect({ variant = 'hero', className }: QuickConnectProps)
             })}
           </div>
 
-          <div className="mrm-app-grid">
+          <div
+            className="mrm-app-grid"
+            id="qconnect-apps-panel"
+            role="tabpanel"
+            aria-labelledby={`qconnect-tab-${activePlatform}`}
+            tabIndex={0}
+          >
             {appsForPlatform.map((app) => {
               const isRecommended = app.recommended?.includes(activePlatform);
               const isLast = app.id === lastAppId;

@@ -2389,6 +2389,84 @@ fi
 
 echo ""
 
+echo "📋 Group 22: first-paint stability & leftover polish"
+echo ""
+
+SRC_INDEX="$PROJECT_DIR/templates/subscription-src/index.html"
+RUNTIME="$PROJECT_DIR/plugin/mrm-runtime.js"
+QUICKCONNECT="$PROJECT_DIR/templates/subscription-src/src/components/quick-connect.tsx"
+
+# 22.1: قالب منتشرشده بلوک بوت را دارد (CSS پنهان‌سازی + واکشی زودهنگام)
+if grep -qF 'mrm-runtime-boot-style' "$SUB_HTML" && \
+   grep -qF 'mrm-runtime-boot-script' "$SUB_HTML" && \
+   grep -qF 'html.mrm-hide-connections [data-ui="configs"]' "$SUB_HTML"; then
+    pass "published template carries the boot block (early connection-hide rule)"
+else
+    fail "boot block missing from the published template — layout shift returns"
+fi
+
+# 22.2: قالب مبدأ (src) هم همان بلوک را دارد تا بیلد بعدی آن را از دست ندهد
+if grep -qF 'mrm-runtime-boot-style' "$SRC_INDEX"; then
+    pass "template source carries the boot block (survives the next build)"
+else
+    fail "boot block missing from templates/subscription-src/index.html"
+fi
+
+# 22.3: runtime درخواست بوت را مصرف می‌کند و صفحهٔ بوت را آزاد می‌کند
+if grep -qF '__mrmRawPromise' "$RUNTIME" && grep -qF '__mrmFinishBoot' "$RUNTIME" && \
+   grep -qF 'syncEarlyConnectionsVisibility' "$RUNTIME"; then
+    pass "runtime reuses the boot fetch and releases the boot screen"
+else
+    fail "runtime does not consume the early boot state"
+fi
+
+# 22.4: تب‌های اتصال سریع الگوی کامل ARIA دارند (نقش‌ها + tabindex چرخشی + کیبورد)
+if grep -qF 'handleTabsKeyDown' "$QUICKCONNECT" && \
+   grep -qF "role=\"tabpanel\"" "$QUICKCONNECT" && \
+   grep -qF 'ArrowLeft' "$QUICKCONNECT" && grep -qF "'End'" "$QUICKCONNECT" && \
+   grep -qF 'aria-controls="qconnect-apps-panel"' "$QUICKCONNECT"; then
+    pass "quick-connect tabs implement the full ARIA tabs pattern with keyboard support"
+else
+    fail "quick-connect tabs lack keyboard or tabpanel wiring"
+fi
+
+# 22.5: رادیوی انتخاب قالب زیر آستانهٔ کنترل‌های کلیدی نیست
+if grep -qF 'input[type=radio]{appearance:none;width:22px;height:22px' "$SPECIAL"; then
+    pass "template-picker radios are drawn at a usable size (22px, 26px on coarse)"
+else
+    fail "template-picker radios still use the 13px browser default"
+fi
+
+# 22.6: دکمهٔ بستن اعلان بروزرسانی به کف لمسی ۴۴px می‌رسد (هر دو قالب)
+if grep -qF '.z-un-dismiss{min-width:44px;min-height:44px' "$SPECIAL" && \
+   grep -qF 'width:44px;height:44px;min-width:44px;min-height:44px' "$ZSPECIAL"; then
+    pass "update-notice close buttons meet the 44px touch floor in both plugins"
+else
+    fail "an update-notice close button is still below 44px"
+fi
+
+# 22.7: نوار اسکنِ «حجم تمام‌شده» دیگر translate نمی‌کند (منبع CLS دوره‌ای)
+SCAN_CSS="$PROJECT_DIR/templates/subscription-src/src/index.css"
+ZSCAN_CSS="$ZOMOROD_DIR/src/index.css"
+if grep -qF 'background-position: var(--scan-from' "$SCAN_CSS" && \
+   ! grep -qF 'transform: translateX(var(--scan-travel' "$SCAN_CSS" && \
+   grep -qF 'background-position: var(--scan-from' "$ZSCAN_CSS"; then
+    pass "danger-scan sweep animates background-position, not transform (no periodic CLS)"
+else
+    fail "danger-scan still moves the box — periodic layout shift remains"
+fi
+
+# 22.8: نصب‌کننده شکست ساخت دایرکتوری را با پیام راه‌دار گزارش می‌کند، نه خطای خام
+if grep -qF 'ensure_dir()' "$INSTALLER" && \
+   ! grep -qE '^mkdir -p "\$INSTALL_DIR"' "$INSTALLER" && \
+   grep -qF 'Cannot create the install directory' "$INSTALLER"; then
+    pass "installer reports directory failures with an actionable message"
+else
+    fail "installer still leaks raw mkdir errors"
+fi
+
+echo ""
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 echo "═══════════════════════════════════════════════════════════"
 echo "  Test Results"
