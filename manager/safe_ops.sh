@@ -1,5 +1,5 @@
 #!/bin/bash
-# MRM Manager v1.5.12
+# MRM Manager v1.5.13
 # safe_ops.sh — restore points for risky operations
 # (theme install/activate, domain split, …): snapshot → change → roll back.
 
