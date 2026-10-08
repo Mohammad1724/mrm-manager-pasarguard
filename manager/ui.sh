@@ -4,7 +4,7 @@
 # Every menu, prompt, message, table and report in MRM Manager is rendered
 # through the helpers in this file, so the whole tool has ONE visual language:
 #
-#   ┌─ MRM Manager ─────────────────────────────────────────── v1.5.11 ┐
+#   ┌─ MRM Manager ─────────────────────────────────────────── v1.5.12 ┐
 #   │ SSL Certificates                                                 │
 #   │ Panel: pasarguard · Certs: /var/lib/pasarguard/certs             │
 #   └──────────────────────────────────────────────────────────────────┘
@@ -293,7 +293,7 @@ ui_version() {
     if [ -z "$V" ] && [ -s /opt/mrm-manager/VERSION ]; then
         V="$(head -1 /opt/mrm-manager/VERSION 2>/dev/null)"
     fi
-    echo "${V:-1.5.11}"
+    echo "${V:-1.5.12}"
 }
 
 # ─── Screen & header ────────────────────────────────────────────────────────
