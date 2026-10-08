@@ -48,10 +48,12 @@ apply_smart_fix() {
     local FIREWALL_OK=false ENV_FILES_FOUND=false ENV_FIX_OK=true COMPOSE_FIX_OK=false
     ui_section "Smart fix"
     log_backup "INFO" "Starting smart fix"
-    local SERVER_IP=$(get_server_ip)
+    local SERVER_IP
+    SERVER_IP=$(get_server_ip)
     ui_kv "Server IP" "$SERVER_IP"
     ui_spinner_start "Configuring firewall"
-    local SSH_PORT=$(ss -tlnp 2>/dev/null | grep sshd | grep -Po '(?<=:)\d+' | head -1)
+    local SSH_PORT
+    SSH_PORT=$(ss -tlnp 2>/dev/null | grep sshd | grep -Po '(?<=:)\d+' | head -1)
     # FIX: never assume 22 when sshd is not visible (socket activation,
     # dropbear, custom names) — assuming 22 + `ufw --force enable` can LOCK
     # OUT SSH on servers where SSH listens on another port (MRM-076)

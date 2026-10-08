@@ -52,7 +52,8 @@ do_restore() {
 
     log_backup "INFO" "Starting restore v${BACKUP_VERSION} from: $(basename "$SELECTED")"
 
-    local WORK_DIR="$TEMP_BASE/restore_$(date +%s)"
+    local WORK_DIR
+    WORK_DIR="$TEMP_BASE/restore_$(date +%s)"
     mkdir -p "$WORK_DIR"
     
     # Cleanup trap with safety guard
@@ -69,7 +70,8 @@ do_restore() {
     fi
     ui_spinner_stop
 
-    local ROOT=$(find "$WORK_DIR" -maxdepth 3 -type d -name "MRM_*" | head -1)
+    local ROOT
+    ROOT=$(find "$WORK_DIR" -maxdepth 3 -type d -name "MRM_*" | head -1)
     if [ -z "$ROOT" ]; then ROOT=$(find "$WORK_DIR" -maxdepth 2 -type f -name "backup_info.txt" -printf "%h" | head -1); fi
     if [ -z "$ROOT" ] || [ ! -d "$ROOT" ]; then
         # Try to find any directory
@@ -106,8 +108,10 @@ do_restore() {
     #    restore can NEVER destroy the original data.
     # =========================================================
     ui_spinner_start "Creating safety backup of the current state"
-    local SAFETY_BACKUP="$BACKUP_DIR/pre_restore_$(date +%Y%m%d_%H%M%S).tar.gz"
-    local SAFETY_DIR="$TEMP_BASE/safety_$(date +%s)"
+    local SAFETY_BACKUP
+    SAFETY_BACKUP="$BACKUP_DIR/pre_restore_$(date +%Y%m%d_%H%M%S).tar.gz"
+    local SAFETY_DIR
+    SAFETY_DIR="$TEMP_BASE/safety_$(date +%s)"
     mkdir -p "$SAFETY_DIR"
     local SAFETY_DB_OK=false
     if mrm_backup_database "$SAFETY_DIR" >/dev/null 2>&1; then
@@ -138,7 +142,8 @@ do_restore() {
             ui_spinner_stop
             ui_warning "Safety backup failed — raw files kept for manual recovery:"
             if [ -f "$SAFETY_DIR/current_db_backup" ]; then
-                local KEEP_DB="$BACKUP_DIR/pre_restore_db_$(date +%Y%m%d_%H%M%S)$(basename "$DB_BACKUP_FILE")"
+                local KEEP_DB
+                KEEP_DB="$BACKUP_DIR/pre_restore_db_$(date +%Y%m%d_%H%M%S)$(basename "$DB_BACKUP_FILE")"
                 mv -f "$SAFETY_DIR/current_db_backup" "$KEEP_DB" 2>/dev/null
                 ui_bullet "Raw database saved: $KEEP_DB"
                 log_backup "ERROR" "Safety tar failed; raw DB kept at $KEEP_DB"
@@ -853,7 +858,8 @@ do_restore() {
         log_backup "WARNING" "Panel /health not answering after restore (port $PANEL_HEALTH_PORT)"
     fi
 
-    local NEW_SERVER_IP=$(get_server_ip)
+    local NEW_SERVER_IP
+    NEW_SERVER_IP=$(get_server_ip)
     log_backup "SUCCESS" "Restore v${BACKUP_VERSION} completed from: $(basename "$SELECTED")"
 
     echo ""
@@ -984,7 +990,8 @@ do_repair_db() {
 
             docker exec -e PGPASSWORD="$DB_PASS_R" "$DB_CONT" psql -w -U "$DB_USER" -d postgres -c \
                 "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$DB_NAME' AND pid <> pg_backend_pid();" >/dev/null 2>&1 || true
-            local IMPORT_KEEP="/var/log/mrm-pg-import-$(date +%Y%m%d_%H%M%S).log"
+            local IMPORT_KEEP
+            IMPORT_KEEP="/var/log/mrm-pg-import-$(date +%Y%m%d_%H%M%S).log"
             # MRM-111: ensure the .env role exists and install extensions
             # (timescaledb) BEFORE importing — a fresh DB has neither.
             mrm_sync_pg_role_password "$DB_CONT" "$DB_USER" "$DB_PASS_R" >/dev/null 2>&1 || true

@@ -122,8 +122,10 @@ mrm_colored_state() {
 }
 
 mrm_check_disk() {
-    local USAGE=$(df / | awk 'NR==2{print $5}' | tr -d '%')
-    local FREE=$(df -h / | awk 'NR==2{print $4}')
+    local USAGE
+    USAGE=$(df / | awk 'NR==2{print $5}' | tr -d '%')
+    local FREE
+    FREE=$(df -h / | awk 'NR==2{print $4}')
     echo "$USAGE $FREE"
 }
 
@@ -151,9 +153,12 @@ mrm_check_docker_health() {
         echo "stopped"
         return
     fi
-    local IMAGES=$(docker images --format '{{.Repository}}' 2>/dev/null | wc -l)
-    local CONTAINERS=$(docker ps -q 2>/dev/null | wc -l)
-    local DANGLING=$(docker images -f "dangling=true" -q 2>/dev/null | wc -l)
+    local IMAGES
+    IMAGES=$(docker images --format '{{.Repository}}' 2>/dev/null | wc -l)
+    local CONTAINERS
+    CONTAINERS=$(docker ps -q 2>/dev/null | wc -l)
+    local DANGLING
+    DANGLING=$(docker images -f "dangling=true" -q 2>/dev/null | wc -l)
     echo "ok $CONTAINERS $IMAGES $DANGLING"
 }
 
@@ -163,7 +168,8 @@ mrm_check_panel_logs() {
     if [ -n "$COMPOSE_FILE" ]; then
         ERRORS=$(docker compose -f "$COMPOSE_FILE" logs --tail 100 2>/dev/null | grep -iE "error|failed|exception|critical" | wc -l)
     else
-        local CID=$(get_panel_container_id 2>/dev/null)
+        local CID
+        CID=$(get_panel_container_id 2>/dev/null)
         if [ -n "$CID" ]; then
             ERRORS=$(docker logs "$CID" --tail 100 2>/dev/null | grep -iE "error|failed|exception|critical" | wc -l)
         fi
@@ -230,7 +236,7 @@ mrm_status_panel() {
     RAM_USED="$(echo "$RAM_INFO" | awk '{print $1}')"
     RAM_TOTAL="$(echo "$RAM_INFO" | awk '{print $2}')"
     LOAD="${CPU_INFO#* }"
-    local SYS="Disk ${DISK_USAGE}% used · ${DISK_FREE} free · RAM ${RAM_USED}/${RAM_TOTAL} MB · Load ${LOAD:-?}"
+    local SYS="Disk ${DISK_USAGE}% · ${DISK_FREE} free · RAM ${RAM_USED}/${RAM_TOTAL} MB · Load ${LOAD:-?}"
     if [ "$DISK_USAGE" -gt 85 ] 2>/dev/null; then
         ui_kv_state "System" warn "$SYS"
     else

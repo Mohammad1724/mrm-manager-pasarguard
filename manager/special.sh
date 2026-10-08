@@ -514,7 +514,8 @@ special_reintegrate() {
 
 special_backup() {
     ui_header "Backup MRM Special Data"
-    local out="/root/mrm-special-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
+    local out
+    out="/root/mrm-special-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
     ui_task "Archiving $DATA_NS"
     if tar -czf "$out" -C /var/lib pasarguard/mrm 2>/dev/null; then
         ui_task_done ok

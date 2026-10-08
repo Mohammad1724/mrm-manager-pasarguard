@@ -131,7 +131,8 @@ get_cpu_usage() {
     CPU=$(top -bn1 2>/dev/null | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1}' | cut -d'.' -f1)
     if [ -z "$CPU" ] || ! [[ "$CPU" =~ ^[0-9]+$ ]]; then
         # Fallback: use loadavg * 25 as rough estimate for 4-core
-        local LOAD=$(cat /proc/loadavg 2>/dev/null | awk '{print $1}')
+        local LOAD
+        LOAD=$(cat /proc/loadavg 2>/dev/null | awk '{print $1}')
         CPU=$(awk "BEGIN {print int($LOAD*25)}" 2>/dev/null || echo 0)
     fi
     echo "${CPU:-0}"
@@ -153,8 +154,10 @@ should_alert() {
     mkdir -p "$MONITOR_STATE"
     
     if [ -f "$STATE_FILE" ]; then
-        local LAST=$(cat "$STATE_FILE" 2>/dev/null || echo 0)
-        local NOW=$(date +%s)
+        local LAST
+        LAST=$(cat "$STATE_FILE" 2>/dev/null || echo 0)
+        local NOW
+        NOW=$(date +%s)
         local DIFF=$((NOW - LAST))
         if [ "$DIFF" -lt "$COOLDOWN" ]; then
             return 1  # Don't alert, cooldown
@@ -210,8 +213,10 @@ check_and_alert() {
         log_monitor "INFO" "Monitor disabled by config (ENABLED=false)"
         return 0
     fi
-    local HOST=$(hostname)
-    local IP=$(curl -4 -s --connect-timeout 5 icanhazip.com 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
+    local HOST
+    HOST=$(hostname)
+    local IP
+    IP=$(curl -4 -s --connect-timeout 5 icanhazip.com 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
 
     ROLE=$(get_service_role)
     case "$ROLE" in
@@ -232,7 +237,8 @@ check_and_alert() {
             local SVC_DIR SVC_COMPOSE
             if [ "$ROLE" = "node" ]; then SVC_DIR="$NODE_DIR"; SVC_COMPOSE="$(get_node_compose_file 2>/dev/null || true)"
             else SVC_DIR="$PANEL_DIR"; SVC_COMPOSE="$(get_panel_compose_file 2>/dev/null || true)"; fi
-            local MSG="🚨 *MRM ALERT - ${SERVICE_LABEL^^} DOWN*
+            local MSG
+            MSG="🚨 *MRM ALERT - ${SERVICE_LABEL^^} DOWN*
 🖥 Host: $HOST
 🌐 IP: $IP
 📊 Status: ${SERVICE_LABEL} is DOWN!
@@ -261,8 +267,10 @@ ${SERVICE_LABEL} container is not running. MRM will try to restart."
     # 2. Disk Full >85% warn, >90% critical (thresholds from monitor.conf)
     if [ "${CHECK_DISK:-true}" = "true" ] && [ "$DISK_USAGE" -ge "${DISK_THRESHOLD_CRITICAL:-90}" ] 2>/dev/null; then
         if should_alert "disk_critical"; then
-            local FREE=$(get_disk_free)
-            local MSG="🚨 *MRM ALERT - DISK CRITICAL*
+            local FREE
+            FREE=$(get_disk_free)
+            local MSG
+            MSG="🚨 *MRM ALERT - DISK CRITICAL*
 🖥 Host: $HOST
 💾 Disk Usage: ${DISK_USAGE}% - CRITICAL!
 💾 Free: $FREE
@@ -277,8 +285,10 @@ Commands:
         fi
     elif [ "${CHECK_DISK:-true}" = "true" ] && [ "$DISK_USAGE" -ge "${DISK_THRESHOLD_WARN:-85}" ] 2>/dev/null; then
         if should_alert "disk_warn"; then
-            local FREE=$(get_disk_free)
-            local MSG="⚠️ *MRM ALERT - DISK HIGH*
+            local FREE
+            FREE=$(get_disk_free)
+            local MSG
+            MSG="⚠️ *MRM ALERT - DISK HIGH*
 🖥 Host: $HOST
 💾 Disk Usage: ${DISK_USAGE}% (Free: $FREE)
 ⏰ $(date '+%Y-%m-%d %H:%M:%S')
@@ -293,9 +303,12 @@ Commands:
     # 3. CPU >90% (threshold from monitor.conf)
     if [ "${CHECK_CPU:-true}" = "true" ] && [ "$CPU_USAGE" -ge "${CPU_THRESHOLD:-90}" ] 2>/dev/null; then
         if should_alert "cpu_high"; then
-            local LOAD=$(cat /proc/loadavg 2>/dev/null | awk '{print $1" "$2" "$3}')
-            local TOP_PROC=$(ps aux --sort=-%cpu 2>/dev/null | head -n 6 | tail -n 5)
-            local MSG="🔥 *MRM ALERT - CPU HIGH*
+            local LOAD
+            LOAD=$(cat /proc/loadavg 2>/dev/null | awk '{print $1" "$2" "$3}')
+            local TOP_PROC
+            TOP_PROC=$(ps aux --sort=-%cpu 2>/dev/null | head -n 6 | tail -n 5)
+            local MSG
+            MSG="🔥 *MRM ALERT - CPU HIGH*
 🖥 Host: $HOST
 🔥 CPU Usage: ${CPU_USAGE}%
 📊 Load: $LOAD
@@ -312,8 +325,10 @@ Top processes:
     # 4. RAM >90% (threshold from monitor.conf)
     if [ "${CHECK_RAM:-true}" = "true" ] && [ "$RAM_PERCENT" -ge "${RAM_THRESHOLD:-90}" ] 2>/dev/null; then
         if should_alert "ram_high"; then
-            local RAM_INFO=$(get_ram_info)
-            local MSG="🧠 *MRM ALERT - RAM HIGH*
+            local RAM_INFO
+            RAM_INFO=$(get_ram_info)
+            local MSG
+            MSG="🧠 *MRM ALERT - RAM HIGH*
 🖥 Host: $HOST
 🧠 RAM Usage: ${RAM_PERCENT}% ($RAM_INFO)
 ⏰ $(date '+%Y-%m-%d %H:%M:%S')
@@ -408,14 +423,19 @@ test_alerts() {
         return
     fi
     ui_task "Sending a test alert"
-    local HOST=$(hostname)
-    local DISK=$(get_disk_usage)
-    local CPU=$(get_cpu_usage)
-    local RAM=$(get_ram_usage_percent)
+    local HOST
+    HOST=$(hostname)
+    local DISK
+    DISK=$(get_disk_usage)
+    local CPU
+    CPU=$(get_cpu_usage)
+    local RAM
+    RAM=$(get_ram_usage_percent)
     local ROLE SVC_LABEL PANEL
     ROLE=$(get_service_role); PANEL=$(get_service_status)
     case "$ROLE" in panel) SVC_LABEL="Panel" ;; node) SVC_LABEL="Node" ;; *) SVC_LABEL="Service" ;; esac
-    local MSG="🧪 *MRM Monitor Test*
+    local MSG
+    MSG="🧪 *MRM Monitor Test*
 🖥 Host: $HOST
 📊 ${SVC_LABEL}: $PANEL
 💾 Disk: ${DISK}%

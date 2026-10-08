@@ -213,7 +213,8 @@ PY
 patch_router_file() {
   local file="$1"
   [[ -f "${file}" && -s "${BACKEND_PY}" ]] || return 1
-  local target_dir="$(dirname "${file}")"
+  local target_dir
+  target_dir="$(dirname "${file}")"
   install -m 0644 "${BACKEND_PY}" "${target_dir}/mrm_admin_subscriptions.py"
   python3 - "${file}" "${ROUTER_MARKER}" <<'PY'
 from pathlib import Path

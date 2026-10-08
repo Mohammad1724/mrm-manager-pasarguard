@@ -159,7 +159,8 @@ load_panel_config() {
     fi
 
     # If multiple panels and interactive, default to first found
-    local FIRST=$(echo "$PANELS" | head -1)
+    local FIRST
+    FIRST=$(echo "$PANELS" | head -1)
     if [ -n "$FIRST" ]; then
         save_panel_config "$FIRST" 2>/dev/null || true
         apply_panel_config "$FIRST"
@@ -186,8 +187,10 @@ get_mrm_version() {
 }
 
 # FIX: pin to the installed release tag — mutable "main" could serve untrusted content
-export THEME_HTML_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v$(get_mrm_version)/templates/subscription/index.html"
-export THEME_CLASSIC_HTML_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v$(get_mrm_version)/templates/subscription-classic/index.html"
+export THEME_HTML_URL
+THEME_HTML_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v$(get_mrm_version)/templates/subscription/index.html"
+export THEME_CLASSIC_HTML_URL
+THEME_CLASSIC_HTML_URL="https://raw.githubusercontent.com/Mohammad1724/mrm-manager-pasarguard/v$(get_mrm_version)/templates/subscription-classic/index.html"
 
 # Initialize - NON-BLOCKING, no prompt
 load_panel_config >/dev/null 2>&1 || apply_panel_config "pasarguard" >/dev/null 2>&1 || true

@@ -262,27 +262,40 @@ panel_menu() {
     done
 }
 
+templates_menu() {
+    local OPT
+    while true; do
+        ui_header "Templates & Integration" "Subscription page templates and the in-panel MRM tab"
+        ui_menu_item 1 "Theme Manager" "switch templates, branding, status"
+        ui_menu_item 2 "MRM Special" "in-panel tab, settings, integration"
+        ui_menu_back
+        ui_select OPT
+        case "$OPT" in
+            1) bash "$MRM_DIR/theme.sh" || { ui_error "Theme Manager could not be started"; sleep 1; } ;;
+            2) bash "$MRM_DIR/special.sh" || { ui_error "MRM Special could not be started"; sleep 1; } ;;
+            0) return ;;
+            *) ui_invalid ;;
+        esac
+    done
+}
+
 tools_menu() {
     local OPT
     while true; do
         ui_header "Tools & Diagnostics"
         ui_menu_item 1 "Domain Separator" "separate panel and subscription domains"
-        ui_menu_item 2 "Theme Manager" "subscription page templates"
-        ui_menu_item 3 "MRM Special" "in-panel integration & settings"
-        ui_menu_item 4 "Diagnostics Dashboard" "system and panel status"
-        ui_menu_item 5 "Health Check & Doctor" "PasarGuard health report"
-        ui_menu_item 6 "Iran / Offline Mode" "mirrors and local installs"
-        ui_menu_item 7 "Monitor & Alerts" "Telegram alerts"
+        ui_menu_item 2 "Diagnostics Dashboard" "system and panel status"
+        ui_menu_item 3 "Health Check & Doctor" "PasarGuard health report"
+        ui_menu_item 4 "Iran / Offline Mode" "mirrors and local installs"
+        ui_menu_item 5 "Monitor & Alerts" "Telegram alerts"
         ui_menu_back
         ui_select OPT
         case "$OPT" in
             1) bash "$MRM_DIR/domain_separator.sh" || { ui_error "Domain Separator could not be started"; sleep 1; } ;;
-            2) bash "$MRM_DIR/theme.sh" || { ui_error "Theme Manager could not be started"; sleep 1; } ;;
-            3) bash "$MRM_DIR/special.sh" || { ui_error "MRM Special could not be started"; sleep 1; } ;;
-            4) bash "$MRM_DIR/diagnostics.sh" ;;
-            5) bash "$MRM_DIR/pg_health.sh" ;;
-            6) bash "$MRM_DIR/offline.sh" ;;
-            7) bash "$MRM_DIR/monitor.sh" menu ;;
+            2) bash "$MRM_DIR/diagnostics.sh" ;;
+            3) bash "$MRM_DIR/pg_health.sh" ;;
+            4) bash "$MRM_DIR/offline.sh" ;;
+            5) bash "$MRM_DIR/monitor.sh" menu ;;
             0) return ;;
             *) ui_invalid ;;
         esac
@@ -302,27 +315,25 @@ main_menu() {
             mrm_status_panel
         fi
         [ -n "$MISSING" ] && { ui_warning "Missing tools:${MISSING}"; echo ""; }
-        ui_menu_item 1 "Subscription Templates" "MRM Special & Classic switcher, branding"
-        ui_menu_item 2 "In-Panel Integration" "MRM Special tab, theme studio, API bridge"
-        ui_menu_item 3 "SSL Certificates" "issue, renew, multi-domain certificates"
-        ui_menu_item 4 "Backup & Restore" "database, xray, auto-backup, Telegram"
-        ui_menu_item 5 "Panel Control" "restart, stop, start, live logs"
-        ui_menu_item 6 "Tools & Diagnostics" "domain separator, monitor, health doctor"
-        ui_menu_item 7 "Update MRM Manager"
-        ui_menu_item 8 "Uninstall MRM Manager"
+        ui_menu_item 1 "Templates & Integration" "subscription templates, MRM Special tab"
+        ui_menu_item 2 "SSL Certificates" "issue, renew, multi-domain certificates"
+        ui_menu_item 3 "Backup & Restore" "database, xray, auto-backup, Telegram"
+        ui_menu_item 4 "Panel Control" "restart, stop, start, live logs"
+        ui_menu_item 5 "Tools & Diagnostics" "domain separator, monitor, health doctor"
+        ui_menu_item 6 "Update MRM Manager"
+        ui_menu_item 7 "Uninstall MRM Manager"
         ui_menu_back "Exit"
         ui_select OPT
         case "$OPT" in
-            1) bash "$MRM_DIR/theme.sh" || { ui_error "Theme Manager could not be started"; sleep 1; } ;;
-            2) bash "$MRM_DIR/special.sh" || { ui_error "MRM Special could not be started"; sleep 1; } ;;
-            3) bash "$MRM_DIR/ssl.sh" || { ui_error "SSL Manager could not be started"; sleep 1; } ;;
-            4) bash "$MRM_DIR/backup.sh" || { ui_error "Backup Manager could not be started"; sleep 1; } ;;
-            5) panel_menu ;;
-            6) tools_menu ;;
-            7) # single update path — fixes apply in one place (MRM-015)
+            1) templates_menu ;;
+            2) bash "$MRM_DIR/ssl.sh" || { ui_error "SSL Manager could not be started"; sleep 1; } ;;
+            3) bash "$MRM_DIR/backup.sh" || { ui_error "Backup Manager could not be started"; sleep 1; } ;;
+            4) panel_menu ;;
+            5) tools_menu ;;
+            6) # single update path — fixes apply in one place (MRM-015)
                 bash "$MRM_DIR/main.sh" update
                 ui_pause ;;
-            8) uninstall_mrm_manager ;;
+            7) uninstall_mrm_manager ;;
             0) ui_clear; echo ""; ui_note "Goodbye."; echo ""; exit 0 ;;
             *) ui_invalid ;;
         esac

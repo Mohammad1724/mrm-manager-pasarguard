@@ -190,7 +190,8 @@ offline_restore_backup_dir() {
         rm -f /etc/apt/sources.list 2>/dev/null || true
     fi
     # SECURITY: Backup third-party repos before destructive rm
-    local THIRD_PARTY_BACKUP="/tmp/mrm-third-party-backup-$(date +%s)"
+    local THIRD_PARTY_BACKUP
+    THIRD_PARTY_BACKUP="/tmp/mrm-third-party-backup-$(date +%s)"
     mkdir -p "$THIRD_PARTY_BACKUP"
     cp -a /etc/apt/sources.list.d/. "$THIRD_PARTY_BACKUP/" 2>/dev/null || true
     rm -rf /etc/apt/sources.list.d/* 2>/dev/null || true
@@ -216,7 +217,8 @@ offline_latest_backup_dir() {
 # FIXED: preserve third-party repos instead of deleting all
 offline_apply_apt_mirror() {
     local MIRROR="$1" BACKUP_DIR="$2" CODENAME UPDATE_OK=false
-    local TMP_THIRD="/tmp/mrm-third-party-$(date +%s)"
+    local TMP_THIRD
+    TMP_THIRD="/tmp/mrm-third-party-$(date +%s)"
     CODENAME="$(offline_get_codename)"
     [ -n "$CODENAME" ] || return 1
     [ -d "$BACKUP_DIR" ] || {

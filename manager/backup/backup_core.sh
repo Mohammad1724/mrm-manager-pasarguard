@@ -3,7 +3,7 @@
 # Main backup logic: export DB, backup files, create archive, send to Telegram
 
 # ==========================================
-# Backup v1.5.4
+# Backup v1.5.11
 # ==========================================
 do_backup() {
     local MODE="${1:-manual}"
@@ -184,12 +184,14 @@ do_backup() {
     # 4b. Let's Encrypt certificates (small ~5KB per domain)
     # Needed so post-restore can copy them to /etc/letsencrypt/live/ for Nginx
     if [ -d "/etc/letsencrypt/live" ]; then
-        local LETS_COUNT=$(find /etc/letsencrypt/live -name "fullchain.pem" 2>/dev/null | wc -l)
+        local LETS_COUNT
+        LETS_COUNT=$(find /etc/letsencrypt/live -name "fullchain.pem" 2>/dev/null | wc -l)
         if [ "$LETS_COUNT" -gt 0 ] 2>/dev/null; then
             mkdir -p "$B_PATH/letsencrypt"
             for CERT_DIR in /etc/letsencrypt/live/*/; do
                 [ -d "$CERT_DIR" ] || continue
-                local DOMAIN_NAME=$(basename "$CERT_DIR")
+                local DOMAIN_NAME
+                DOMAIN_NAME=$(basename "$CERT_DIR")
                 mkdir -p "$B_PATH/letsencrypt/$DOMAIN_NAME"
                 [ -f "$CERT_DIR/fullchain.pem" ] && cp "$CERT_DIR/fullchain.pem" "$B_PATH/letsencrypt/$DOMAIN_NAME/" 2>/dev/null
                 [ -f "$CERT_DIR/privkey.pem" ] && cp "$CERT_DIR/privkey.pem" "$B_PATH/letsencrypt/$DOMAIN_NAME/" 2>/dev/null
@@ -240,8 +242,10 @@ do_backup() {
     [ "$MODE" != "auto" ] && ui_spinner_stop && ui_success "Heavy files excluded (geo data, binaries, nested backups)"
 
     # 6. Metadata
-    local SERVER_IP=$(get_server_ip)
-    local TOTAL_RAW_SIZE=$(du -sh "$B_PATH" 2>/dev/null | cut -f1)
+    local SERVER_IP
+    SERVER_IP=$(get_server_ip)
+    local TOTAL_RAW_SIZE
+    TOTAL_RAW_SIZE=$(du -sh "$B_PATH" 2>/dev/null | cut -f1)
     
     cat > "$B_PATH/backup_info.txt" << EOF
 ========================================
@@ -329,7 +333,8 @@ EOF
     # 7. Create archive with maximum compression + excludes (double safety)
     [ "$MODE" != "auto" ] && ui_spinner_start "Compressing archive"
 
-    local SIZE_BEFORE=$(du -sb "$B_PATH" | cut -f1)
+    local SIZE_BEFORE
+    SIZE_BEFORE=$(du -sb "$B_PATH" | cut -f1)
 
     # Excludes for tar (extra safety even though we already cleaned)
     local EXCLUDE_ARGS=(
@@ -363,8 +368,10 @@ EOF
     fi
 
     if tar -czf "$ARCHIVE_PATH" "${EXCLUDE_ARGS[@]}" -C "$TEMP_BASE" "$B_NAME" 2>/dev/null; then
-        local BACKUP_SIZE=$(du -h "$ARCHIVE_PATH" | cut -f1)
-        local BACKUP_SIZE_BYTES=$(stat -c%s "$ARCHIVE_PATH" 2>/dev/null || echo "0")
+        local BACKUP_SIZE
+        BACKUP_SIZE=$(du -h "$ARCHIVE_PATH" | cut -f1)
+        local BACKUP_SIZE_BYTES
+        BACKUP_SIZE_BYTES=$(stat -c%s "$ARCHIVE_PATH" 2>/dev/null || echo "0")
         local SAVED_PERCENT=0
         if [ "$SIZE_BEFORE" -gt 0 ]; then
             SAVED_PERCENT=$((100 - BACKUP_SIZE_BYTES * 100 / SIZE_BEFORE))
@@ -381,7 +388,8 @@ EOF
     [[ -n "$TEMP_BASE" ]] && rm -rf "$TEMP_BASE" 2>/dev/null
 
     # 9. Send to Telegram - Now small and fast
-    local FINAL_SIZE=$(du -h "$ARCHIVE_PATH" | cut -f1)
+    local FINAL_SIZE
+    FINAL_SIZE=$(du -h "$ARCHIVE_PATH" | cut -f1)
     local TG_SENT="skipped"
     if [ -f "$TG_CONFIG" ]; then
         [ "$MODE" != "auto" ] && ui_spinner_start "Sending to Telegram ($FINAL_SIZE)"

@@ -197,7 +197,8 @@ parse_db_credentials() {
     local ENV_FILE="$1"
     DB_USER=""; DB_PASS=""; DB_NAME=""; DB_HOST=""
     if [ ! -f "$ENV_FILE" ]; then return 1; fi
-    local DB_URI=$(grep "^SQLALCHEMY_DATABASE_URL" "$ENV_FILE" 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    local DB_URI
+    DB_URI=$(grep "^SQLALCHEMY_DATABASE_URL" "$ENV_FILE" 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
     if [ -n "$DB_URI" ]; then
         # SECURITY: Use Python urllib for proper URL parsing (handles @ in passwords)
         local PARSED
