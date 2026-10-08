@@ -283,19 +283,21 @@ tools_menu() {
     local OPT
     while true; do
         ui_header "Tools & Diagnostics"
-        ui_menu_item 1 "Domain Separator" "separate panel and subscription domains"
-        ui_menu_item 2 "Diagnostics Dashboard" "system and panel status"
-        ui_menu_item 3 "Health Check & Doctor" "PasarGuard health report"
-        ui_menu_item 4 "Iran / Offline Mode" "mirrors and local installs"
-        ui_menu_item 5 "Monitor & Alerts" "Telegram alerts"
+        ui_menu_item 1 "Templates & Integration" "subscription templates, MRM Special tab"
+        ui_menu_item 2 "Domain Separator" "separate panel and subscription domains"
+        ui_menu_item 3 "Diagnostics Dashboard" "system and panel status"
+        ui_menu_item 4 "Health Check & Doctor" "PasarGuard health report"
+        ui_menu_item 5 "Iran / Offline Mode" "mirrors and local installs"
+        ui_menu_item 6 "Monitor & Alerts" "Telegram alerts"
         ui_menu_back
         ui_select OPT
         case "$OPT" in
-            1) bash "$MRM_DIR/domain_separator.sh" || { ui_error "Domain Separator could not be started"; sleep 1; } ;;
-            2) bash "$MRM_DIR/diagnostics.sh" ;;
-            3) bash "$MRM_DIR/pg_health.sh" ;;
-            4) bash "$MRM_DIR/offline.sh" ;;
-            5) bash "$MRM_DIR/monitor.sh" menu ;;
+            1) templates_menu ;;
+            2) bash "$MRM_DIR/domain_separator.sh" || { ui_error "Domain Separator could not be started"; sleep 1; } ;;
+            3) bash "$MRM_DIR/diagnostics.sh" ;;
+            4) bash "$MRM_DIR/pg_health.sh" ;;
+            5) bash "$MRM_DIR/offline.sh" ;;
+            6) bash "$MRM_DIR/monitor.sh" menu ;;
             0) return ;;
             *) ui_invalid ;;
         esac
@@ -315,25 +317,23 @@ main_menu() {
             mrm_status_panel
         fi
         [ -n "$MISSING" ] && { ui_warning "Missing tools:${MISSING}"; echo ""; }
-        ui_menu_item 1 "Templates & Integration" "subscription templates, MRM Special tab"
-        ui_menu_item 2 "SSL Certificates" "issue, renew, multi-domain certificates"
-        ui_menu_item 3 "Backup & Restore" "database, xray, auto-backup, Telegram"
-        ui_menu_item 4 "Panel Control" "restart, stop, start, live logs"
-        ui_menu_item 5 "Tools & Diagnostics" "domain separator, monitor, health doctor"
-        ui_menu_item 6 "Update MRM Manager"
-        ui_menu_item 7 "Uninstall MRM Manager"
+        ui_menu_item 1 "SSL Certificates" "issue, renew, multi-domain certificates"
+        ui_menu_item 2 "Backup & Restore" "database, xray, auto-backup, Telegram"
+        ui_menu_item 3 "Panel Control" "restart, stop, start, live logs"
+        ui_menu_item 4 "Tools & Diagnostics" "templates, domains, monitor, doctor"
+        ui_menu_item 5 "Update MRM Manager"
+        ui_menu_item 6 "Uninstall MRM Manager"
         ui_menu_back "Exit"
         ui_select OPT
         case "$OPT" in
-            1) templates_menu ;;
-            2) bash "$MRM_DIR/ssl.sh" || { ui_error "SSL Manager could not be started"; sleep 1; } ;;
-            3) bash "$MRM_DIR/backup.sh" || { ui_error "Backup Manager could not be started"; sleep 1; } ;;
-            4) panel_menu ;;
-            5) tools_menu ;;
-            6) # single update path — fixes apply in one place (MRM-015)
+            1) bash "$MRM_DIR/ssl.sh" || { ui_error "SSL Manager could not be started"; sleep 1; } ;;
+            2) bash "$MRM_DIR/backup.sh" || { ui_error "Backup Manager could not be started"; sleep 1; } ;;
+            3) panel_menu ;;
+            4) tools_menu ;;
+            5) # single update path — fixes apply in one place (MRM-015)
                 bash "$MRM_DIR/main.sh" update
                 ui_pause ;;
-            7) uninstall_mrm_manager ;;
+            6) uninstall_mrm_manager ;;
             0) ui_clear; echo ""; ui_note "Goodbye."; echo ""; exit 0 ;;
             *) ui_invalid ;;
         esac
